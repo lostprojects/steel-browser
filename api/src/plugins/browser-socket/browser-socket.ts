@@ -4,6 +4,7 @@ import { WebSocketServer } from "ws";
 import { WebSocketRegistryService } from "../../services/websocket-registry.service.js";
 import { WebSocketHandler, WebSocketHandlerContext } from "../../types/websocket.js";
 import { defaultHandlers } from "./handlers/index.js";
+import { isAuthorized } from "../../utils/api-key.js";
 
 export interface BrowserSocketOptions {
   customHandlers?: WebSocketHandler[];
@@ -37,6 +38,10 @@ const browserWebSocket: FastifyPluginAsync<BrowserSocketOptions> = async (
   fastify.decorate("webSocketRegistry", registry);
 
   fastify.server.on("upgrade", async (request, socket, head) => {
+    if (!isAuthorized(request)) {
+      socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+      return;
+    }
     fastify.log.info("Upgrading browser socket...");
     const url = request.url ?? "";
     const params = Object.fromEntries(

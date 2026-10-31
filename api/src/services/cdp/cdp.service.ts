@@ -1305,6 +1305,8 @@ export class CDPService extends EventEmitter {
       head,
       {
         target: this.wsEndpoint,
+        // Chrome rejects a DevTools Host header that is not localhost or an IP
+        changeOrigin: true,
       },
       (error) => {
         if (error) {

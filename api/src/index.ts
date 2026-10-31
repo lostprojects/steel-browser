@@ -8,6 +8,8 @@ import { loggingConfig } from "./config.js";
 import { MB } from "./utils/size.js";
 import path from "node:path";
 import type { Duplex } from "node:stream";
+import { env } from "./env.js";
+import { API_KEY_COOKIE, isAuthorized, suppliedKey } from "./utils/api-key.js";
 
 const HOST = process.env.HOST ?? "0.0.0.0";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -23,6 +25,22 @@ export const server = fastify({
 const setupServer = async () => {
   await server.register(fastifySensible);
   await server.register(fastifyCors, { origin: true });
+
+  server.addHook("onRequest", async (request, reply) => {
+    if (request.method === "OPTIONS") return;
+    if (!isAuthorized(request.raw)) {
+      return reply.code(401).send({ error: "Unauthorized" });
+    }
+    // Opening the UI with ?apiKey= stores the key so its own calls carry it
+    const { key, fromQuery } = suppliedKey(request.raw);
+    if (env.STEEL_API_KEY && fromQuery && key) {
+      const secure = request.protocol === "https" ? "; Secure" : "";
+      reply.header(
+        "set-cookie",
+        `${API_KEY_COOKIE}=${encodeURIComponent(key)}; Path=/; HttpOnly; SameSite=Lax${secure}`,
+      );
+    }
+  });
 
   // Register UI plugin only in production (when we have built UI files)
   if (process.env.NODE_ENV === "production") {
