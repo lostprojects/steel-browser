@@ -38,14 +38,17 @@ Requires: pip install patchright (and playwright for the comparison)
 """
 import json
 import fcntl
+import http.client
+import io
 import os
 import re
 import secrets
 import sys
 import time
+import threading
 import uuid
 import urllib.parse
-import urllib.request
+import urllib.error
 from pathlib import Path
 
 if os.environ.get('STEEL_CLIENT', 'patchright') == 'patchright':
@@ -113,12 +116,32 @@ PROBE = r"""async () => {
 }"""
 
 
+_http = threading.local()
+
+
 def call(method, path, payload=None):
-    req = urllib.request.Request(BASE + path, method=method,
-                                 data=json.dumps(payload).encode() if payload is not None else None,
-                                 headers={'Content-Type': 'application/json', 'steel-api-key': KEY})
-    with urllib.request.urlopen(req, timeout=120) as r:
-        return json.loads(r.read() or b'{}')
+    """Reuse the API connection; retry only reads after a dropped connection."""
+    base = urllib.parse.urlsplit(BASE)
+    body = json.dumps(payload).encode() if payload is not None else None
+    for attempt in range(2):
+        if not getattr(_http, 'connection', None):
+            connection = http.client.HTTPSConnection if base.scheme == 'https' else http.client.HTTPConnection
+            _http.connection = connection(base.hostname, base.port, timeout=120)
+        try:
+            _http.connection.request(method, base.path + path, body=body,
+                                     headers={'Content-Type': 'application/json', 'steel-api-key': KEY})
+            response = _http.connection.getresponse()
+            data = response.read()
+        except (OSError, http.client.HTTPException):
+            _http.connection.close()
+            _http.connection = None
+            if method == 'GET' and attempt == 0:
+                continue
+            raise
+        if response.status >= 400:
+            raise urllib.error.HTTPError(BASE + path, response.status, response.reason,
+                                         response.headers, io.BytesIO(data))
+        return json.loads(data or b'{}')
 
 
 def sticky(proxy_url):
@@ -276,15 +299,19 @@ def route_check(session, name, out, quiet=False):
     started = time.monotonic()
     before = call('GET', f"/v1/sessions/{session.info['id']}")
     result = {'name': name, 'status': 'FAIL', 'payloads': 0}
+    navigation_started = time.monotonic()
     try:
         navigate(page, url, timeout=60000, retries=result.setdefault('navigationRetries', []))
     except Exception as error:
         result['navigationError'] = str(error).splitlines()[0].replace(KEY, '[redacted]')[:200]
+    result['navigationSeconds'] = round(time.monotonic() - navigation_started, 2)
+    input_started = time.monotonic()
     if quiet:
         commands(session, [
             {'command': 'mouse', 'action': 'move', 'x': 120, 'y': 140},
             {'command': 'mouse', 'action': 'wheel', 'x': 120, 'y': 140, 'deltaY': 80},
         ])
+    result['inputSeconds'] = round(time.monotonic() - input_started, 2)
     title, text = '', ''
     attempts = {}
     deadline = time.monotonic() + 60
@@ -293,7 +320,7 @@ def route_check(session, name, out, quiet=False):
             break
         check_budget(session)
         try:
-            n, title, text = page.evaluate(check), page.title(), page.inner_text('body', timeout=5000)[:500]
+            n, title, text = page.evaluate('() => [(' + check + '), document.title, (document.body?.innerText || "").slice(0,500)]')
             result['payloads'] = n
         except Exception as error:
             result['readError'] = type(error).__name__
