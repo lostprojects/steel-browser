@@ -6,7 +6,6 @@ WORKDIR /app
 
 ENV NODE_ENV="production" \
     PUPPETEER_CACHE_DIR=/app/.cache \
-    PATH="/usr/bin:${PATH}" \
     CHROME_BIN=/usr/bin/google-chrome-stable \
     CHROME_PATH=/usr/bin/google-chrome-stable \
     CHROME_EXECUTABLE_PATH=/app/api/chrome-launcher.sh
@@ -121,4 +120,4 @@ ENV HOST_IP=localhost \
     DBUS_SESSION_BUS_ADDRESS=autolaunch:
 
 # Tini runs as PID 1 to forward signals and reap zombies (like compose `init: true`)
-ENTRYPOINT ["/usr/bin/tini", "--", "/app/api/entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/app/api/entrypoint.sh"]

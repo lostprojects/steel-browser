@@ -5,4 +5,4 @@ if [ "${1:-}" != "--no-nginx" ]; then
     nginx -c /app/api/nginx.conf
 fi
 # Each session starts and stops its own Xvfb and VNC processes.
-exec node ./api/build/index.js
+exec /usr/local/bin/node ./api/build/index.js

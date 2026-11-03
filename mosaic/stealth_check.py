@@ -18,7 +18,7 @@ STEEL_API_KEY, EVOMI_RESIDENTIAL_PROXY_URL, EVOMI_PREMIUM_PROXY_URL.
 Credentials are never printed.
 
 Each run opens one Steel session at a time and releases it. Do not run two
-copies at once: the instance has a single browser.
+copies beyond MAX_SESSIONS (production allows three).
 
 The CDP client is Patchright, which does not send Runtime.enable. Set
 STEEL_CLIENT=playwright to compare against stock Playwright.
@@ -121,9 +121,15 @@ def exit_timezone(proxy_url):
     Steel's own lookup sometimes returns the server's timezone instead, so the
     client passes the timezone explicitly.
     """
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({'http': proxy_url, 'https': proxy_url}))
-    data = json.loads(opener.open('https://ipwho.is/', timeout=30).read())
-    return (data.get('timezone') or {}).get('id')
+    # A short metered session keeps the preflight within the same byte ledger.
+    with Session('none', {'proxyUrl': proxy_url, 'timezone': 'UTC'}) as session:
+        session.page.goto('https://ipwho.is/', timeout=45000)
+        data = json.loads(session.page.inner_text('body'))
+    zone = (data.get('timezone') or {}).get('id')
+    if not zone:
+        raise RuntimeError('Exit geolocation returned no timezone')
+    return zone
+
 
 
 class Session:
@@ -133,31 +139,40 @@ class Session:
         body = {'blockAds': False, **(options or {})}
         if PROXY.get(mode):
             body['proxyUrl'] = sticky(PROXY[mode])
-            body.setdefault('timezone', exit_timezone(body['proxyUrl']))
+            if 'timezone' not in body:
+                body['timezone'] = exit_timezone(body['proxyUrl'])
         self.body = body
 
     def __enter__(self):
+        check_budget()
         self.info = call('POST', '/v1/sessions', self.body)
-        self.pw = sync_playwright().start()
-        self.browser = self.pw.chromium.connect_over_cdp(self.info['websocketUrl'] + '?apiKey=' + KEY)
-        ctx = self.browser.contexts[0] if self.browser.contexts else self.browser.new_context()
-        self.page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        self.bytes = 0
-        cdp = ctx.new_cdp_session(self.page)
-        cdp.send('Network.enable')
-        cdp.on('Network.loadingFinished', lambda e: setattr(self, 'bytes', self.bytes + e.get('encodedDataLength', 0)))
-        return self
+        try:
+            self.pw = sync_playwright().start()
+            self.browser = self.pw.chromium.connect_over_cdp(self.info['websocketUrl'] + '?apiKey=' + KEY)
+            ctx = self.browser.contexts[0] if self.browser.contexts else self.browser.new_context()
+            self.page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            self.bytes = 0
+            cdp = ctx.new_cdp_session(self.page)
+            cdp.send('Network.enable')
+            cdp.on('Network.loadingFinished', lambda e: setattr(self, 'bytes', self.bytes + e.get('encodedDataLength', 0)))
+            return self
+        except BaseException:
+            record_release(call('POST', f"/v1/sessions/{self.info['id']}/release"))
+            if hasattr(self, 'pw'):
+                self.pw.stop()
+            raise
 
     def __exit__(self, *exc):
         try:
             self.browser.close()
             self.pw.stop()
         finally:
-            call('POST', f"/v1/sessions/{self.info['id']}/release")
+            self.released = call('POST', f"/v1/sessions/{self.info['id']}/release")
+            record_release(self.released)
 
 
 def probe(options):
-    print('session options:', options)
+    print('session options:', {k: v for k, v in options.items() if k not in ('proxyUrl', 'sessionContext')})
     with Session('core', options) as s:
         page = s.page
         page.goto('https://ipwho.is/', timeout=60000)
@@ -214,9 +229,108 @@ def route(mode, name, out):
     return verdict
 
 
+def ledger_total():
+    path = os.environ.get('STEEL_BYTE_LEDGER')
+    if not path or not Path(path).exists():
+        return 0
+    return sum(json.loads(line)['bytes'] for line in Path(path).read_text().splitlines())
+
+
+def record_release(info):
+    count = info.get('proxyTxBytes', 0) + info.get('proxyRxBytes', 0)
+    path = os.environ.get('STEEL_BYTE_LEDGER')
+    if path:
+        with Path(path).open('a') as f:
+            f.write(json.dumps({'id': info['id'], 'bytes': count}) + '\n')
+    print(f"Settled residential bytes: {count}; ledger total: {ledger_total()}", flush=True)
+
+
+def check_budget(session=None):
+    total = ledger_total()
+    if session:
+        live = call('GET', f"/v1/sessions/{session.info['id']}")
+        total += live.get('proxyTxBytes', 0) + live.get('proxyRxBytes', 0)
+    if total >= int(os.environ.get('STEEL_BYTE_LIMIT', '280000000')):
+        raise RuntimeError('Residential measurement budget reached')
+
+
+def main_value(page, expression):
+    # Probe-only reads of a site's own published results. The service command
+    # engine has a separate policy; this helper does not change that policy.
+    cdp = page.context.new_cdp_session(page)
+    try:
+        result = cdp.send('Runtime.evaluate', {'expression': expression, 'returnByValue': True, 'awaitPromise': True})
+        if result.get('exceptionDetails'):
+            raise RuntimeError('Probe result expression failed')
+        return result['result'].get('value')
+    finally:
+        cdp.detach()
+
+
+def fingerprints(count=1):
+    if not os.environ.get('STEEL_BYTE_LEDGER'):
+        raise RuntimeError('Set STEEL_BYTE_LEDGER to a scratch JSONL path')
+    rows = []
+    for number in range(count):
+        result = {'run': number + 1, 'tcpOS': 'not supplied by these probes'}
+        try:
+            with Session('core') as s:
+                page = s.page
+                page.goto('https://ipwho.is/', timeout=45000, wait_until='domcontentloaded')
+                ip = json.loads(page.inner_text('body'))
+                result['exitIP'] = ip.get('ip')
+                result['exitTimezone'] = (ip.get('timezone') or {}).get('id')
+                page.goto('https://example.com', timeout=60000, wait_until='domcontentloaded')
+                result['fingerprint'] = page.evaluate(PROBE)
+                check_budget(s)
+                page.goto('https://deviceandbrowserinfo.com/are_you_a_bot', timeout=60000, wait_until='domcontentloaded')
+                page.wait_for_timeout(8000)
+                body = page.inner_text('body')
+                i = body.find('"isBot"')
+                result['deviceFlags'] = re.findall(r'"(\w+)": true', body[i:i + 2000]) if i >= 0 else ['result_missing']
+                page.goto('https://bot-detector.rebrowser.net/', timeout=60000, wait_until='domcontentloaded')
+                main_value(page, 'window.dummyFn()')
+                page.evaluate("document.getElementById('detections-json')")
+                page.evaluate("document.getElementsByClassName('div')")
+                page.wait_for_timeout(11000)
+                result['rebrowser'] = [{k: r.get(k) for k in ('type', 'rating', 'note')} for r in json.loads(page.locator('#detections-json').input_value())]
+                check_budget(s)
+                page.goto('https://abrahamjuliot.github.io/creepjs/tests/workers.html', timeout=60000, wait_until='domcontentloaded')
+                page.wait_for_timeout(10000)
+                workers = page.locator('.worker').all_inner_texts()
+                result['workerHardware'] = [re.findall(r'hardware[^\n]*', text) for text in workers]
+                page.goto('https://abrahamjuliot.github.io/creepjs/', timeout=60000, wait_until='domcontentloaded')
+                page.wait_for_timeout(15000)
+                result['creep'] = main_value(page, 'window.Fingerprint && ({lies: Fingerprint.lies, headless: Fingerprint.headless, worker: Fingerprint.workerScope})')
+                check_budget(s)
+                page.goto('https://browserleaks.com/webrtc', timeout=60000, wait_until='domcontentloaded')
+                page.wait_for_timeout(8000)
+                result['webrtc'] = page.inner_text('body')[:18000]
+                if number == 0:
+                    for name, url in [('browserscan', 'https://www.browserscan.net/'), ('pixelscan', 'https://pixelscan.net/')]:
+                        try:
+                            page.goto(url, timeout=60000, wait_until='domcontentloaded')
+                            page.wait_for_timeout(15000)
+                            result[name] = page.inner_text('body')[:9000]
+                        except Exception as error:
+                            result[name] = type(error).__name__
+                        check_budget(s)
+        except Exception as error:
+            result['error'] = type(error).__name__
+            result['errorMessage'] = str(error).splitlines()[0].replace(KEY, '[redacted]')[:250]
+        rows.append(result)
+        print('FINGERPRINT ' + json.dumps(result), flush=True)
+        check_budget()
+    print(f"Fingerprint sessions measured: {len(rows)}; residential bytes: {ledger_total()}", flush=True)
+    return rows
+
+
 def main(argv):
-    if len(argv) < 2 or argv[1] not in ('probe', 'routes'):
+    if len(argv) < 2 or argv[1] not in ('probe', 'routes', 'fingerprints'):
         sys.exit(__doc__)
+    if argv[1] == 'fingerprints':
+        fingerprints(int(argv[2]) if len(argv) > 2 else 1)
+        return
     if argv[1] == 'probe':
         probe(json.loads(argv[2]) if len(argv) > 2 else {})
         return
