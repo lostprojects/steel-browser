@@ -1,3 +1,4 @@
+import { selectedSession } from "../sessions/sessions.controller.js";
 import { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { LogQuerySchema, ExportLogsSchema, LogQueryInput } from "./logs.schema.js";
 import { randomUUID } from "crypto";
@@ -6,13 +7,6 @@ import { LogQuery } from "../../services/cdp/instrumentation/storage/index.js";
 import { EmitEvent } from "../../types/enums.js";
 
 const logsRoutes: FastifyPluginAsync = async (fastify) => {
-  const storage = fastify.cdpService.getInstrumentationLogger()?.getStorage?.();
-
-  if (!storage) {
-    fastify.log.warn("Log storage not available. Logs routes will not work.");
-    return;
-  }
-
   /**
    * Query logs from local storage
    */
@@ -27,6 +21,7 @@ const logsRoutes: FastifyPluginAsync = async (fastify) => {
     },
     async (request: FastifyRequest<{ Querystring: LogQueryInput }>) => {
       const query = request.query;
+      const storage = selectedSession(fastify, request).getInstrumentationLogger().getStorage()!;
 
       let result;
       try {
@@ -59,7 +54,8 @@ const logsRoutes: FastifyPluginAsync = async (fastify) => {
         description: "Get statistics about stored browser logs",
       },
     },
-    async () => {
+    async (request) => {
+      const storage = selectedSession(fastify, request).getInstrumentationLogger().getStorage()!;
       const stats = await storage.getStats();
 
       return {
@@ -83,7 +79,7 @@ const logsRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request, reply) => {
-      const logger = fastify.cdpService.getInstrumentationLogger();
+      const logger = selectedSession(fastify, request).getInstrumentationLogger();
 
       if (!logger) {
         return reply.code(503).send({ error: "Browser logger not available" });
@@ -128,6 +124,7 @@ const logsRoutes: FastifyPluginAsync = async (fastify) => {
     },
     async (request: FastifyRequest<{ Querystring: LogQuery }>) => {
       const query = request.query;
+      const storage = selectedSession(fastify, request).getInstrumentationLogger().getStorage()!;
 
       // Generate a unique filename
       const fileName = `steel-browser-logs-${randomUUID()}.parquet`;
@@ -154,7 +151,8 @@ const logsRoutes: FastifyPluginAsync = async (fastify) => {
         description: "Clear all browser logs from storage",
       },
     },
-    async () => {
+    async (request) => {
+      const storage = selectedSession(fastify, request).getInstrumentationLogger().getStorage()!;
       await storage.clear();
 
       return {

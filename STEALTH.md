@@ -10,7 +10,7 @@ All measurements below were taken with [mosaic/stealth_check.py](mosaic/stealth_
 
 ## Signals
 
-| Signal | Upstream default | Headful, spoofing off | Plus quiet CDP | Plus WebGL and plugins (current) |
+| Signal | Upstream default | Headful, spoofing off | Plus quiet CDP | Plus WebGL and plugins (earlier singleton) |
 |---|---|---|---|---|
 | User agent | Chrome 142–144, while the binary is 156 | `Chrome/156` | Same | Same |
 | Client hints in JavaScript | Empty, while HTTP headers send them | Consistent | Same | Same |
@@ -41,7 +41,7 @@ Steel's recorder binding, `__steelBrowserInteractionLog`, needed no change. It l
 
 The six Mosaic collector routes that used Browserbase's residential proxy. A route passes when the page's real content loads with no challenge. Bytes are what Chrome received for the page, from CDP `Network.loadingFinished`; at Core's $0.99/GB a megabyte costs about a tenth of a cent.
 
-| Route | Upstream default | Upstream default, Premium proxy | Headful, spoofing off | Plus quiet CDP | Plus WebGL and plugins (current) |
+| Route | Upstream default | Upstream default, Premium proxy | Headful, spoofing off | Plus quiet CDP | Plus WebGL and plugins (earlier singleton) |
 |---|---|---|---|---|---|
 | Anna's Archive search | Fail: DDoS-Guard checkbox | Fail | Fail | Fail | Pass in 3 of 4 runs, 25–33 s, 117–713 KB |
 | Bizapedia people page | Fail: drag-and-drop "Human Verification" | Fail | Pass, 16 s, 998 KB | Pass, 14 s, 997 KB | Pass, 40 s, 346 KB |
@@ -78,8 +78,14 @@ python mosaic/stealth_check.py routes core                    # all routes throu
 python mosaic/stealth_check.py routes premium annas ancestry  # chosen routes through Premium
 ```
 
-Failed routes save a screenshot and the page text to `./stealth-failures/`. Run it from a temporary directory and delete that folder afterwards. The instance has one browser, so never run two copies at once.
+Failed routes save a screenshot and the page text to `./stealth-failures/`. Run it from a temporary directory and delete that folder afterwards. The session pool allows at most three browsers. Keep the residential byte budget in view when running checks concurrently.
 
 `chrome://gpu` explains why WebGL or GPU features are off. Its text is inside the `info-view` element's shadow root.
 
 The measurement client sends `blockAds: false`, so ad blocking does not pause every request in Node. Browserbase remains available as a fallback.
+
+## Phase checks
+
+Phase 0 passed on 2 November 2026 (New York time). Railway marked the documentation-only commit `7515163` SKIPPED, with zero rebuilds; the measurement-client commit was also skipped. `main` and `deploy` matched after the pushes.
+
+Phase 1 removes the shared profile, singleton and idle relaunch. TypeScript passes, and 68 tests across eight affected files passed before production acceptance. BrowserSession now contains the WebGL flags directly; no new anti-bot result is claimed here.

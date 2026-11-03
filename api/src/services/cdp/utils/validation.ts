@@ -150,8 +150,6 @@ export async function isSimilarConfig(
   const currentUserDataDir = current.userDataDir || "";
   const nextUserDataDir = next.userDataDir || "";
 
-  const currentSkipFingerprint = current.skipFingerprintInjection ?? false;
-  const nextSkipFingerprint = next.skipFingerprintInjection ?? false;
 
   const currentWidth = current.dimensions?.width ?? 1920;
   const nextWidth = next.dimensions?.width ?? 1920;
@@ -175,7 +173,6 @@ export async function isSimilarConfig(
     currentProxy === nextProxy &&
     currentUserAgent === nextUserAgent &&
     currentUserDataDir === nextUserDataDir &&
-    currentSkipFingerprint === nextSkipFingerprint &&
     currentWidth === nextWidth &&
     currentHeight === nextHeight &&
     currentBlockAds === nextBlockAds &&

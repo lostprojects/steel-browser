@@ -49,15 +49,6 @@ verify_chrome() {
     fi
     log "Chrome version: $chrome_version"
 
-    # Check ChromeDriver binary and version
-    if [ ! -f "/usr/bin/chromedriver" ]; then
-        log "ERROR: ChromeDriver not found at /usr/bin/chromedriver"
-        return 1
-    fi
-
-    chromedriver_version=$(chromedriver --version 2>/dev/null || echo "unknown")
-    log "ChromeDriver version: $chromedriver_version"
-
     log "Chrome environment configured successfully"
     return 0
 }

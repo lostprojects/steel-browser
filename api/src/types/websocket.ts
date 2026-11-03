@@ -5,6 +5,7 @@ import { FastifyInstance } from "fastify";
 
 export interface WebSocketHandlerContext {
   fastify: FastifyInstance;
+  session: import("../services/browser-session.js").BrowserSession;
   wss: WebSocketServer;
   params: Record<string, string>;
 }

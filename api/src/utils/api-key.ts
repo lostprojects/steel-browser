@@ -6,7 +6,7 @@ export const API_KEY_HEADER = "steel-api-key";
 export const API_KEY_COOKIE = "steel_api_key";
 
 // Paths that stay public so the platform health check works without a key
-const publicPaths = new Set(["/v1/health"]);
+const publicPaths = new Set(["/v1/health", "/health"]);
 
 function matches(candidate: string | undefined, key: string): boolean {
   if (!candidate) return false;

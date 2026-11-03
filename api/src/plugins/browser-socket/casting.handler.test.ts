@@ -17,7 +17,7 @@ describe("handleCastSession cleanup", () => {
   let mockSocket: any;
   let mockWs: any;
   let mockWss: any;
-  let mockSessionService: any;
+  let mockBrowserSession: any;
   let upgradePromise: Promise<void> | null = null;
 
   beforeEach(() => {
@@ -64,8 +64,9 @@ describe("handleCastSession cleanup", () => {
       }),
     };
 
-    mockSessionService = {
-      activeSession: Promise.resolve({
+    mockBrowserSession = {
+      getEndpoint: () => "ws://127.0.0.1:9222/devtools/browser/test",
+      info: () => ({
         id: "session-abc",
         dimensions: { width: 1920, height: 1080 },
       }),
@@ -82,7 +83,7 @@ describe("handleCastSession cleanup", () => {
       mockSocket as any,
       Buffer.alloc(0),
       mockWss as any,
-      mockSessionService as any,
+      mockBrowserSession as any,
       { pageId: "invalid-nonexistent-page" },
     );
     await upgradePromise;
@@ -104,7 +105,7 @@ describe("handleCastSession cleanup", () => {
       mockSocket as any,
       Buffer.alloc(0),
       mockWss as any,
-      mockSessionService as any,
+      mockBrowserSession as any,
       { pageIndex: "99" },
     );
     await upgradePromise;
@@ -124,7 +125,7 @@ describe("handleCastSession cleanup", () => {
       mockSocket as any,
       Buffer.alloc(0),
       mockWss as any,
-      mockSessionService as any,
+      mockBrowserSession as any,
       { pageId: "existing-page-id-999" },
     );
     await upgradePromise;
@@ -147,7 +148,7 @@ describe("handleCastSession cleanup", () => {
       mockSocket as any,
       Buffer.alloc(0),
       mockWss as any,
-      mockSessionService as any,
+      mockBrowserSession as any,
       undefined,
     );
     await upgradePromise;
@@ -170,7 +171,7 @@ describe("handleCastSession cleanup", () => {
       mockSocket as any,
       Buffer.alloc(0),
       mockWss as any,
-      mockSessionService as any,
+      mockBrowserSession as any,
       undefined,
     );
     await upgradePromise;
@@ -208,7 +209,7 @@ describe("handleCastSession cleanup", () => {
       mockSocket as any,
       Buffer.alloc(0),
       mockWss as any,
-      mockSessionService as any,
+      mockBrowserSession as any,
       undefined,
     );
     await upgradePromise;
@@ -240,7 +241,7 @@ describe("handleCastSession cleanup", () => {
       mockSocket as any,
       Buffer.alloc(0),
       mockWss as any,
-      mockSessionService as any,
+      mockBrowserSession as any,
       { pageId: "existing-page-id-999" },
     );
     await upgradePromise;
@@ -264,7 +265,7 @@ describe("handleCastSession cleanup", () => {
       mockSocket as any,
       Buffer.alloc(0),
       mockWss as any,
-      mockSessionService as any,
+      mockBrowserSession as any,
       { pageId: "existing-page-id-999" },
     );
     await upgradePromise;

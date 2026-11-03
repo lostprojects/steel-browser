@@ -1,5 +1,5 @@
 /**
- * Custom error classes for categorizing CDPService launch failures
+ * Custom error classes for categorizing BrowserSession launch failures
  * These allow for slightly more intelligent error handling and recovery strategies
  */
 
@@ -45,10 +45,7 @@ export enum SessionContextType {
   CONTEXT_INJECTION = "context injection",
 }
 
-export enum FingerprintStage {
-  GENERATION = "generation",
-  INJECTION = "injection",
-}
+
 
 export enum ResourceType {
   EXTENSIONS = "extensions",
@@ -200,23 +197,6 @@ export class NetworkError extends BaseLaunchError {
   }
 }
 
-/**
- * Thrown when fingerprint generation or injection fails
- * Usually retryable, can fall back to no fingerprint
- */
-export class FingerprintError extends BaseLaunchError {
-  constructor(message: string, stage: FingerprintStage, cause?: unknown) {
-    super(
-      LaunchErrorType.FINGERPRINT,
-      `Fingerprint error during ${stage}: ${message}`,
-      true,
-      {
-        stage,
-      },
-      cause,
-    );
-  }
-}
 
 /**
  * Thrown when plugin operations fail during launch
@@ -347,9 +327,6 @@ export function categorizeError(error: unknown, context?: string): BaseLaunchErr
     );
   }
 
-  if (lowerMessage.includes("fingerprint")) {
-    return new FingerprintError(errorMessage, FingerprintStage.GENERATION);
-  }
 
   if (lowerMessage.includes("plugin")) {
     return new PluginError(

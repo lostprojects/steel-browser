@@ -1,15 +1,15 @@
 import { Browser, Page } from "puppeteer-core";
-import { CDPService } from "../../cdp.service.js";
+import { BrowserSession } from "../../../browser-session.js";
 import { BasePlugin, ShutdownReason, TargetSessionContext } from "./base-plugin.js";
 import { FastifyBaseLogger } from "fastify";
 import { BrowserLauncherOptions } from "../../../../types/browser.js";
 
 export class PluginManager {
   private plugins: Map<string, BasePlugin>;
-  private service: CDPService;
+  private service: BrowserSession;
   private logger: FastifyBaseLogger;
 
-  constructor(service: CDPService, logger: FastifyBaseLogger) {
+  constructor(service: BrowserSession, logger: FastifyBaseLogger) {
     this.plugins = new Map();
     this.service = service;
     this.logger = logger;

@@ -1,7 +1,7 @@
 import type { FastifyReply } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CDPService } from "../../services/cdp/cdp.service.js";
-import type { SessionService } from "../../services/session.service.js";
+import { BrowserSession } from "../../services/browser-session.js";
+type ActionProxySource = Parameters<typeof handleScrape>[0];
 import {
   handlePDF,
   handleScrape,
@@ -34,13 +34,13 @@ function browserWithPrimaryPage(
   createPage: () => Promise<unknown>,
 ) {
   const state = {
-    primaryPage,
+    primary: primaryPage,
     createPage,
-    pluginManager: { onBeforePageClose: vi.fn().mockResolvedValue(undefined) },
+    plugins: { onBeforePageClose: vi.fn().mockResolvedValue(undefined) },
   };
   const browserService = {
     refreshPrimaryPage: (signal?: AbortSignal) =>
-      CDPService.prototype.refreshPrimaryPage.call(state as never, signal),
+      BrowserSession.prototype.refreshPrimaryPage.call(state as never, signal),
   };
   return { state, browserService };
 }
@@ -105,9 +105,9 @@ describe("resetPrimaryPage", () => {
     creation.finish?.(late);
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(state.primaryPage).toBe(current);
+    expect(state.primary).toBe(current);
     expect(current.close).not.toHaveBeenCalled();
-    expect(state.pluginManager.onBeforePageClose).not.toHaveBeenCalled();
+    expect(state.plugins.onBeforePageClose).not.toHaveBeenCalled();
     expect(late.close).toHaveBeenCalledOnce();
   });
 
@@ -117,18 +117,18 @@ describe("resetPrimaryPage", () => {
     const fresh = fakePage();
     const cleanup = pending();
     const { state, browserService } = browserWithPrimaryPage(current, async () => fresh);
-    state.pluginManager.onBeforePageClose.mockImplementation(() => cleanup.promise);
+    state.plugins.onBeforePageClose.mockImplementation(() => cleanup.promise);
 
     const reset = resetPrimaryPage(browserService as never);
     await vi.advanceTimersByTimeAsync(PRIMARY_PAGE_RESET_TIMEOUT_MS);
     await reset;
-    const nextActionPage = state.primaryPage;
+    const nextActionPage = state.primary;
 
     cleanup.finish();
     await vi.advanceTimersByTimeAsync(0);
 
     expect(nextActionPage).toBe(current);
-    expect(state.primaryPage).toBe(current);
+    expect(state.primary).toBe(current);
     expect(current.close).not.toHaveBeenCalled();
     expect(fresh.close).toHaveBeenCalledOnce();
   });
@@ -144,13 +144,13 @@ describe("resetPrimaryPage", () => {
     const reset = resetPrimaryPage(browserService as never);
     await vi.advanceTimersByTimeAsync(PRIMARY_PAGE_RESET_TIMEOUT_MS);
     await reset;
-    const nextActionPage = state.primaryPage;
+    const nextActionPage = state.primary;
 
     closing.finish();
     await vi.advanceTimersByTimeAsync(0);
 
     expect(nextActionPage).toBe(fresh);
-    expect(state.primaryPage).toBe(fresh);
+    expect(state.primary).toBe(fresh);
     expect(fresh.close).not.toHaveBeenCalled();
   });
 });
@@ -222,9 +222,9 @@ function fixture() {
   const reply = { code: vi.fn(), send: vi.fn() };
   reply.code.mockReturnValue(reply);
   return {
-    browserService: browserService as unknown as CDPService,
+    browserService: browserService as unknown as BrowserSession,
     refresh: browserService.refreshPrimaryPage,
-    sessionService: sessionService as unknown as SessionService,
+    sessionService: sessionService as unknown as ActionProxySource,
     reply: reply as unknown as FastifyReply,
     status: reply.code,
   };

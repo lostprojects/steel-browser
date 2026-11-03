@@ -4,7 +4,7 @@ import { Duplex } from "stream";
 import WebSocket, { Server } from "ws";
 
 import { env } from "../../env.js";
-import { SessionService } from "../../services/session.service.js";
+import { BrowserSession } from "../../services/browser-session.js";
 import {
   CloseTabEvent,
   GetSelectedTextEvent,
@@ -21,7 +21,7 @@ export async function handleCastSession(
   socket: Duplex,
   head: Buffer,
   wss: Server,
-  sessionService: SessionService,
+  browserSession: BrowserSession,
   params: Record<string, string> | undefined,
 ): Promise<void> {
   const id = request.url?.split("/sessions/")[1].split("/cast")[0];
@@ -32,7 +32,7 @@ export async function handleCastSession(
     return;
   }
 
-  const session = await sessionService.activeSession;
+  const session = browserSession.info();
   if (!session || session.id !== id) {
     console.error(`Cast Session ${id} not found`);
     socket.destroy();
@@ -46,7 +46,7 @@ export async function handleCastSession(
   const tabDiscoveryMode =
     queryParams.get("tabInfo") === "true" || (!requestedPageId && !requestedPageIndex);
 
-  const isMobile = session.deviceConfig?.device === "mobile";
+  const isMobile = false;
   const defaultDimensions = isMobile ? { width: 508, height: 1074 } : { width: 1920, height: 1080 };
   const { height, width } =
     (session.dimensions as { width: number; height: number }) ?? defaultDimensions;
@@ -178,7 +178,7 @@ export async function handleCastSession(
 
     try {
       browser = await puppeteer.connect({
-        browserWSEndpoint: `ws://${env.HOST}:${env.PORT}`,
+        browserWSEndpoint: browserSession.getEndpoint(),
       });
 
       if (!browser) {

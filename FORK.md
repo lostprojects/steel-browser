@@ -1,10 +1,10 @@
 # Changes from upstream
 
-The fork exists for three reasons. Upstream Steel cannot accept CDP connections through a public domain, it has no access control, and its default browser is easy for anti-bot systems to spot. Each change fixes one of these and stays small, so upstream merges stay easy.
+The fork is Mosaic's browser service. It retains Steel's commands, extraction utilities and live view, with a session pool replacing the singleton browser services.
 
-New behaviour sits behind settings whose defaults match upstream, except the CDP Host fix and the Xvfb start, which only repair broken behaviour.
+Phase 1 removes the idle browser, Selenium and fingerprint injection. Each session owns its browser, forwarder and profile; routes select it by ID. `SessionPool.registerSessionHook()` lets integrations register fresh plugin instances or launch/shutdown callbacks before each browser starts.
 
-## Code
+## Earlier fork fixes
 
 | Commit | Files | Change | Why |
 |---|---|---|---|

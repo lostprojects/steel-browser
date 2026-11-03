@@ -10,7 +10,7 @@ function fixture() {
       changes++;
     },
   };
-  const server = { commandEngine: engine } as unknown as FastifyInstance;
+  const server = { commandEngine: engine } as unknown as Parameters<typeof quickAction>[0];
   return { engine, server, reply: {} as FastifyReply, changes: () => changes };
 }
 
@@ -39,7 +39,7 @@ describe("quick action tracking", () => {
   });
 
   test("runs quick actions as before when the commands API is off", async () => {
-    const server = { commandEngine: null } as unknown as FastifyInstance;
+    const server = { commandEngine: null } as unknown as Parameters<typeof quickAction>[0];
     const result = await quickAction(server, { body: {} }, {} as FastifyReply, async () => "done");
     expect(result).toBe("done");
   });

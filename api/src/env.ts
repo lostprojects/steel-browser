@@ -61,11 +61,6 @@ const envSchema = z.object({
     .default("false"),
   DEFAULT_TIMEZONE: z.string().optional(),
   TIMEZONE_SERVICE_URL: z.string().optional(),
-  SKIP_FINGERPRINT_INJECTION: z
-    .string()
-    .optional()
-    .transform((val) => val === "true" || val === "1")
-    .default("false"),
   CHROME_ARGS: z
     .string()
     .optional()

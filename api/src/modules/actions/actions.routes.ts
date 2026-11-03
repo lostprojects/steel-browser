@@ -1,89 +1,28 @@
-import { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { handlePDF, handleScrape, handleScreenshot, handleSearch } from "./actions.controller.js";
-import { $ref } from "../../plugins/schemas.js";
-import { PDFRequest, ScrapeRequest, ScreenshotRequest, SearchRequest } from "./actions.schema.js";
+import { selectedSession } from "../sessions/sessions.controller.js";
 import { quickAction } from "../commands/commands.guard.js";
-
-async function routes(server: FastifyInstance) {
-  server.post(
-    "/scrape",
-    {
-      schema: {
-        operationId: "scrape",
-        description: "Scrape a URL",
-        tags: ["Browser Actions"],
-        summary: "Scrape a URL",
-        body: $ref("ScrapeRequest"),
-        response: {
-          200: $ref("ScrapeResponse"),
-        },
-      },
-    },
-    async (request: ScrapeRequest, reply: FastifyReply) =>
-      quickAction(server, request, reply, () =>
-        handleScrape(server.sessionService, server.cdpService, request, reply),
-      ),
-  );
-
-  server.post(
-    "/screenshot",
-    {
-      schema: {
-        operationId: "screenshot",
-        description: "Take a screenshot",
-        tags: ["Browser Actions"],
-        summary: "Take a screenshot",
-        body: $ref("ScreenshotRequest"),
-        response: {
-          200: $ref("ScreenshotResponse"),
-        },
-      },
-    },
-    async (request: ScreenshotRequest, reply: FastifyReply) =>
-      quickAction(server, request, reply, () =>
-        handleScreenshot(server.sessionService, server.cdpService, request, reply),
-      ),
-  );
-
-  server.post(
-    "/pdf",
-    {
-      schema: {
-        operationId: "pdf",
-        description: "Get the PDF content of a page",
-        tags: ["Browser Actions"],
-        summary: "Get the PDF content of a page",
-        body: $ref("PDFRequest"),
-        response: {
-          200: $ref("PDFResponse"),
-        },
-      },
-    },
-    async (request: PDFRequest, reply: FastifyReply) =>
-      quickAction(server, request, reply, () =>
-        handlePDF(server.sessionService, server.cdpService, request, reply),
-      ),
-  );
-
-  server.post(
-    "/search",
-    {
-      schema: {
-        operationId: "search",
-        description: "Use a search engine to search for URLs given a query",
-        tags: ["Browser Actions"],
-        summary: "Use a search engine to search for URLs given a query",
-        body: $ref("SearchRequest"),
-        response: {
-          200: $ref("SearchResponse"),
-        },
-      },
-    },
-    async (request: SearchRequest, reply: FastifyReply) =>
-      quickAction(server, request, reply, () =>
-        handleSearch(server.sessionService, server.cdpService, request, reply),
-      ),
-  );
+export default async function routes(server: FastifyInstance) {
+  for (const [action, handler] of Object.entries({
+    scrape: handleScrape,
+    screenshot: handleScreenshot,
+    pdf: handlePDF,
+    search: handleSearch,
+  })) {
+    server.post(`/${action}`, async (req, reply) => {
+      const body = req.body as Record<string, unknown>;
+      const explicit = body?.sessionId ?? req.headers["steel-session-id"];
+      const temporary = !explicit;
+      const session = temporary
+        ? await server.sessionPool.create({ blockAds: false })
+        : selectedSession(server, req);
+      try {
+        return await quickAction({ commandEngine: session.engine }, req as any, reply, () =>
+          handler(session, session, req as any, reply),
+        );
+      } finally {
+        if (temporary) await server.sessionPool.release(session.id);
+      }
+    });
+  }
 }
-
-export default routes;

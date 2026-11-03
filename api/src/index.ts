@@ -13,7 +13,7 @@ import { API_KEY_COOKIE, isAuthorized, suppliedKey } from "./utils/api-key.js";
 
 const HOST = process.env.HOST ?? "0.0.0.0";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-const SHUTDOWN_TIMEOUT_MS = 10_000;
+const SHUTDOWN_TIMEOUT_MS = Number(process.env.RAILWAY_DEPLOYMENT_DRAINING_SECONDS ?? 120) * 1000 + 15_000;
 
 export const server = fastify({
   logger: loggingConfig[process.env.NODE_ENV ?? "development"] ?? true,
@@ -64,7 +64,7 @@ const setupServer = async () => {
 
   server.addHook("preClose", async () => {
     try {
-      await server.cdpService.shutdown(ShutdownReason.SESSION_END);
+      await server.sessionPool.drain(0);
     } finally {
       for (const socket of upgradedSockets) socket.destroy();
     }
@@ -92,6 +92,7 @@ const shutdown = async (signal: NodeJS.Signals) => {
     process.exit(1);
   }, SHUTDOWN_TIMEOUT_MS).unref();
   try {
+    await server.sessionPool.drain();
     await server.close();
   } catch (err) {
     server.log.error(err);

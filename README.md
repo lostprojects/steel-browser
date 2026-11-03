@@ -8,7 +8,9 @@ This is a fork of [steel-dev/steel-browser](https://github.com/steel-dev/steel-b
 
 ## Status
 
-As of 3 November 2026, the browser passes deviceandbrowserinfo.com's bot test with no flags. All six Mosaic collector routes that need a residential IP load cleanly, Anna's Archive in 3 of 4 runs; its failures fall back to DDoS-Guard's manual check. [STEALTH.md](STEALTH.md) has the details.
+The phase 1 service runs up to three independent sessions, with named profiles on a Railway volume. It deletes throwaway profiles on release and reports why each session ended. Deployment comes from `deploy`; documentation pushes are skipped.
+
+The earlier singleton build passed deviceandbrowserinfo.com's bot test and loaded all six collector routes in supervised measurements, including Anna's Archive in three of four attempts. Those measurements are retained in [STEALTH.md](STEALTH.md); the replacement needs the phase 2 and phase 3 fingerprint and route checks before claiming the same results.
 
 ## Documents
 

@@ -1,5 +1,5 @@
 import type { Browser, CDPSession, Page, Target, TargetType } from "puppeteer-core";
-import type { CDPService } from "../../cdp.service.js";
+import type { BrowserSession } from "../../../browser-session.js";
 import type { BrowserLauncherOptions } from "../../../../types/browser.js";
 
 /**
@@ -15,7 +15,7 @@ export enum ShutdownReason {
   RELAUNCH = "relaunch",
   /** Browser launch failed — cleanup before retry */
   LAUNCH_FAILURE = "launch_failure",
-  /** Switching to a different browser mode (e.g. CDP → Selenium) */
+  /** Switching browser mode */
   MODE_SWITCH = "mode_switch",
 }
 
@@ -35,16 +35,16 @@ export interface TargetSessionContext {
 export abstract class BasePlugin {
   public name: string;
   protected options: PluginOptions;
-  protected cdpService: CDPService | null;
+  protected browserSession: BrowserSession | null;
 
   constructor(options: PluginOptions) {
     this.name = options.name;
     this.options = options;
-    this.cdpService = null;
+    this.browserSession = null;
   }
 
-  public setService(service: CDPService): void {
-    this.cdpService = service;
+  public setService(service: BrowserSession): void {
+    this.browserSession = service;
   }
 
   // Lifecycle methods

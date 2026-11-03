@@ -1,5 +1,5 @@
 import { BrowserEventUnion } from "./types.js";
-import { LogStorage } from "./storage/index.js";
+import type { LogStorage } from "./storage/index.js";
 import { EventEmitter } from "events";
 import { BrowserEventType, EmitEvent } from "../../../types/enums.js";
 

@@ -29,7 +29,7 @@ const logger: FastifyPluginAsync = async (fastify) => {
       req.log.info(
         {
           ip: getClientIp(req),
-          url: req.raw.url,
+          url: new URL(req.raw.url ?? "/", "http://localhost").pathname,
           method: req.method,
           statusCode: reply.raw.statusCode,
           durationMs: roundMS(now() - reply.startTime),

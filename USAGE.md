@@ -15,7 +15,15 @@ POST /v1/sessions/{id}/release
 
 `sticky()`, `exit_timezone()` and a `Session` context manager that does all of this are in [mosaic/stealth_check.py](mosaic/stealth_check.py).
 
-Release every session. A local interruption can leave one open, and the next session replaces it anyway, because the instance runs one browser.
+Release every session. The service allows three independent sessions. A fourth waits up to five seconds and then receives HTTP 429; it cannot replace another browser.
+
+`identity: "ancestry"` keeps a named profile under `/data/profiles`. Names may contain letters, digits, underscores and hyphens. A second claim on a name receives HTTP 409. Without an identity, the profile is unique and deleted on release.
+
+Sessions expire after ten minutes without a connected client or API activity, or after three hours regardless of activity. The released session reports `endReason` and settled `proxyTxBytes` / `proxyRxBytes`. A browser crash ends that session without launching an idle replacement.
+
+Use the returned session-specific `websocketUrl` and `sessionViewerUrl`. Commands use `POST /v1/sessions/{id}/commands`; scrape, screenshot and PDF actions use the same session prefix. The old `/v1/sessions/scrape` style works only when exactly one session exists. Stateless `/v1/scrape`, `/v1/screenshot`, `/v1/pdf` and `/v1/search` create and release a temporary agent session unless supplied `sessionId` or `steel-session-id`.
+
+The service accepts `mode: "agent"` in phase 1. Quiet mode follows in phase 3. Arbitrary profile paths, Selenium and fingerprint injection are removed.
 
 ## The API key
 

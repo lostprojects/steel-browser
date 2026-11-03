@@ -1,78 +1,51 @@
-import { type FastifyInstance, type FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import { WebSocketServer } from "ws";
 import { WebSocketRegistryService } from "../../services/websocket-registry.service.js";
-import { WebSocketHandler, WebSocketHandlerContext } from "../../types/websocket.js";
+import type { WebSocketHandler } from "../../types/websocket.js";
 import { defaultHandlers } from "./handlers/index.js";
 import { isAuthorized } from "../../utils/api-key.js";
-
 export interface BrowserSocketOptions {
   customHandlers?: WebSocketHandler[];
 }
-
-// WebSocket server instance
-const wss = new WebSocketServer({ noServer: true });
-
-const browserWebSocket: FastifyPluginAsync<BrowserSocketOptions> = async (
-  fastify: FastifyInstance,
-  options: BrowserSocketOptions,
-) => {
-  if (!fastify.cdpService.isRunning()) {
-    fastify.log.info("Launching browser...");
-    await fastify.cdpService.launch();
-    fastify.log.info("Browser launched successfully");
-  }
-
+const plugin: FastifyPluginAsync<BrowserSocketOptions> = async (server, options) => {
+  const wss = new WebSocketServer({ noServer: true });
   const registry = new WebSocketRegistryService();
-
-  defaultHandlers.forEach((handler) => {
+  for (const handler of [...defaultHandlers, ...(options.customHandlers ?? [])])
     registry.registerHandler(handler);
-  });
-
-  if (options.customHandlers) {
-    options.customHandlers.forEach((handler) => {
-      registry.registerHandler(handler);
-    });
-  }
-
-  fastify.decorate("webSocketRegistry", registry);
-
-  fastify.server.on("upgrade", async (request, socket, head) => {
+  server.server.on("upgrade", async (request, socket, head) => {
     if (!isAuthorized(request)) {
       socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
       return;
     }
-    fastify.log.info("Upgrading browser socket...");
-    const url = request.url ?? "";
-    const params = Object.fromEntries(
-      new URL(url || "", `http://${request.headers.host}`).searchParams.entries(),
-    );
-
-    const context: WebSocketHandlerContext = {
-      fastify,
-      wss,
-      params,
-    };
-
-    const handler = registry.matchHandler(url);
-
-    if (handler) {
-      try {
-        await handler.handler(request, socket, head, context);
-      } catch (err) {
-        fastify.log.error({ err }, `WebSocket handler error for ${url}`);
-        socket.destroy();
-      }
-    } else {
-      fastify.log.info("Connecting to CDP...");
-      try {
-        await fastify.cdpService.proxyWebSocket(request, socket, head);
-      } catch (err) {
-        fastify.log.error({ err }, "CDP WebSocket error");
-        socket.destroy();
-      }
+    try {
+      const url = new URL(request.url ?? "/", "http://localhost");
+      const match = url.pathname.match(
+        /^\/v1\/sessions\/([^/]+)\/(cdp|cast|logs|recording|pageId)$/,
+      );
+      const session = server.sessionPool.get(
+        match?.[1] ?? url.searchParams.get("sessionId") ?? undefined,
+      );
+      const params = Object.fromEntries(url.searchParams);
+      const handler = registry.matchHandler(match ? `/v1/sessions/${match[2]}` : url.pathname);
+      if (handler) {
+        session.clients++;
+        session.touch();
+        socket.once("close", () => {
+          session.clients--;
+          session.touch();
+        });
+        await handler.handler(request, socket, head, { fastify: server, wss, params, session });
+      } else if (match?.[2] === "cdp" || url.pathname === "/")
+        await session.proxyWebSocket(request, socket, head);
+      else socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+    } catch {
+      socket.end("HTTP/1.1 410 Gone\r\nConnection: close\r\n\r\n");
     }
   });
+  server.addHook("onClose", async () => {
+    for (const client of wss.clients) client.terminate();
+    wss.close();
+  });
 };
-
-export default fp(browserWebSocket, { name: "browser-websocket" });
+export default fp(plugin, { name: "browser-websocket" });

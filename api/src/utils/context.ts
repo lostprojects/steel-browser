@@ -42,7 +42,7 @@ export async function extractStorageForPageWithTimeout(
       new Promise<SessionData>((resolve) => {
         timer = setTimeout(() => {
           logger.warn(
-            `[CDPService] Storage extraction timed out after ${timeoutMs}ms for ${safePageUrl(
+            `[BrowserSession] Storage extraction timed out after ${timeoutMs}ms for ${safePageUrl(
               page,
             )}; skipping page`,
           );
@@ -89,7 +89,7 @@ export async function extractStorageForPage(
         .send("Page.getFrameTree")
         .catch(() => ({ frameTree: null }));
       if (!frameTree) {
-        logger.debug(`[CDPService] Page has no valid frame tree for ${domain}`);
+        logger.debug(`[BrowserSession] Page has no valid frame tree for ${domain}`);
         return result;
       }
 
@@ -107,7 +107,7 @@ export async function extractStorageForPage(
         }
       } catch (err) {
         // Lower log level to avoid flooding logs with expected errors
-        logger.trace(`[CDPService] Could not get localStorage for ${domain}: ${err}`);
+        logger.trace(`[BrowserSession] Could not get localStorage for ${domain}: ${err}`);
       }
 
       // Get sessionStorage (note: only works for active pages)
@@ -124,7 +124,7 @@ export async function extractStorageForPage(
         }
       } catch (err) {
         // Lower log level to avoid flooding logs with expected errors
-        logger.trace(`[CDPService] Could not get sessionStorage for ${domain}: ${err}`);
+        logger.trace(`[BrowserSession] Could not get sessionStorage for ${domain}: ${err}`);
       }
 
       // Get IndexedDB databases
@@ -215,14 +215,14 @@ export async function extractStorageForPage(
         }
       } catch (err) {
         // Lower log level to avoid flooding logs with expected errors
-        logger.trace(`[CDPService] Could not get IndexedDB for ${domain}: ${err}`);
+        logger.trace(`[BrowserSession] Could not get IndexedDB for ${domain}: ${err}`);
       }
     } finally {
       // Always ensure the client session is detached
       await client.detach().catch(() => {});
     }
   } catch (err) {
-    logger.warn(`[CDPService] Error extracting storage for page: ${err}`);
+    logger.warn(`[BrowserSession] Error extracting storage for page: ${err}`);
   }
 
   return result;
@@ -298,7 +298,7 @@ export const handleFrameNavigated = async (
     const storage = storageByOrigin.get(origin);
     if (!storage) return;
 
-    logger.debug(`[CDPService] Injecting storage for navigated origin: ${origin}`);
+    logger.debug(`[BrowserSession] Injecting storage for navigated origin: ${origin}`);
 
     // Set IndexedDB if available
     if (storage.indexedDB && storage.indexedDB.length > 0) {
@@ -405,7 +405,7 @@ export const handleFrameNavigated = async (
       }
     }
   } catch (err) {
-    logger.error(`[CDPService] Error injecting storage during navigation: ${err}`);
+    logger.error(`[BrowserSession] Error injecting storage during navigation: ${err}`);
   }
 };
 

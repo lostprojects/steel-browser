@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyReply } from "fastify";
 
 interface QuickActions {
   running: number;
@@ -17,7 +17,7 @@ function quickActionsOf(engine: object): QuickActions {
 }
 
 export function heldByCommands(
-  server: FastifyInstance,
+  server: { commandEngine: import("../../services/commands/engine.js").CommandEngine | null },
   request: { body?: { proxyUrl?: string | null } },
   reply: FastifyReply,
 ): boolean {
@@ -36,7 +36,7 @@ export function heldByCommands(
 }
 
 export async function quickAction(
-  server: FastifyInstance,
+  server: { commandEngine: import("../../services/commands/engine.js").CommandEngine | null },
   request: { body?: { proxyUrl?: string | null } },
   reply: FastifyReply,
   run: () => Promise<unknown>,

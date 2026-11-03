@@ -1,7 +1,11 @@
 import { FastifyReply } from "fastify";
 import { BrowserContext, Page, HTTPResponse } from "puppeteer-core";
-import { CDPService } from "../../services/cdp/cdp.service.js";
-import { SessionService } from "../../services/session.service.js";
+import { BrowserSession } from "../../services/browser-session.js";
+import { ProxyServer } from "../../utils/proxy.js";
+interface ActionProxySource {
+  proxyFactory(url: string): IProxyServer | Promise<IProxyServer>;
+  proxyServer?: IProxyServer;
+}
 import { ScrapeFormat } from "../../types/index.js";
 import { getErrors } from "../../utils/errors.js";
 import { updateLog } from "../../utils/logging.js";
@@ -31,10 +35,10 @@ async function closeEphemeralContext(context: BrowserContext | null): Promise<vo
 }
 
 function pageProxyUrl(
-  sessionService: SessionService,
+  sessionService: ActionProxySource,
   proxy: IProxyServer | null,
 ): string | undefined {
-  return proxy?.url ?? sessionService.activeSession?.proxyServer?.url;
+  return proxy?.url ?? sessionService.proxyServer?.url;
 }
 
 export function pageLoadTimeLeft(navigationMs: number): number {
@@ -59,7 +63,7 @@ async function settleWithin(
 
 function noop() {}
 
-export async function resetPrimaryPage(browserService: CDPService): Promise<void> {
+export async function resetPrimaryPage(browserService: BrowserSession): Promise<void> {
   const abandon = new AbortController();
   await settleWithin(
     browserService.refreshPrimaryPage(abandon.signal),
@@ -68,13 +72,13 @@ export async function resetPrimaryPage(browserService: CDPService): Promise<void
   );
 }
 
-export async function waitForPageSetup(browserService: CDPService, page: Page): Promise<void> {
+export async function waitForPageSetup(browserService: BrowserSession, page: Page): Promise<void> {
   await settleWithin(browserService.waitForPageSetup(page), PAGE_SETUP_TIMEOUT_MS);
 }
 
 export const handleScrape = async (
-  sessionService: SessionService,
-  browserService: CDPService,
+  sessionService: ActionProxySource,
+  browserService: BrowserSession,
   request: ScrapeRequest,
   reply: FastifyReply,
 ) => {
@@ -374,8 +378,8 @@ export const handleScrape = async (
 };
 
 export const handleSearch = async (
-  sessionService: SessionService,
-  browserService: CDPService,
+  sessionService: ActionProxySource,
+  browserService: BrowserSession,
   request: SearchRequest,
   reply: FastifyReply,
 ) => {
@@ -485,8 +489,8 @@ export const handleSearch = async (
 };
 
 export const handleScreenshot = async (
-  sessionService: SessionService,
-  browserService: CDPService,
+  sessionService: ActionProxySource,
+  browserService: BrowserSession,
   request: ScreenshotRequest,
   reply: FastifyReply,
 ) => {
@@ -579,8 +583,8 @@ export const handleScreenshot = async (
 };
 
 export const handlePDF = async (
-  sessionService: SessionService,
-  browserService: CDPService,
+  sessionService: ActionProxySource,
+  browserService: BrowserSession,
   request: PDFRequest,
   reply: FastifyReply,
 ) => {

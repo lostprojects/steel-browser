@@ -1,5 +1,4 @@
 import { env } from "../env.js";
-import { SessionService } from "../services/session.service.js";
 import { makePassthrough, PassthroughServer } from "./passthough-proxy.js";
 import { Server } from "proxy-chain";
 

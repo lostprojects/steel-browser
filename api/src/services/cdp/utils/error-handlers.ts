@@ -53,7 +53,7 @@ export async function executeOptional<T>(
     return await operation();
   } catch (error) {
     const launchError = errorFactory(error);
-    logger.warn(`[CDPService] ${launchError.message} - continuing with launch`);
+    logger.warn(`[BrowserSession] ${launchError.message} - continuing with launch`);
     return defaultValue;
   }
 }
@@ -81,7 +81,7 @@ export async function executeBestEffort<T>(
   try {
     return await operation();
   } catch (error) {
-    logger.debug(`[CDPService] ${logMessage}: ${error}`);
+    logger.debug(`[BrowserSession] ${logMessage}: ${error}`);
     return undefined;
   }
 }

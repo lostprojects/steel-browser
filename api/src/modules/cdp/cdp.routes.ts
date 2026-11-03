@@ -1,4 +1,5 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { selectedSession } from "../sessions/sessions.controller.js";
 import { z } from "zod";
 import { $ref } from "../../plugins/schemas.js";
 import cdpSchemas from "./cdp.schemas.js";
@@ -19,11 +20,7 @@ async function routes(server: FastifyInstance) {
       request: FastifyRequest<{ Querystring: z.infer<typeof cdpSchemas.GetDevtoolsUrlSchema> }>,
       reply: FastifyReply,
     ) => {
-      return reply.redirect(
-        `${server.cdpService.getDebuggerUrl()}?ws=${server.cdpService
-          .getDebuggerWsUrl(request.query.pageId)
-          .replace("ws:", "")}`,
-      );
+      return reply.redirect(selectedSession(server, request).getDebuggerUrl());
     },
   );
 }

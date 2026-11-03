@@ -1,3 +1,4 @@
+import { sessionOptions } from "../../services/session-pool.js";
 import { FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
@@ -25,70 +26,7 @@ export const SessionCredentials = z
   .optional()
   .describe("Configuration for session credentials");
 
-const CreateSession = z.object({
-  sessionId: z.string().uuid().optional().describe("Unique identifier for the session"),
-  proxyUrl: z.string().optional().describe("Proxy URL to use for the session"),
-  userAgent: z.string().optional().describe("User agent string to use for the session"),
-  sessionContext: SessionContextSchema.optional().describe(
-    "Session context data to be used in the created session",
-  ),
-  isSelenium: z.boolean().optional().describe("Indicates if Selenium is used in the session"),
-  blockAds: z
-    .boolean()
-    .optional()
-    .describe("Flag to indicate if ads should be blocked in the session"),
-  optimizeBandwidth: z
-    .union([
-      z.boolean(),
-      z
-        .object({
-          blockImages: z.boolean().optional(),
-          blockMedia: z.boolean().optional(),
-          blockStylesheets: z.boolean().optional(),
-          blockHosts: z.array(z.string()).optional(),
-          blockUrlPatterns: z.array(z.string()).optional(),
-        })
-        .strict(),
-    ])
-    .optional()
-    .describe(
-      "Enable bandwidth optimizations. Passing true enables all flags (except hosts/patterns). Object allows granular control.",
-    ),
-  skipFingerprintInjection: z
-    .boolean()
-    .optional()
-    .describe("Flag to indicate if fingerprint injection should be skipped for this session."),
-  deviceConfig: deviceConfigSchema,
-  fullscreen: z
-    .boolean()
-    .optional()
-    .describe("Launch the browser in fullscreen mode, covering the full screen with no Chrome UI."),
-  // Specific to hosted steel
-  logSinkUrl: z.string().optional().describe("Deprecated: Log sink URL to use for the session"),
-  extensions: z.array(z.string()).optional().describe("Extensions to use for the session"),
-  persist: z.boolean().optional().describe("Flag to indicate if session should be persisted"),
-  userDataDir: z.string().optional().describe("User data directory path to use for the session"),
-  timezone: z.string().optional().describe("Timezone to use for the session"),
-  dimensions: z
-    .object({
-      width: z.number(),
-      height: z.number(),
-    })
-    .optional()
-    .describe("Dimensions to use for the session"),
-  userPreferences: z
-    .record(z.string(), z.any())
-    .optional()
-    .describe(
-      "Chrome user preferences to customize browser behavior (e.g., font size, popup blocking, notification settings)",
-    ),
-  extra: z
-    .record(z.string(), z.any())
-    .optional()
-    .describe("Extra metadata to help initialize the session"),
-  credentials: SessionCredentials,
-  headless: z.boolean().optional().describe("Headless mode for the session"),
-});
+const CreateSession = sessionOptions;
 
 const SessionDetails = z.object({
   id: z.string().uuid().describe("Unique identifier for the session"),
@@ -122,7 +60,6 @@ const SessionDetails = z.object({
     .nonnegative()
     .describe("Amount of data received through the proxy"),
   solveCaptcha: z.boolean().optional().describe("Indicates if captcha solving is enabled"),
-  isSelenium: z.boolean().optional().describe("Indicates if Selenium is used in the session"),
   deviceConfig: deviceConfigSchema,
 });
 

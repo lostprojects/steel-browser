@@ -7,7 +7,7 @@ WORKDIR /app
 ENV NODE_ENV="production" \
     PUPPETEER_CACHE_DIR=/app/.cache \
     DISPLAY=:10 \
-    PATH="/usr/bin:/app/selenium/driver:${PATH}" \
+    PATH="/usr/bin:${PATH}" \
     CHROME_BIN=/usr/bin/chromium \
     CHROME_PATH=/usr/bin/chromium
 
@@ -100,7 +100,7 @@ RUN apt-get update && \
     curl \
     unzip \
     # Download and install Chromium
-    && apt-get install -y chromium chromium-driver \
+    && apt-get install -y chromium \
     # Clean up
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
