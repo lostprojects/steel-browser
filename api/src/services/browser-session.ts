@@ -1,6 +1,7 @@
 // Owns one browser and its resources. Sessions must be created through SessionPool;
 // this class must not launch an idle browser or reuse another session's profile.
 import { EventEmitter } from "node:events";
+import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { SessionDisplay, unusedPort } from "./session-display.js";
@@ -29,6 +30,8 @@ import { InMemoryStorage } from "./cdp/instrumentation/storage/in-memory-storage
 import type { BrowserLauncherOptions } from "../types/browser.js";
 import type { SessionData } from "./context/types.js";
 import type { SessionOptions } from "./session-pool.js";
+import { QuietBrowser } from "./quiet-browser.js";
+import { QuietInput } from "./quiet-input.js";
 
 export class BrowserSession extends EventEmitter {
   readonly createdAt = new Date().toISOString();
@@ -44,6 +47,9 @@ export class BrowserSession extends EventEmitter {
   readonly engine: CommandEngine;
   readonly display = new SessionDisplay();
   private browser: Browser | null = null;
+  private quiet?: QuietBrowser;
+  private chrome?: ChildProcess;
+  private commandSetup?: Promise<void>;
   private primary: Page | null = null;
   private endpoint = "";
   private userAgent = "";
@@ -85,7 +91,7 @@ export class BrowserSession extends EventEmitter {
       this.plugins.onTargetSession.bind(this.plugins),
     );
     this.engine = new CommandEngine({
-      browser: () => this.browser,
+      browser: () => this.browser ?? this.quiet?.asBrowser() ?? null,
       waitForPageSetup: (page) => this.waitForPageSetup(page),
       endSession: async () => this.end("command"),
       filesRoot: () => this.filesPath,
@@ -95,7 +101,7 @@ export class BrowserSession extends EventEmitter {
     this.wsProxy.on("error", () => this.logger.warn({ sessionId: id }, "CDP proxy disconnected"));
   }
 
-  async launch(): Promise<Browser> {
+  async launch(): Promise<Browser | void> {
     if (this.browser) return this.browser;
     if (this.status !== "starting") throw new Error("Session cannot be relaunched");
     if (this.stopping) throw new Error("Session has ended");
@@ -119,7 +125,8 @@ export class BrowserSession extends EventEmitter {
       sessionContext: this.options.sessionContext as BrowserLauncherOptions["sessionContext"],
       blockAds: false,
     };
-    for (const hook of this.launchHooks) await hook(this.launchConfig);
+    if (this.options.mode === "agent")
+      for (const hook of this.launchHooks) await hook(this.launchConfig);
     const preferencesFile = path.join(this.profilePath, "Default", "Preferences");
     let preferences = {};
     try {
@@ -136,13 +143,54 @@ export class BrowserSession extends EventEmitter {
       ),
     );
     this.engine.prepare(this.id);
-    await this.plugins.onSessionStart(this.launchConfig);
+    if (this.options.mode === "agent") await this.plugins.onSessionStart(this.launchConfig);
     const { width, height } = this.getDimensions();
     await this.display.start(width, height, () => {
       if (!this.stopping)
         void this.end("display_exit").catch(() => this.logger.error("Display cleanup failed"));
     });
     const debugPort = await unusedPort();
+    const args = this.chromeArgs(debugPort, width, height);
+    if (this.options.mode === "quiet") {
+      if (!this.display.name) throw new Error("Quiet mode requires Linux with a session X display");
+      this.chrome = spawn(
+        getChromeExecutablePath(),
+        [...args, `--user-data-dir=${this.profilePath}`, "about:blank"],
+        { env: { ...process.env, TZ: timezone, DISPLAY: this.display.name }, stdio: "ignore" },
+      );
+      let launchError: Error | undefined;
+      this.chrome.once("error", (error) => {
+        launchError = error;
+      });
+      this.chrome.once("exit", () => {
+        if (!this.stopping)
+          void this.end("chrome_exit").catch(() =>
+            this.logger.error("Quiet browser cleanup failed"),
+          );
+      });
+      for (let i = 0; i < 300; i++) {
+        if (launchError) throw launchError;
+        if (this.chrome.exitCode !== null) throw new Error("Quiet Chrome exited during startup");
+        try {
+          const response = await fetch(`http://127.0.0.1:${debugPort}/json/version`, {
+            signal: AbortSignal.timeout(500),
+          });
+          const version = (await response.json()) as {
+            webSocketDebuggerUrl: string;
+            "User-Agent": string;
+          };
+          this.endpoint = version.webSocketDebuggerUrl;
+          this.userAgent = version["User-Agent"];
+          break;
+        } catch {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      }
+      if (!this.endpoint) throw new Error("Quiet Chrome did not publish its DevTools endpoint");
+      this.status = "live";
+      this.touch();
+      return;
+    }
     this.browser = await puppeteer.launch({
       executablePath: getChromeExecutablePath(),
       userDataDir: this.profilePath,
@@ -155,28 +203,7 @@ export class BrowserSession extends EventEmitter {
       ],
       timeout: 30_000,
       env: { ...process.env, TZ: timezone, DISPLAY: this.display.name ?? env.DISPLAY },
-      args: [
-        "--no-sandbox",
-        "--disable-dev-shm-usage",
-        "--no-first-run",
-        "--no-default-browser-check",
-        "--disable-background-networking",
-        "--disable-component-update",
-        "--disable-sync",
-        "--password-store=basic",
-        "--disable-session-crashed-bubble",
-        "--webrtc-ip-handling-policy=disable_non_proxied_udp",
-        "--force-webrtc-ip-handling-policy",
-        "--use-angle=gl",
-        "--ignore-gpu-blocklist",
-        "--ozone-platform=x11",
-        "--remote-debugging-address=127.0.0.1",
-        `--remote-debugging-port=${debugPort}`,
-        `--window-size=${width},${height}`,
-        `--lang=${this.options.locale ?? "en-US"}`,
-        "--autoplay-policy=user-gesture-required",
-        ...(this.proxyServer ? [`--proxy-server=${this.proxyServer.url}`] : []),
-      ],
+      args,
     });
     this.endpoint = this.browser.wsEndpoint();
     this.userAgent = await this.browser.userAgent();
@@ -217,6 +244,46 @@ export class BrowserSession extends EventEmitter {
     return this.browser;
   }
 
+  private chromeArgs(debugPort: number, width: number, height: number) {
+    return [
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-background-networking",
+      "--disable-component-update",
+      "--disable-sync",
+      "--password-store=basic",
+      "--disable-session-crashed-bubble",
+      "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+      "--force-webrtc-ip-handling-policy",
+      "--use-angle=gl",
+      "--ignore-gpu-blocklist",
+      "--ozone-platform=x11",
+      "--remote-debugging-address=127.0.0.1",
+      `--remote-debugging-port=${debugPort}`,
+      `--window-size=${width},${height}`,
+      `--lang=${this.options.locale ?? "en-US"}`,
+      "--autoplay-policy=user-gesture-required",
+      ...(this.proxyServer ? [`--proxy-server=${this.proxyServer.url}`] : []),
+    ];
+  }
+
+  async prepareCommands() {
+    if (this.options.mode !== "quiet") return;
+    this.commandSetup ??= (async () => {
+      if (!this.display.name || !this.endpoint) throw new Error("Quiet session is not ready");
+      const { width, height } = this.getDimensions();
+      this.quiet = await QuietBrowser.connect(
+        this.endpoint,
+        new QuietInput(this.display.name, width, height),
+      );
+      this.engine.browserLaunched(this.quiet.asBrowser());
+      this.engine.browserReady();
+    })();
+    return this.commandSetup;
+  }
+
   private setup(target: Target): Promise<void> {
     const id = (target as unknown as { _targetId: string })._targetId;
     if (!this.setups.has(id)) this.setups.set(id, this.prepareTarget(target));
@@ -236,16 +303,17 @@ export class BrowserSession extends EventEmitter {
     await this.plugins.onPageCreated(page);
   }
   async waitForPageSetup(page: Page) {
+    if (this.options.mode === "quiet") return;
     await this.setup(page.target());
   }
   touch() {
     this.lastActivity = Date.now();
   }
   getBrowserInstance() {
-    return this.browser;
+    return this.browser ?? this.quiet?.asBrowser() ?? null;
   }
   getBrowserProcess() {
-    return this.browser?.process() ?? null;
+    return this.chrome ?? this.browser?.process() ?? null;
   }
   getLaunchConfig() {
     return this.launchConfig;
@@ -269,7 +337,12 @@ export class BrowserSession extends EventEmitter {
     this.shutdownHooks.push(hook);
   }
   isRunning() {
-    return this.status === "live" && this.browser?.connected === true;
+    return (
+      this.status === "live" &&
+      (this.chrome
+        ? this.chrome.exitCode === null && this.chrome.signalCode === null
+        : this.browser?.connected === true)
+    );
   }
   getUserAgent() {
     return this.userAgent;
@@ -277,8 +350,9 @@ export class BrowserSession extends EventEmitter {
   getDimensions() {
     return this.options.dimensions ?? { width: 1920, height: 1080 };
   }
-  getAllPages() {
-    return this.browser?.pages() ?? Promise.resolve([]);
+  async getAllPages() {
+    await this.prepareCommands();
+    return this.getBrowserInstance()?.pages() ?? [];
   }
   async getPrimaryPage() {
     if (!this.primary || this.primary.isClosed())
@@ -311,8 +385,10 @@ export class BrowserSession extends EventEmitter {
     return this.browser.createBrowserContext({ proxyServer: proxyUrl });
   }
   async getCookies() {
-    if (!this.browser) throw new Error("Browser is not running");
-    const session = await this.browser.target().createCDPSession();
+    await this.prepareCommands();
+    const browser = this.getBrowserInstance();
+    if (!browser) throw new Error("Browser is not running");
+    const session = await browser.target().createCDPSession();
     try {
       return (await session.send("Storage.getCookies")).cookies;
     } finally {
@@ -330,7 +406,7 @@ export class BrowserSession extends EventEmitter {
     return { cookies: await this.getCookies(), localStorage };
   }
   getDebuggerUrl() {
-    return getUrl(`v1/sessions/${this.id}/debug`);
+    return getUrl(`v1/sessions/${this.id}/${this.options.mode === "quiet" ? "view" : "debug"}`);
   }
   getDebuggerWsUrl() {
     return `${getBaseUrl("ws").replace(/\/$/, "")}/v1/sessions/${this.id}/cdp`;
@@ -379,6 +455,9 @@ export class BrowserSession extends EventEmitter {
       proxyRxBytes: this.proxyServer?.rxBytes ?? 0,
       eventCount: 0,
       creditsUsed: 0,
+      ...(this.options.mode === "quiet"
+        ? { commandMethods: [...(this.quiet?.connection.methods ?? [])] }
+        : {}),
     };
   }
   close(reason: string): Promise<void> {
@@ -390,13 +469,20 @@ export class BrowserSession extends EventEmitter {
     this.endReason = reason;
     this.engine.sessionEnded();
     for (const socket of this.sockets) socket.destroy();
-    if (this.launchConfig) await this.plugins.onBeforeSessionEnd(this.launchConfig);
+    if (this.launchConfig && this.options.mode === "agent")
+      await this.plugins.onBeforeSessionEnd(this.launchConfig);
     const browser = this.browser;
     if (browser) await this.plugins.onBrowserClose(browser);
-    const child = browser?.process();
+    const child = this.chrome ?? browser?.process();
     const kill = setTimeout(() => child?.kill("SIGKILL"), 8000);
     try {
       await browser?.close();
+      if (this.chrome?.pid && this.chrome.exitCode === null && this.chrome.signalCode === null) {
+        const exited = new Promise<void>((resolve) => this.chrome!.once("exit", () => resolve()));
+        if (this.quiet) await this.quiet.close();
+        else this.chrome.kill("SIGTERM");
+        await exited;
+      }
     } finally {
       clearTimeout(kill);
       this.browser = null;
@@ -406,8 +492,8 @@ export class BrowserSession extends EventEmitter {
       this.status = reason === "launch_failed" || reason === "chrome_exit" ? "failed" : "released";
       this.endedAt = Date.now();
       for (const hook of this.shutdownHooks) await hook(this.launchConfig ?? null);
-      await this.plugins.onShutdown(ShutdownReason.SESSION_END);
-      if (this.launchConfig) {
+      if (this.options.mode === "agent") await this.plugins.onShutdown(ShutdownReason.SESSION_END);
+      if (this.launchConfig && this.options.mode === "agent") {
         await this.plugins.onSessionEnd(this.launchConfig);
         await this.plugins.onAfterSessionEnd(this.launchConfig);
       }

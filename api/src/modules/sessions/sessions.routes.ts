@@ -55,6 +55,7 @@ export default async function routes(server: FastifyInstance) {
   for (const route of ["/sessions/:sessionId/debug", "/sessions/debug"])
     server.get(route, async (req, reply) => {
       const session = selectedSession(server, req);
+      if (session.options.mode === "quiet") return reply.redirect(session.info().noVncUrl);
       return reply.view("live-session-streamer.ejs", {
         wsUrl: `/v1/sessions/${session.id}/cast`,
         showControls: true,
@@ -72,6 +73,12 @@ export default async function routes(server: FastifyInstance) {
     for (const route of [`/sessions/:sessionId/${action}`, `/sessions/${action}`])
       server.post(route, async (req, reply) => {
         const session = selectedSession(server, req);
+        if (session.options.mode === "quiet")
+          return reply
+            .code(409)
+            .send({
+              error: "Use the commands API for quiet-session reads and display screenshots",
+            });
         return quickAction({ commandEngine: session.engine }, req as any, reply, () =>
           handler(session, session, req as any, reply),
         );

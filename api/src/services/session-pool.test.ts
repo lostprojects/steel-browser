@@ -127,9 +127,17 @@ describe("session pool", () => {
       { identity: "../escape" },
       { isSelenium: true },
       { userDataDir: "/tmp/a" },
-      { mode: "quiet" },
+      { mode: "selenium" },
+      { mode: "quiet", headless: true },
+      { mode: "quiet", sessionContext: { cookies: [] } },
     ])
       await expect(pool.create(body)).rejects.toMatchObject({ statusCode: 400 });
+  });
+  test("accepts quiet mode with a named profile", async () => {
+    const pool = await fixture();
+    const session = await pool.create({ mode: "quiet", identity: "quiet-account" });
+    expect(session.options.mode).toBe("quiet");
+    expect(session.options.identity).toBe("quiet-account");
   });
   test("reports an unknown session without affecting a live browser", async () => {
     const pool = await fixture();

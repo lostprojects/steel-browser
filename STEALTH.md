@@ -192,3 +192,7 @@ BrowserScan reported 100% authenticity and no bot detection. Pixelscan completed
 Phase 2 is accepted. The production build passed health and session creation/release checks, including temporary-profile removal. It is the rollback target for phase 3.
 
 Checks already running when the twentieth complete exit was accepted brought this continuation to 24 complete results from 27 attempts, all 24 without a positive detection. The continuation used 61,782,678 residential bytes across 53 metered sessions. Cumulative phases 0–2 usage is 198,952,358 bytes, all Evomi Core.
+
+## Phase 3 candidate checks
+
+TypeScript passes. Eighteen focused tests passed across quiet transport/input, the session pool and commands routes. The direct-Chrome integration check reads a full accessibility tree, masks password values and evaluates in an isolated world. Native X11 input, screenshot capture and detector behavior still require production measurement.

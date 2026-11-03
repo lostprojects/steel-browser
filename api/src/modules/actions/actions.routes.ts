@@ -17,6 +17,12 @@ export default async function routes(server: FastifyInstance) {
         ? await server.sessionPool.create({ blockAds: false })
         : selectedSession(server, req);
       try {
+        if (session.options.mode === "quiet")
+          return reply
+            .code(409)
+            .send({
+              error: "Use the commands API for quiet-session reads and display screenshots",
+            });
         return await quickAction({ commandEngine: session.engine }, req as any, reply, () =>
           handler(session, session, req as any, reply),
         );

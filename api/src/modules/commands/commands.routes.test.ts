@@ -11,11 +11,13 @@ async function fixture() {
   apps.push(app);
   const one = {
     id: "one",
+    prepareCommands: vi.fn(async () => {}),
     touch: vi.fn(),
     engine: { handle: vi.fn(async () => ({ status: 200, headers: {}, body: { session: "one" } })) },
   };
   const two = {
     id: "two",
+    prepareCommands: vi.fn(async () => {}),
     touch: vi.fn(),
     engine: { handle: vi.fn(async () => ({ status: 200, headers: {}, body: { session: "two" } })) },
   };

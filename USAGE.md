@@ -1,6 +1,6 @@
 # Using the service
 
-Production runs the accepted phase 2 build with Google Chrome 156.0.8078.79 and a separate display per session. Quiet mode is being implemented.
+Production runs the accepted phase 2 build with Google Chrome 156.0.8078.79 and a separate display per session. The quiet-mode candidate is being tested.
 
 ## A session from start to finish
 
@@ -25,7 +25,7 @@ Sessions expire after ten minutes without a connected client or API activity, or
 
 Use the returned session-specific `websocketUrl` and `sessionViewerUrl`. Commands use `POST /v1/sessions/{id}/commands`; scrape, screenshot and PDF actions use the same session prefix. The old `/v1/sessions/scrape` style works only when exactly one session exists. Stateless `/v1/scrape`, `/v1/screenshot`, `/v1/pdf` and `/v1/search` create and release a temporary agent session unless supplied `sessionId` or `steel-session-id`.
 
-The service currently accepts `mode: "agent"`. Quiet mode follows in phase 3. Arbitrary profile paths, Selenium and fingerprint injection are removed.
+The candidate accepts `mode: "agent"` (default) and `mode: "quiet"`. Quiet mode requires a visible X display and uses a named profile for saved state; it rejects `headless: true` and context injection. Arbitrary profile paths, Selenium and fingerprint injection are removed.
 
 ## The API key
 
@@ -60,3 +60,13 @@ With `ENABLE_PDF_VIEWER=true`, navigating to a PDF opens Chrome's viewer instead
 ## Challenges
 
 When a site still shows a challenge, see [STEALTH.md](STEALTH.md#ddos-guard-on-annas-archive) for how DDoS-Guard's checkbox can be clicked.
+
+## Quiet-mode commands
+
+Create a session with `mode: "quiet"`, the sticky proxy and its timezone. Use its noVNC view for manual control. The commands API reads the page in isolated worlds and sends keyboard and pointer input through X11.
+
+```json
+{"commands":[{"command":"navigate","url":"https://example.com"},{"command":"snapshot","compact":false}]}
+```
+
+Quiet screenshots capture the visible display, including Chrome’s controls. Full-page and element screenshots are unavailable. Use commands for quiet reads and screenshots; the scrape, PDF and CDP casting routes return a conflict response for this mode. Raw CDP access remains available, so clients must follow the quiet policy themselves; Patchright is the measured client.

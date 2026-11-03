@@ -10,6 +10,7 @@ export default async function routes(server: FastifyInstance) {
     "/sessions/:sessionId/commands",
     async (req: FastifyRequest<{ Params: { sessionId: string } }>, reply) => {
       const session = selectedSession(server, req);
+      await session.prepareCommands();
       const key = req.headers["idempotency-key"];
       const response = await session.engine.handle({
         sessionId: session.id,

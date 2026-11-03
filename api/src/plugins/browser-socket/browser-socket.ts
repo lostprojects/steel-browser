@@ -26,6 +26,12 @@ const plugin: FastifyPluginAsync<BrowserSocketOptions> = async (server, options)
       const session = server.sessionPool.get(
         match?.[1] ?? url.searchParams.get("sessionId") ?? undefined,
       );
+      if (session.options.mode === "quiet" && match && !["cdp", "vnc"].includes(match[2])) {
+        socket.end(
+          "HTTP/1.1 409 Conflict\r\nConnection: close\r\n\r\nUse this session's noVNC view",
+        );
+        return;
+      }
       const params = Object.fromEntries(url.searchParams);
       const handler = registry.matchHandler(match ? `/v1/sessions/${match[2]}` : url.pathname);
       if (match?.[2] === "vnc") {

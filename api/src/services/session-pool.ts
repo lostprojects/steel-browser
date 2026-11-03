@@ -13,7 +13,7 @@ import { releaseStaleProfileLock } from "./cdp/utils/profile-lock.js";
 export const sessionOptions = z
   .object({
     sessionId: z.string().uuid().optional(),
-    mode: z.enum(["agent"]).default("agent"),
+    mode: z.enum(["agent", "quiet"]).default("agent"),
     identity: z
       .string()
       .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/)
@@ -55,7 +55,22 @@ export const sessionOptions = z
       .optional(),
     sessionContext: SessionContextSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((options, ctx) => {
+    if (options.mode === "quiet" && options.headless)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["headless"],
+        message: "Quiet mode requires a visible X display",
+      });
+    if (options.mode === "quiet" && options.sessionContext)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["sessionContext"],
+        message:
+          "Quiet mode uses a named profile for saved state; context injection is unavailable",
+      });
+  });
 export type SessionOptions = z.infer<typeof sessionOptions>;
 export class PoolError extends Error {
   constructor(
@@ -264,9 +279,9 @@ export class SessionPool {
         await rm(session.profilePath, { recursive: true, force: true });
         try {
           await access(session.profilePath);
-          throw new Error('Temporary profile still exists after cleanup');
+          throw new Error("Temporary profile still exists after cleanup");
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
           session.temporaryProfileRemoved = true;
         }
       }
@@ -310,7 +325,12 @@ export class SessionPool {
         }),
     );
   }
-  async drain(ms = Math.max(0, Number(process.env.RAILWAY_DEPLOYMENT_DRAINING_SECONDS ?? 120) * 1000 - 10_000)) {
+  async drain(
+    ms = Math.max(
+      0,
+      Number(process.env.RAILWAY_DEPLOYMENT_DRAINING_SECONDS ?? 120) * 1000 - 10_000,
+    ),
+  ) {
     this.stopping = true;
     clearInterval(this.timer);
     for (const item of this.queue.splice(0)) {

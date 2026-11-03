@@ -57,3 +57,7 @@ Values live in two files and nowhere else, under the same names:
 The Railway token for `rw` is `RAILWAY_TOKEN` in `global.env`, a workspace token for the "Projects" workspace.
 
 The launch profile now includes the measured WebGL and WebRTC flags in code. Legacy fingerprint and extra Chrome-argument variables are unused. Browserbase remains the client fallback; this phase does not change Mosaic scripts.
+
+## Phase 3 candidate
+
+Quiet Chrome is launched directly with the same pinned binary and per-session display. The commands connection starts when first requested. It permits isolated-world reads, refuses instrumentation domains and sends input through `xdotool`; `ffmpeg` captures the display. These programs were installed by phase 2. No new Railway variables are required. The accepted phase 2 deployment remains the rollback target while quiet mode is tested.
