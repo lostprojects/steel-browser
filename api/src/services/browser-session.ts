@@ -37,6 +37,7 @@ export class BrowserSession extends EventEmitter {
   clients = 0;
   status: "starting" | "live" | "released" | "failed" = "starting";
   endReason?: string;
+  temporaryProfileRemoved = false;
   endedAt?: number;
   proxyServer?: IProxyServer;
   readonly filesPath: string;
@@ -358,6 +359,7 @@ export class BrowserSession extends EventEmitter {
       identity: this.options.identity,
       duration: (this.endedAt ?? Date.now()) - this.startedAt,
       endReason: this.endReason,
+      temporaryProfileRemoved: this.temporaryProfileRemoved,
       timeout: 600_000,
       websocketUrl: this.getDebuggerWsUrl(),
       debugUrl: this.getDebuggerUrl(),

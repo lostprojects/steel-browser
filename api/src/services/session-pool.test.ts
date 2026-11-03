@@ -28,10 +28,12 @@ async function fixture(options: PoolOptions = {}) {
         s.endReason = reason;
       }),
       endReason: "",
+      temporaryProfileRemoved: false,
       info: () => ({
         id,
         status: s.status,
         endReason: s.endReason,
+        temporaryProfileRemoved: s.temporaryProfileRemoved,
         proxyTxBytes: 0,
         proxyRxBytes: 0,
         duration: 1,
@@ -63,6 +65,7 @@ describe("session pool", () => {
     await pool.release(first.id);
     await expect(stat(first.profilePath)).rejects.toMatchObject({ code: "ENOENT" });
     expect(sessions[1].status).toBe("live");
+    expect(pool.details(first.id).temporaryProfileRemoved).toBe(true);
   });
   test("locks a named identity before launch and preserves it across pool replacement", async () => {
     const pool = await fixture();

@@ -1,7 +1,7 @@
 // Coordinates exclusive profile ownership and browser lifetimes. It must not reuse
 // a throwaway profile, expose proxy credentials, or start browsers between jobs.
 import { randomUUID } from "node:crypto";
-import { mkdtemp, mkdir, rm, readlink } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, readlink, access } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { FastifyBaseLogger } from "fastify";
@@ -260,8 +260,16 @@ export class SessionPool {
     const work = (async () => {
       await this.launching.get(id)?.catch(() => undefined);
       await session.close(reason);
-      if (!session.options.identity)
+      if (!session.options.identity) {
         await rm(session.profilePath, { recursive: true, force: true });
+        try {
+          await access(session.profilePath);
+          throw new Error('Temporary profile still exists after cleanup');
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          session.temporaryProfileRemoved = true;
+        }
+      }
       const info = session.info();
       this.history.set(id, info);
       while (this.history.size > 100) this.history.delete(this.history.keys().next().value!);

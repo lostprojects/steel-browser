@@ -19,7 +19,7 @@ Release every session. The service allows three independent sessions. A fourth w
 
 `identity: "ancestry"` keeps a named profile under `/data/profiles`. Names may contain letters, digits, underscores and hyphens. A second claim on a name receives HTTP 409. Without an identity, the profile is unique and deleted on release.
 
-Sessions expire after ten minutes without a connected client or API activity, or after three hours regardless of activity. The released session reports `endReason` and settled `proxyTxBytes` / `proxyRxBytes`. A browser crash ends that session without launching an idle replacement.
+Sessions expire after ten minutes without a connected client or API activity, or after three hours regardless of activity. A released throwaway session reports `temporaryProfileRemoved: true` only after a filesystem check confirms its profile is gone. The response also reports `endReason` and settled `proxyTxBytes` / `proxyRxBytes`. A browser crash ends that session without launching an idle replacement.
 
 Use the returned session-specific `websocketUrl` and `sessionViewerUrl`. Commands use `POST /v1/sessions/{id}/commands`; scrape, screenshot and PDF actions use the same session prefix. The old `/v1/sessions/scrape` style works only when exactly one session exists. Stateless `/v1/scrape`, `/v1/screenshot`, `/v1/pdf` and `/v1/search` create and release a temporary agent session unless supplied `sessionId` or `steel-session-id`.
 
