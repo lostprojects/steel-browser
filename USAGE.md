@@ -1,6 +1,6 @@
 # Using the service
 
-Production runs the accepted phase 2 build with Google Chrome 156.0.8078.79 and a separate display per session. The quiet-mode candidate is being tested.
+Production runs the accepted phase 2 build with Google Chrome 156.0.8078.79 and a separate display per session. Quiet mode is committed but unaccepted because route validation stopped within the residential budget; it is unavailable on the phase 2 rollback image.
 
 ## A session from start to finish
 
@@ -63,7 +63,7 @@ When a site still shows a challenge, see [STEALTH.md](STEALTH.md#ddos-guard-on-a
 
 ## Quiet-mode commands
 
-Create a session with `mode: "quiet"`, the sticky proxy and its timezone. Use its noVNC view for manual control. The commands API reads the page in isolated worlds and sends keyboard and pointer input through X11.
+On the unaccepted phase 3 candidate, create a session with `mode: "quiet"`, the sticky proxy and its timezone. Use its noVNC view for manual control. The commands API reads the page in isolated worlds and sends keyboard and pointer input through X11.
 
 ```json
 {"commands":[{"command":"navigate","url":"https://example.com"},{"command":"snapshot","compact":false}]}

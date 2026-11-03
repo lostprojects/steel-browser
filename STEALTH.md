@@ -193,6 +193,35 @@ Phase 2 is accepted. The production build passed health and session creation/rel
 
 Checks already running when the twentieth complete exit was accepted brought this continuation to 24 complete results from 27 attempts, all 24 without a positive detection. The continuation used 61,782,678 residential bytes across 53 metered sessions. Cumulative phases 0–2 usage is 198,952,358 bytes, all Evomi Core.
 
-## Phase 3 candidate checks
+## Phase 3 measurements and stopping point
 
-TypeScript passes. Eighteen focused tests passed across quiet transport/input, the session pool and commands routes. The direct-Chrome integration check reads a full accessibility tree, masks password values and evaluates in an isolated world. Native X11 input, screenshot capture and detector behavior still require production measurement.
+Quiet mode is implemented but has not passed route acceptance. TypeScript passed, as did 18 focused tests across quiet transport/input, the session pool and commands routes. One further proxy test passed after the live-byte accounting correction described below.
+
+Direct production checks used zero residential bytes. A quiet session started with no commands connection. Its full snapshot masked a password, and its commands ran in an isolated world. Native clicks reported `isTrusted: true` and display-relative screen coordinates. Typing preserved accented text, quotes and shell punctuation; an ffmpeg screenshot showed the expected 1920×1080 display. A native click also activated a button inside a cross-origin iframe. Releases confirmed temporary-profile removal.
+
+Two input fixes were needed. `xdotool mousemove --sync` could wait until its timeout when the pointer was already at the destination, so native movement no longer uses that option. The helper now uses `C.UTF-8` because the image’s original locale rejected accented input. Both corrected behaviors passed the direct checks.
+
+The residential detector checks enabled the commands reader before loading each detector, then ran a full accessibility snapshot and native click on the detector page. The command-method audit recorded `Accessibility.getFullAXTree`, with no `Runtime.enable`, CDP `Input`, `Network`, `Log` or `Fetch` calls from the service adapter. Patchright remained connected as the measurement client.
+
+| Check | Quiet result |
+|---|---|
+| Device and Browser Info | 2/2 complete, no flags |
+| Rebrowser | 2/2 complete, each with 17 green and three accepted neutral checks |
+| Full snapshot and native click during both detector pages | Completed in both sessions |
+| Google Chrome brand; webdriver false; exit timezone | Matched in both sessions |
+| Page, dedicated, shared and service worker cores | Eight in the one full fingerprint probe |
+| CreepJS | One full probe: zero lies, 0% headless and 0% stealth |
+| WebRTC | One full probe: no leak; remote IP matched the exit |
+| WebGL | The same ANGLE/llvmpipe renderer in both sessions |
+
+Both sessions used Chrome 156.0.8078.79. The full probe used exit `97.220.240.104`, timezone `America/New_York`; BrowserLeaks’ highest TCP score was Android at 53%. The route pilot used `38.175.233.124`, timezone `America/Chicago`; its highest TCP score was Android at 54%. These probabilistic scores do not identify the exit’s actual OS.
+
+The pilot completed one Anna’s Archive attempt. It failed after 84.68 seconds with zero search-result links and a DDoS-Guard checkbox visible in the captured display. Its new-exit retry was not run. Bizapedia was interrupted when the session was released to stop spending; no completed result was counted. The other four routes were not run. The required 20 runs per route, at least ten exits and baseline comparison remain unfulfilled.
+
+The full quiet probe used 43,835,996 bytes, plus an 87,237-byte timezone preflight. The interrupted pilot used 32,222,503 bytes, plus an 85,693-byte preflight. The source of this higher traffic has not been isolated.
+
+Live byte totals exposed a defect in the inherited proxy accounting: they included closed connections only. Open tunnels were added when the session ended, so the live budget monitor substantially understated spending. Route-level deltas from that build are consequently unreliable; the settled session totals above include the open tunnels. Commit `6bee0ba` corrects the getters to add active-tunnel statistics and tests that closing a tunnel does not count its bytes twice. This correction is part of the unaccepted candidate, not the phase 2 rollback image.
+
+Phase 3 measurements used 76,231,429 residential bytes across four metered sessions. Cumulative usage across all phases and attempts is 275,183,787 bytes across 187 metered sessions, all Evomi Core. Residential checks stopped with 24,816,213 bytes remaining under the owner’s 300 MB ceiling; this cannot support the outstanding route acceptance set at the measured costs. A continuation needs authorization for more traffic and should diagnose the excess traffic before repeating the batch.
+
+The bot tests did not detect the accessibility read, so the isolated-DOM fallback was not needed. Phase 3 remains unaccepted because its route checks are incomplete. Production was restored from accepted phase 2 deployment `6ffa7417-bc73-4f16-8090-59ed3c929e4a`. The restored image passed health, session creation and CDP checks; release confirmed temporary-profile removal and zero residential bytes. Quiet mode and the accounting correction remain committed for continuation. Browserbase remains available, and Mosaic’s scripts are unchanged.
