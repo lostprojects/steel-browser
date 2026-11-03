@@ -88,6 +88,26 @@ start_nginx() {
     fi
 }
 
+# Start the virtual display that headful Chrome draws on. Without it a
+# headful launch fails with "Missing X server or $DISPLAY". The screen size
+# is what pages read from window.screen, so keep it a common desktop size.
+start_xvfb() {
+    log "Starting Xvfb on $DISPLAY (${XVFB_SCREEN:-1920x1080x24})..."
+    rm -f "/tmp/.X${DISPLAY#:}-lock"
+    Xvfb "$DISPLAY" -screen 0 "${XVFB_SCREEN:-1920x1080x24}" -nolisten tcp -ac &
+    attempt=1
+    while [ $attempt -le 10 ]; do
+        if [ -S "/tmp/.X11-unix/X${DISPLAY#:}" ]; then
+            log "Xvfb started"
+            return 0
+        fi
+        attempt=$((attempt + 1))
+        sleep 0.5
+    done
+    echo "ERROR: Xvfb failed to start on $DISPLAY"
+    return 1
+}
+
 # Main execution
 main() {
     # Parse arguments
@@ -108,7 +128,8 @@ main() {
     # Set required environment variables
     export CDP_REDIRECT_PORT=9223
     export DISPLAY=:10
-    
+    start_xvfb || exit 1
+
     # Log environment state
     log "Environment configuration:"
     log "HOST=$HOST"
