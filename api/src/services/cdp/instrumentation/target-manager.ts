@@ -9,6 +9,7 @@ import { attachExtensionEvents } from "./extension-events.js";
 import { attachWorkerEvents } from "./worker-events.js";
 import type { AttachWorkerEventsOptions } from "./worker-events.js";
 import { BrowserLogger } from "./browser-logger.js";
+import { env } from "../../../env.js";
 import type { TargetSessionContext } from "../plugins/core/base-plugin.js";
 
 const INTERNAL_EXTENSIONS = new Set<string>([
@@ -221,6 +222,7 @@ export class TargetInstrumentationManager {
 
     const enable = async (domain: string) => {
       if (enabledDomains.has(domain)) return;
+      if (!env.CAPTURE_CONSOLE_EVENTS && (domain === "Runtime" || domain === "Log")) return;
       try {
         await session.send(`${domain}.enable` as any);
         enabledDomains.add(domain);

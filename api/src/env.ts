@@ -37,6 +37,13 @@ const envSchema = z.object({
     .optional()
     .transform((val) => val === "true" || val === "1")
     .default("false"),
+  // Enabling Runtime and Log on a target makes Chrome serialize console
+  // messages, which pages detect. False keeps page console output out of logs.
+  CAPTURE_CONSOLE_EVENTS: z
+    .string()
+    .optional()
+    .transform((val) => val !== "false" && val !== "0")
+    .default("true"),
   LOG_CUSTOM_EMIT_EVENTS: z
     .string()
     .optional()
