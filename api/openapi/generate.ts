@@ -1,35 +1,17 @@
-import { writeFileSync } from "fs";
-import { server } from "../src";
-import { env } from "../src/env.js";
+import { writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { schemas } from "../src/plugins/schemas.js";
 
-interface OpenAPIServer {
-  url: string;
-  description?: string;
-}
-
-interface OpenAPIDocument {
-  servers?: OpenAPIServer[];
-  [key: string]: any;
-}
-
-server.ready(() => {
-  let openApiJSON = server.swagger() as OpenAPIDocument;
-
-  // Add server URL from environment variables.
-  const serverUrl = `http://${env.HOST}:${env.PORT}`;
-  if (!openApiJSON.servers) {
-    openApiJSON.servers = [];
-  }
-  openApiJSON.servers.push({
-    url: serverUrl,
-    description: "Local server from env variables",
-  });
-
-  writeFileSync("./openapi/schemas.json", JSON.stringify(openApiJSON, null, 2), "utf-8");
-  console.log("OpenAPI JSON has been written to schemas.json");
-
-  server.close(() => {
-    console.log("Server closed after generating schemas.");
-    process.exit(0);
-  });
-});
+// Export shared models for the UI without starting the API or browser services.
+// The running service publishes its route documentation at /documentation.
+const document = {
+  openapi: "3.0.3",
+  info: { title: "Mosaic Steel Browser models", version: "0.5.3" },
+  paths: {},
+  components: {
+    schemas: Object.fromEntries(schemas.map(({ $id, ...schema }) => [$id, schema])),
+  },
+};
+const output = fileURLToPath(new URL("./schemas.json", import.meta.url));
+writeFileSync(output, JSON.stringify(document, null, 2) + "\n");
+console.log(`Wrote ${schemas.length} API models to ${output}`);

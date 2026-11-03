@@ -7,7 +7,7 @@ assignees: ''
 
 ---
 
-Issue tracker is **ONLY** used for reporting bugs. New features should be discussed in our [Discord server](https://discord.gg/steel-dev).
+Report bugs in the Mosaic fork here. Use the feature request template for proposed changes.
 
 **Describe the bug**
 A clear and concise description of what the bug is.

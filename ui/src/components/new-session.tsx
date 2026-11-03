@@ -1,18 +1,9 @@
 import { useRef, useState, type FormEvent } from "react";
 import { createSession } from "../api";
 import { KeyChip } from "./key-chip";
-import { Segmented } from "./segmented";
-
-type Device = "desktop" | "mobile";
-
-const devices = [
-  { value: "desktop", label: "Desktop" },
-  { value: "mobile", label: "Mobile" },
-] as const;
 
 export function NewSessionButton({ onStarted }: { onStarted: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [device, setDevice] = useState<Device>("desktop");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,15 +23,13 @@ export function NewSessionButton({ onStarted }: { onStarted: () => void }) {
     setError(null);
     try {
       await createSession({
-        deviceConfig: { device },
         dimensions: width && height ? { width: Number(width), height: Number(height) } : undefined,
-        userAgent: text("userAgent"),
+        identity: text("identity"),
         proxyUrl: text("proxyUrl"),
-        blockAds: data.get("blockAds") === "on",
+        timezone: text("timezone"),
       });
       dialog.current?.close();
       form.reset();
-      setDevice("desktop");
       onStarted();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -76,14 +65,10 @@ export function NewSessionButton({ onStarted }: { onStarted: () => void }) {
               Start a new session
             </h2>
             <p id="new-session-description" className="dialog-description">
-              Configure options and start a new session. The current browser closes.
+              Start an independent browser. Use a named profile to retain its saved state.
             </p>
           </div>
           <div className="dialog-body">
-            <div className="field">
-              <span>Device</span>
-              <Segmented label="Device" value={device} onChange={setDevice} options={devices} />
-            </div>
             <div className="field" role="group" aria-labelledby="viewport-label">
               <span id="viewport-label">Viewport</span>
               <div className="viewport-inputs">
@@ -93,7 +78,7 @@ export function NewSessionButton({ onStarted }: { onStarted: () => void }) {
                   type="number"
                   inputMode="numeric"
                   min={320}
-                  max={7680}
+                  max={3840}
                   placeholder="1920"
                   aria-label="Width"
                 />
@@ -104,7 +89,7 @@ export function NewSessionButton({ onStarted }: { onStarted: () => void }) {
                   type="number"
                   inputMode="numeric"
                   min={240}
-                  max={4320}
+                  max={2160}
                   placeholder="1080"
                   aria-label="Height"
                 />
@@ -112,11 +97,13 @@ export function NewSessionButton({ onStarted }: { onStarted: () => void }) {
               <p className="field-hint">Leave empty to use the default size.</p>
             </div>
             <label className="field">
-              <span>User agent</span>
+              <span>Profile name</span>
               <input
                 className="input"
-                name="userAgent"
-                placeholder="Default"
+                name="identity"
+                placeholder="Temporary profile"
+                pattern="[a-zA-Z0-9]([a-zA-Z0-9_]|-){0,63}"
+                maxLength={64}
                 autoComplete="off"
                 spellCheck={false}
               />
@@ -132,18 +119,18 @@ export function NewSessionButton({ onStarted }: { onStarted: () => void }) {
                 spellCheck={false}
               />
             </label>
-            <label className="switch-row">
-              <span className="switch-text">
-                <span>Block ads</span>
-                <span className="field-hint">Blocks requests to known ad hosts.</span>
-              </span>
+            <label className="field">
+              <span>Timezone</span>
               <input
-                className="switch"
-                name="blockAds"
-                type="checkbox"
-                role="switch"
-                defaultChecked
+                className="input"
+                name="timezone"
+                placeholder="America/New_York"
+                autoComplete="off"
+                spellCheck={false}
               />
+              <p className="field-hint">
+                Use the timezone of the proxy exit when supplying a proxy.
+              </p>
             </label>
             {error && (
               <p className="dialog-error" role="alert">

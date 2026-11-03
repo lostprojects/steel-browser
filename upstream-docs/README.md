@@ -1,3 +1,5 @@
+> Archived upstream guidance. For this fork’s current setup, use the [root README](../README.md#local-development) and [deployment guide](../DEPLOYMENT.md). Historical commands below may refer to removed features.
+
 <br />
 <p align="center">
 <a href="https://steel.dev">
@@ -108,7 +110,7 @@ DOCKER_DEFAULT_PLATFORM=linux/arm64 docker compose up
 
 ## Quickstart for Contributors
 
-When developing locally, you will need to run the [`docker-compose.dev.yml`](../docker-compose.dev.yml) file instead of the default [`docker-compose.yml`](../docker-compose.yml) file so that your local changes are reflected. Doing this will build the Docker images from the [`api`](../api) and [`ui`](../ui) directories and run the server and UI on port 3000 and 5173 respectively.
+When developing locally, you will need to run the [`docker-compose.dev.yml`](https://github.com/lostprojects/steel-browser/blob/2b4851d6473f80a4994e944bd060c94539f96166/docker-compose.dev.yml) file instead of the default [`docker-compose.yml`](../docker-compose.yml) file so that your local changes are reflected. Doing this will build the Docker images from the [`api`](../api) and [`ui`](../ui) directories and run the server and UI on port 3000 and 5173 respectively.
 
 ```bash
 docker compose -f docker-compose.dev.yml up

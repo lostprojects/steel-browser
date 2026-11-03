@@ -162,8 +162,3 @@ export function formatBytes(bytes: number): string {
   }
   return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
 }
-
-export function formatProxy(proxy: string): string {
-  const host = URL.canParse(proxy) ? new URL(proxy).host : "";
-  return host || proxy.slice(proxy.lastIndexOf("@") + 1);
-}

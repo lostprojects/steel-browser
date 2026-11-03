@@ -8,7 +8,9 @@ Anti-bot systems look for contradictions more than for any single unusual value.
 
 So the browser reports itself truthfully and consistently, as an ordinary Linux desktop. It spoofs nothing it can make true instead, and every fix removes a contradiction or an automation trace.
 
-All measurements below were taken with [mosaic/stealth_check.py](mosaic/stealth_check.py) through Evomi Core Residential, on 2 and 3 November 2026.
+The measurements below were taken with [mosaic/stealth_check.py](mosaic/stealth_check.py) on 2 and 3 November 2026. Most use Evomi Core Residential; the early route table identifies the Premium comparison.
+
+The early sections describe the former singleton browser. Phase 2 replaces its launch setup, and [phase 3 acceptance](#phase-3-acceptance) supplies the current route results and byte accounting.
 
 ## Signals
 
@@ -52,7 +54,7 @@ The six Mosaic collector routes that used Browserbase's residential proxy. A rou
 | Newspapers.com sign-in | Pass | not run | Pass, 5 s, 809 KB | Pass, 5 s, 1,096 KB | Pass, 7 s, 836 KB |
 | Fold3 login | Pass | not run | Pass, 5 s, 737 KB | Pass, 7 s, 734 KB | Pass, 6 s, 564 KB |
 
-Premium Residential passed nothing that Core failed, so the IP was never the cause. Use Core.
+Premium Residential passed nothing that Core failed in this early comparison. Core remains the default; these samples do not establish that exit IPs have no effect.
 
 ## DDoS-Guard on Anna's Archive
 
@@ -60,14 +62,7 @@ DDoS-Guard runs an automatic check for about 4 seconds. When it fails, the page 
 
 The checkbox is drawn inside `#ddg-iframe` at about (+64, +36) from the iframe's top-left corner, which is narrower than the iframe itself. A mouse click there, after a pause and a moved pointer, is accepted. DDoS-Guard then shows a distorted-text CAPTCHA ("Type the text", with Refresh and Verify).
 
-Since WebGL and the PDF plugins were added, the automatic check passes in 3 of 4 runs and the page loads its results without any checkbox. The failing run left through a different exit IP. Whether a retry on a new sticky session then passes has not been measured yet.
-
-## Next steps
-
-1. Give Mosaic a Steel backend in `scripts/browser/api.py` and move the collector routes to it, keeping Browserbase as a fallback.
-2. Handle a DDoS-Guard fallback: retry once on a new sticky session, then click the checkbox and read the text CAPTCHA from a screenshot.
-3. Watch the one remaining unusual value, 48 cores. CDP can override `navigator.hardwareConcurrency`, but an override that workers do not share would add a contradiction, so leave it unless a site is seen to care.
-4. Keep the client timezone lookup through the sticky exit. The earlier measurements do not separate IP rotation from geolocation database differences.
+In the early singleton measurements, WebGL and the PDF plugins brought the automatic check to 3 of 4 passes. The later phase 3 set achieved 19/20 initially and 20/20 with the allowed new-exit retry; see [the accepted results](#phase-3-acceptance).
 
 ## Measuring detection
 

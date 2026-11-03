@@ -4,12 +4,8 @@
   "sideEffects": false,
   "type": "module",
   "scripts": {
-    "start": "tsx ./src/script.ts",
-    "commands": "tsx ./src/commands.ts",
-    "demo": "tsx ./src/demo.ts"
-  },
-  "dependencies": {
-    "puppeteer-core": "^24.2.0"
+    "start": "tsx ./src/commands.ts",
+    "commands": "tsx ./src/commands.ts"
   },
   "devDependencies": {
     "tsx": "*"

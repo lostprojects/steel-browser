@@ -1,45 +1,28 @@
 services:
-  api:
-    image: ghcr.io/steel-dev/steel-browser-api:latest
+  steel:
+    build: .
+    platform: linux/amd64
     ports:
-      - "3000:3000"
-      - "9223:9223"
+      - "127.0.0.1:3000:3000"
     volumes:
-      - logs:/data/logs
-      - exports:/tmp/steel-browser-exports
+      - profiles:/data
     environment:
-      - DOMAIN=${DOMAIN:-localhost:3000}
-      - CDP_DOMAIN=${CDP_DOMAIN:-localhost:9223}
-      - LOG_STORAGE_ENABLED=true
-      - LOG_STORAGE_PATH=/data/logs/browser-logs.duckdb
+      DOMAIN: localhost:3000
+      USE_SSL: "false"
+      STEEL_API_KEY: ${STEEL_API_KEY:?Set STEEL_API_KEY before starting Steel}
+      CHROME_HEADLESS: "false"
+      ENABLE_COMMANDS_API: "true"
+      CAPTURE_CONSOLE_EVENTS: "false"
+      ENABLE_PDF_VIEWER: "true"
+      MAX_SESSIONS: "3"
+      RAILWAY_DEPLOYMENT_DRAINING_SECONDS: "120"
+    stop_grace_period: 130s
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:3000/v1/health"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
-    networks:
-      - steel-network
-
-  ui:
-    image: ghcr.io/steel-dev/steel-browser-ui:latest
-    ports:
-      - "5173:80"
-    environment:
-      - API_URL=${API_URL:-http://api:3000}
-    depends_on:
-      api:
-        condition: service_healthy
-    networks:
-      - steel-network
-
-networks:
-  steel-network:
-    name: steel-network
-    driver: bridge
 
 volumes:
-  logs:
-    driver: local
-  exports:
-    driver: local
+  profiles:

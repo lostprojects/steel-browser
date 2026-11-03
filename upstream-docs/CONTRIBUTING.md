@@ -1,3 +1,5 @@
+> Archived upstream guidance. For this fork’s current setup, use the [root README](../README.md#local-development) and [deployment guide](../DEPLOYMENT.md). Historical commands below may refer to removed features.
+
 # Contributing to Steel Browser
 
 Welcome to Steel Browser! 🎉 We're excited that you're interested in contributing to our open-source browser API. This guide will help you get started and make your first contribution.
@@ -365,7 +367,7 @@ Then attach a debugger, for example Chrome DevTools at `chrome://inspect`. The [
 
 ## 🚀 Release Process
 
-Releases are automated by [`release.yml`](../.github/workflows/release.yml), which runs on every push to `main`:
+Releases are automated by [`release.yml`](https://github.com/lostprojects/steel-browser/blob/2b4851d6473f80a4994e944bd060c94539f96166/.github/workflows/release.yml), which runs on every push to `main`:
 
 1. **Version bump**: Picks the next version from commit messages. `breaking`, `breaking-change`, or `major` bumps the major version. Anything else, including `feat`, bumps the patch version.
 2. **Tag**: Tags the version with a `-beta` suffix, such as `v0.5.4-beta`. If that tag already exists, the release is skipped.

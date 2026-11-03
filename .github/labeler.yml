@@ -13,10 +13,8 @@ ui:
 documentation:
 - changed-files:
   - any-glob-to-any-file: 
-    - 'docs/**/*'
+    - 'upstream-docs/**/*'
     - '*.md'
-    - 'README.md'
-    - 'CONTRIBUTING.md'
   
 plugin-system:
 - changed-files:
@@ -31,7 +29,8 @@ cdp:
 session-management:
 - changed-files:
   - any-glob-to-any-file:
-    - 'api/src/services/session.service.ts'
+    - 'api/src/services/session-pool.ts'
+    - 'api/src/services/browser-session.ts'
     - 'api/src/modules/sessions/**/*'
   
 file-storage:
@@ -44,8 +43,7 @@ docker:
 - changed-files:
   - any-glob-to-any-file:
     - 'docker-compose*.yml'
-    - 'api/Dockerfile'
-    - 'ui/Dockerfile'
+    - 'Dockerfile'
     - '.dockerignore'
 
 dependencies:
@@ -69,4 +67,4 @@ testing:
     - '**/*.test.js'
     - '**/*.spec.ts'
     - '**/*.spec.js'
-    - 'tsconfig.test.json' 
+    - 'tsconfig.test.json'

@@ -10,10 +10,12 @@ type CommandResult = {
 type CommandResponse = {
   next?: string;
   page: { tab: string; url: string; title: string } | null;
+  execution: { id: string; state: string; error?: { code: string; message: string } };
   results: CommandResult[];
 };
 
-const apiUrl = process.env.STEEL_API_URL ?? "http://localhost:3000";
+const apiUrl = (process.env.STEEL_URL ?? "http://localhost:3000").replace(/\/$/, "");
+const apiKey = process.env.STEEL_API_KEY;
 
 async function post<T>(
   path: string,
@@ -22,8 +24,13 @@ async function post<T>(
 ): Promise<T> {
   const response = await fetch(`${apiUrl}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...(apiKey ? { "steel-api-key": apiKey } : {}),
+      ...headers,
+    },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(70_000),
   });
   if (response.status === 404 && path.endsWith("/commands")) {
     throw new Error("The Commands API is off. Start the server with ENABLE_COMMANDS_API=true.");
@@ -36,9 +43,23 @@ async function post<T>(
 }
 
 async function runCommands(sessionId: string, body: object): Promise<CommandResponse> {
-  const response = await post<CommandResponse>(`/v1/sessions/${sessionId}/commands`, body, {
+  const path = `/v1/sessions/${sessionId}/commands`;
+  let response = await post<CommandResponse>(path, body, {
     "Idempotency-Key": randomUUID(),
   });
+  const deadline = Date.now() + 120_000;
+  while (["queued", "running"].includes(response.execution.state)) {
+    if (Date.now() >= deadline) throw new Error("Commands did not finish within two minutes");
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    response = await post<CommandResponse>(path, {
+      commands: [{ command: "status", execution: response.execution.id }],
+    });
+  }
+  if (response.execution.state !== "completed") {
+    throw new Error(
+      `Execution ${response.execution.state}: ${response.execution.error?.message ?? "no result"}`,
+    );
+  }
   const failed = response.results.find((result) => !result.ok);
   if (failed) {
     throw new Error(`Command failed: ${failed.error?.code} ${failed.error?.message}`);
@@ -47,7 +68,9 @@ async function runCommands(sessionId: string, body: object): Promise<CommandResp
 }
 
 async function run() {
-  const session = await post<{ id: string }>("/v1/sessions", {});
+  const session = await post<{ id: string }>("/v1/sessions", {
+    mode: process.env.STEEL_MODE ?? "agent",
+  });
 
   try {
     const opened = await runCommands(session.id, {
@@ -78,4 +101,4 @@ async function run() {
   }
 }
 
-run().catch(console.error);
+await run();

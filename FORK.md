@@ -22,7 +22,7 @@ Phase 3 is accepted with quiet mode and accurate live proxy metering. Full snaps
 | `9933006` | `api/src/env.ts`, `api/src/services/cdp/instrumentation/target-manager.ts` | Optional `CAPTURE_CONSOLE_EVENTS` | Steel's target manager enables `Runtime` and `Log` on every page and worker to log console output. Chrome then serializes console arguments, which pages detect. `false` skips those two domains |
 | `fc2ee5f` | `api/src/env.ts`, `api/src/utils/browser.ts`, `api/src/services/session.service.ts`, `api/src/services/cdp/cdp.service.ts` | Optional `ENABLE_PDF_VIEWER` | Upstream disables the PDF viewer so PDFs download, which leaves `navigator.plugins` empty, unlike any desktop Chrome. Both default-preference sites now share `defaultPluginPreferences()` |
 
-WebGL needed no code. Upstream's `FILTER_CHROME_ARGS` and `CHROME_ARGS` variables remove and add the flags; see [DEPLOYMENT.md](DEPLOYMENT.md#railway-variables).
+The current launch profile defines the measured WebGL flags in code. Legacy `FILTER_CHROME_ARGS` and `CHROME_ARGS` settings have no effect.
 
 ## Repository
 
@@ -32,7 +32,7 @@ WebGL needed no code. Upstream's `FILTER_CHROME_ARGS` and `CHROME_ARGS` variable
 | Root `README.md`, `USAGE.md`, `DEPLOYMENT.md`, `STEALTH.md` and this file | The fork's own documentation |
 | [mosaic/stealth_check.py](mosaic/stealth_check.py) | Measures detection signals and runs the collector routes against the deployed service ([STEALTH.md](STEALTH.md#measuring-detection)) |
 
-`.github/` is upstream's and unchanged. Its workflows and labeler still name the old `docs/`, `README.md` and `CONTRIBUTING.md` paths; GitHub does not run them on this fork unless Actions are enabled.
+The root Dockerfile is the only supported image build, used by both Railway and local Compose. Obsolete Selenium binaries and separate API/UI build files are removed. GitHub retains build and test checks; upstream publishing, automatic releases and contributor-message bots are removed.
 
 ## Taking upstream fixes
 

@@ -4,7 +4,7 @@ A self-hosted remote browser on Railway for Mosaic's collector. Browserbase rema
 
 The browser uses a Linux desktop display and accepts a residential proxy and its timezone. Detection results are measured separately for each build.
 
-This is a fork of [steel-dev/steel-browser](https://github.com/steel-dev/steel-browser). Upstream's README and guides are archived in [upstream-docs/](upstream-docs/), unchanged apart from links repaired for the new location.
+This is a fork of [steel-dev/steel-browser](https://github.com/steel-dev/steel-browser). [upstream-docs/](upstream-docs/) preserves upstream's guides as historical reference. Use the root documents for this fork; archived commands and feature descriptions can be obsolete.
 
 ## Status
 
@@ -33,6 +33,16 @@ python mosaic/stealth_check.py routes core                                  # th
 ```
 
 The measuring tool reads `STEEL_URL`, `STEEL_API_KEY` and the Evomi proxy URLs from `/Users/moi/nosync.nosync/-env/global.env`. Run the route check from a temporary directory: it saves failed pages to `./stealth-failures/`.
+
+## Local development
+
+Set `STEEL_API_KEY` in your shell, then run `docker compose up --build`. Compose builds the root Dockerfile for Linux amd64, including the pinned Chrome and X11 tools, and saves named profiles in a local volume.
+
+The API and dashboard share `http://localhost:3000`; open `/ui/?apiKey=<key>` to authenticate the dashboard. The service binds to the local machine only.
+
+For source development, copy `api/.env.example` to `api/.env`, set a local key and install Google Chrome. Run `npm ci`, then `npm run dev`; quiet mode and native input require the Linux display tools supplied by Docker.
+
+The [commands example](repl/README.md) creates and releases its own session. Build both packages with `npm run build`.
 
 ## Licence
 

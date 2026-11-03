@@ -10,7 +10,7 @@ ENV NODE_ENV="production" \
     CHROME_PATH=/usr/bin/google-chrome-stable \
     CHROME_EXECUTABLE_PATH=/app/api/chrome-launcher.sh
 
-LABEL org.opencontainers.image.source="https://github.com/steel-dev/steel-browser"
+LABEL org.opencontainers.image.source="https://github.com/lostprojects/steel-browser"
 
 # Stage 1: Build UI
 FROM node:${NODE_VERSION} AS ui-build

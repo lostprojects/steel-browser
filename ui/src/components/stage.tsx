@@ -122,11 +122,7 @@ export function Stage({
         <LiveFrame url={session.debugUrl} />
       ) : (
         <div className="player">
-          <Notice title="No live view">
-            {session.isSelenium
-              ? "Selenium sessions don't stream a live view."
-              : "This session doesn't have a live view."}
-          </Notice>
+          <Notice title="No live view">This session doesn't have a live view.</Notice>
         </div>
       )}
       {docked && <DevTools />}

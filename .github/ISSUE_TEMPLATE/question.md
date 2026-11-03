@@ -8,9 +8,8 @@ assignees: ''
 ---
 
 **Before asking your question**
-- [ ] I've checked the [documentation](https://docs.steel.dev/)
+- [ ] I've checked the [documentation](https://github.com/lostprojects/steel-browser/blob/main/README.md)
 - [ ] I've searched existing issues
-- [ ] I've looked at the [Steel Cookbook](https://github.com/steel-dev/steel-cookbook) for examples
 
 **What are you trying to do?**
 A clear description of what you're trying to accomplish.
@@ -31,7 +30,3 @@ Describe what you've already attempted and what happened.
 
 **Additional context**
 Add any other context, error messages, or screenshots that might help.
-
----
-
-💡 **Tip**: For real-time help and community discussion, consider joining our [Discord server](https://discord.gg/steel-dev)! 

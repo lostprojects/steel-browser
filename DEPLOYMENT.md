@@ -28,7 +28,6 @@ Manage the service with the `rw` CLI (`rw status`, `rw logs vigilant-peace "Stee
 | `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | `120` | Time allowed for the service to drain during deployment |
 | `DOMAIN` | `${{RAILWAY_PUBLIC_DOMAIN}}` | Session URLs use the public domain |
 | `USE_SSL` | `true` | Session URLs use `https` and `wss` |
-| `CDP_REDIRECT_PORT` | set by the template | Internal DevTools port |
 | `STEEL_API_KEY` | secret | Turns on the key check. Without it the service is open to anyone |
 | `CHROME_HEADLESS` | `false` | Headful Chrome on Xvfb. Headless mode exposes `HeadlessChrome` in the user agent, an 800×600 screen and no plugins |
 | `MAX_SESSIONS` | `3` | Maximum concurrent browser processes |

@@ -1,3 +1,5 @@
+> Archived upstream guidance. For this fork’s current setup, use the [root README](../../README.md#local-development) and [deployment guide](../../DEPLOYMENT.md). Historical commands below may refer to removed features.
+
 # Development Setup Guide
 
 This guide provides comprehensive instructions for setting up a Steel Browser development environment.

@@ -31,9 +31,12 @@ The fonts are Inter and Geist Mono, both under the SIL Open Font License. The fo
 
 ## API types
 
-`src/client` holds types generated from `api/openapi/schemas.json`. Regenerate them after the API schema changes:
+`src/client` holds types generated from `api/openapi/schemas.json`. This file exports the shared models without starting the API or a browser. The running API publishes its route documentation at `/documentation`.
+
+Regenerate both files from the repository root after a schema change:
 
 ```bash
+npm run generate:openapi -w api
 npm run generate-api -w ui
 ```
 

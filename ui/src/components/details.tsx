@@ -1,5 +1,5 @@
 import type { SessionDetails } from "../api";
-import { formatBytes, formatDate, formatDuration, formatProxy } from "../format";
+import { formatBytes, formatDate, formatDuration } from "../format";
 import { CopyButton } from "./copy-button";
 import { CheckIcon, CrossIcon } from "./icons";
 
@@ -27,19 +27,21 @@ function detailsFor(session: SessionDetails): Detail[] {
         : "Default",
     },
     { label: "User agent", value: session.userAgent || "Default", copy: !!session.userAgent },
-    { label: "Proxy", value: session.proxy ? formatProxy(session.proxy) : "None" },
+    { label: "Mode", value: session.mode },
+    { label: "Profile", value: session.identity ?? "Temporary" },
+    {
+      label: "Proxy traffic",
+      value: `${formatBytes(session.proxyTxBytes)} sent, ${formatBytes(
+        session.proxyRxBytes,
+      )} received`,
+    },
   );
 
-  if (session.proxy) {
-    const sent = formatBytes(session.proxyTxBytes);
-    const received = formatBytes(session.proxyRxBytes);
-    details.push({ label: "Proxy traffic", value: `${sent} sent, ${received} received` });
+  if (session.endReason) {
+    details.push({ label: "Ended", value: session.endReason });
+    if (!session.identity)
+      details.push({ label: "Temporary profile removed", value: session.temporaryProfileRemoved });
   }
-
-  details.push(
-    { label: "Solve captcha", value: Boolean(session.solveCaptcha) },
-    { label: "Selenium", value: Boolean(session.isSelenium) },
-  );
 
   return details;
 }
