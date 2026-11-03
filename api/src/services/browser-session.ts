@@ -2,7 +2,7 @@
 // this class must not launch an idle browser or reuse another session's profile.
 import { EventEmitter } from "node:events";
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
 import { SessionDisplay, unusedPort } from "./session-display.js";
 import type { Duplex } from "node:stream";
@@ -75,6 +75,28 @@ export class BrowserSession extends EventEmitter {
   private launchHooks: Array<(config: BrowserLauncherOptions) => Promise<void> | void> = [];
   private shutdownHooks: Array<(config: BrowserLauncherOptions | null) => Promise<void> | void> =
     [];
+  private async storedSessionCookies(): Promise<any[]> {
+    if (!this.options.identity) return [];
+    try {
+      return JSON.parse(
+        await readFile(path.join(this.profilePath, "mosaic-session-cookies.json"), "utf8"),
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+  }
+  private async restoreSessionCookies() {
+    const cookies = await this.storedSessionCookies();
+    if (!cookies.length || this.options.sessionContext) return;
+    await this.prepareCommands();
+    const client = await this.getBrowserInstance()!.target().createCDPSession();
+    try {
+      await client.send("Storage.setCookies", { cookies });
+    } finally {
+      await client.detach().catch(() => undefined);
+    }
+  }
   proxyFactory = (url: string): IProxyServer => new ProxyServer(url);
 
   constructor(
@@ -197,6 +219,7 @@ export class BrowserSession extends EventEmitter {
       }
       if (!this.endpoint) throw new Error("Quiet Chrome did not publish its DevTools endpoint");
       this.status = "live";
+      await this.restoreSessionCookies();
       this.touch();
       return;
     }
@@ -247,6 +270,7 @@ export class BrowserSession extends EventEmitter {
     await this.plugins.onBrowserLaunch(this.browser);
     this.engine.browserLaunched(this.browser);
     this.status = "live";
+    await this.restoreSessionCookies();
     this.engine.browserReady();
     await this.plugins.onBrowserReady(this.launchConfig);
     this.touch();
@@ -508,6 +532,38 @@ export class BrowserSession extends EventEmitter {
   private async closeResources(reason: string) {
     this.stopping = true;
     this.endReason = reason;
+    if (this.options.identity && this.status === "live" && reason !== "chrome_exit") {
+      try {
+        const cookies = (await this.getCookies())
+          .filter((c) => c.session || c.expires <= 0)
+          .map((c) => {
+            const saved: Record<string, unknown> = {};
+            for (const key of [
+              "name",
+              "value",
+              "domain",
+              "path",
+              "secure",
+              "httpOnly",
+              "sameSite",
+              "priority",
+              "sourceScheme",
+              "sourcePort",
+              "partitionKey",
+            ])
+              if ((c as any)[key] !== undefined) saved[key] = (c as any)[key];
+            return saved;
+          });
+        const file = path.join(this.profilePath, "mosaic-session-cookies.json");
+        await writeFile(file + ".tmp", JSON.stringify(cookies), { mode: 0o600 });
+        await rename(file + ".tmp", file);
+      } catch {
+        this.logger.warn(
+          { sessionId: this.id },
+          "Could not preserve session cookies before browser shutdown",
+        );
+      }
+    }
     this.engine.sessionEnded();
     for (const socket of this.sockets) socket.destroy();
     if (this.launchConfig && this.options.mode === "agent")

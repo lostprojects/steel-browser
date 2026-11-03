@@ -42,8 +42,18 @@ export function validPayload(
   status: number,
   headers: Record<string, string>,
   route?: string,
+  baseUrl?: string,
 ) {
   const $ = load(html);
+  if (baseUrl) {
+    $("a[href]").each((_index, element) => {
+      try {
+        $(element).attr("href", new URL($(element).attr("href")!, baseUrl).href);
+      } catch {
+        /* Invalid page links do not count as payload. */
+      }
+    });
+  }
   const title = $("title").text();
   const text = $("body").text().trim();
   const check = route && routeChecks[route];
@@ -132,7 +142,13 @@ export class Routing {
         try {
           const response = await httpFetch({ url: options.url });
           const html = Buffer.from(response.body, "base64").toString();
-          const validation = validPayload(html, response.status, response.headers, route);
+          const validation = validPayload(
+            html,
+            response.status,
+            response.headers,
+            route,
+            response.url,
+          );
           attempts.push({
             rung,
             ...validation,
@@ -203,7 +219,7 @@ export class Routing {
             while (Date.now() < deadline && session.status === "live") {
               try {
                 html = await page.evaluate(() => document.documentElement.outerHTML);
-                validation = validPayload(html, 200, {}, route);
+                validation = validPayload(html, 200, {}, route, page.url());
                 if (validation.pass) break;
                 if (rung === 3 && !challenge) {
                   challenge = await clearChallenge(session, undefined, 45_000);

@@ -16,4 +16,12 @@ describe("route payloads", () => {
     expect(hostRoute("fonts.gstatic.com")).toBe("direct");
     expect(hostRoute("ads.doubleclick.net")).toBe("refused");
   });
+  it("counts relative people links the same way as browser anchor hrefs", () => {
+    const html =
+      "<title>People</title><body>" + '<a href="person.html">person</a>'.repeat(10) + "</body>";
+    expect(
+      validPayload(html, 200, {}, "bizapedia", "https://www.bizapedia.com/people/john-smith.html")
+        .payloads,
+    ).toBe(10);
+  });
 });

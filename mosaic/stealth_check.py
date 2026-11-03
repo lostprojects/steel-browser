@@ -125,12 +125,15 @@ def call(method, path, payload=None):
     """Reuse the API connection; retry only reads after a dropped connection."""
     base = urllib.parse.urlsplit(BASE)
     body = json.dumps(payload).encode() if payload is not None else None
-    retryable = method == 'GET' or path.endswith('/release') or path.endswith('/commands') or path.endswith('/challenge') or path == '/v1/sessions'
+    retryable = method == 'GET' or path.endswith('/release') or path.endswith('/commands') or path.endswith('/challenge') or path in ('/v1/sessions', '/v1/fetch')
     request_key = str(uuid.uuid4())
     for attempt in range(3):
         if not getattr(_http, 'connection', None):
             connection = http.client.HTTPSConnection if base.scheme == 'https' else http.client.HTTPConnection
-            _http.connection = connection(base.hostname, base.port, timeout=120)
+            _http.connection = connection(base.hostname, base.port, timeout=300 if path == '/v1/fetch' else 120)
+        _http.connection.timeout = 300 if path == '/v1/fetch' else 120
+        if _http.connection.sock:
+            _http.connection.sock.settimeout(_http.connection.timeout)
         try:
             _http.connection.request(method, base.path + path, body=body,
                                      headers={'Content-Type': 'application/json', 'steel-api-key': KEY, 'idempotency-key': request_key})
