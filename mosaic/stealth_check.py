@@ -222,7 +222,7 @@ def native_challenge(session, attempts):
         if frame['id'] == 'ddg-iframe':
             element = page.query_selector('#ddg-iframe')
             inner = element.content_frame() if element else None
-            text = inner.inner_text('body').lower() if inner else ''
+            text = inner.inner_text('body', timeout=2000).lower() if inner else ''
             if height > 200 or 'type the text' in text or 'captcha' in text:
                 return 'puzzle'
             point = (x + 64, y + 36)
@@ -240,8 +240,8 @@ def native_challenge(session, attempts):
         page.wait_for_timeout(4000)
         return 'checkbox'
     if 'human verification' in state['text'] and 'drop here' in state['text'] and attempts.get('drag', 0) < 2:
-        start = page.get_by_text('Drag', exact=True).first.bounding_box()
-        end = page.get_by_text('Drop here').first.bounding_box()
+        start = page.get_by_text('Drag', exact=True).first.bounding_box(timeout=2000)
+        end = page.get_by_text('Drop here').first.bounding_box(timeout=2000)
         if start and end:
             attempts['drag'] = attempts.get('drag', 0) + 1
             commands(session, [
@@ -251,7 +251,7 @@ def native_challenge(session, attempts):
                 {'command': 'mouse', 'action': 'up'},
             ])
             page.wait_for_timeout(1000)
-            button = page.get_by_text('Verify You Are Human').first.bounding_box()
+            button = page.get_by_text('Verify You Are Human').first.bounding_box(timeout=2000)
             if button:
                 commands(session, [{'command': 'mouse', 'action': 'click', 'x': button['x']+button['width']/2, 'y': button['y']+button['height']/2}])
             page.wait_for_timeout(4000)
@@ -276,10 +276,13 @@ def route_check(session, name, out, quiet=False):
         ])
     title, text = '', ''
     attempts = {}
+    deadline = time.monotonic() + 60
     for step in range(30):
+        if time.monotonic() >= deadline:
+            break
         check_budget(session)
         try:
-            n, title, text = page.evaluate(check), page.title(), page.inner_text('body')[:500]
+            n, title, text = page.evaluate(check), page.title(), page.inner_text('body', timeout=5000)[:500]
             result['payloads'] = n
         except Exception as error:
             result['readError'] = type(error).__name__
@@ -317,7 +320,7 @@ def route_check(session, name, out, quiet=False):
                 shot.write_bytes(base64.b64decode(captured['data']))
             else:
                 page.screenshot(path=str(shot))
-            shot.with_suffix('.txt').write_text(page.url + '\n\n' + page.inner_text('body')[:5000])
+            shot.with_suffix('.txt').write_text(page.url + '\n\n' + page.inner_text('body', timeout=5000)[:5000])
             result['artifact'] = str(shot)
         except Exception as error:
             result['captureError'] = type(error).__name__
