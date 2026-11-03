@@ -64,6 +64,44 @@ test("releasing a nested object group preserves other isolated-world handles", a
   );
 });
 
+test("iframe navigation preserves the main frame's isolated contexts and handles", async () => {
+  const wire = vi.fn(async (method: string, params: Record<string, any>) => {
+    if (method === "Page.createIsolatedWorld")
+      return { executionContextId: params.frameId === "main" ? 7 : 8 };
+    if (method === "DOM.resolveNode")
+      return { object: { objectId: `object-${params.executionContextId}` } };
+    return {};
+  });
+  const session = new QuietSession({ wire } as unknown as QuietConnection, "session", "main");
+  for (const [frameId, contextId] of [
+    ["main", 7],
+    ["child", 8],
+  ] as const) {
+    await session.send("Page.createIsolatedWorld", { frameId });
+    await session.send("DOM.resolveNode", {
+      backendNodeId: contextId,
+      executionContextId: contextId,
+    });
+  }
+  session.emit("Page.frameNavigated", { frame: { id: "child", parentId: "main" } });
+  await expect(
+    session.send("Runtime.evaluate", { contextId: 7, expression: "1" }),
+  ).resolves.toEqual({});
+  await expect(session.send("Runtime.callFunctionOn", { objectId: "object-7" })).resolves.toEqual(
+    {},
+  );
+  await expect(session.send("Runtime.evaluate", { contextId: 8, expression: "1" })).rejects.toThrow(
+    "isolated",
+  );
+  await expect(session.send("Runtime.callFunctionOn", { objectId: "object-8" })).rejects.toThrow(
+    "isolated",
+  );
+  session.emit("Page.frameNavigated", { frame: { id: "main" } });
+  await expect(session.send("Runtime.callFunctionOn", { objectId: "object-7" })).rejects.toThrow(
+    "isolated",
+  );
+});
+
 test("native input keeps text on stdin and applies display coordinates", async () => {
   const run = vi.fn(async (_args: string[], _text?: string) => Buffer.alloc(0));
   const input = new QuietInput(":101", 1920, 1080, run);
@@ -147,12 +185,13 @@ describe.skipIf(!process.env.CHROME_EXECUTABLE_PATH)(
     });
     afterAll(async () => {
       engine?.sessionEnded();
-    const exited = child && child.exitCode === null && child.signalCode === null
-      ? new Promise<void>((resolve) => child.once("exit", () => resolve()))
-      : Promise.resolve();
+      const exited =
+        child && child.exitCode === null && child.signalCode === null
+          ? new Promise<void>((resolve) => child.once("exit", () => resolve()))
+          : Promise.resolve();
       await browser?.close();
       child?.kill("SIGTERM");
-    await exited;
+      await exited;
       if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
       if (profile) await rm(profile, { recursive: true, force: true });
     });

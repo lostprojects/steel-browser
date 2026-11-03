@@ -111,18 +111,27 @@ export class QuietConnection extends EventEmitter {
 
 export class QuietSession extends EventEmitter {
   parent?: QuietSession;
-  private worlds = new Set<number>();
-  private objects = new Map<string, string>();
+  private worlds = new Map<number, string>();
+  private objects = new Map<string, { group: string; contextId: number }>();
   constructor(
     private conn: QuietConnection,
     private sessionId: string,
     readonly targetId: string,
   ) {
     super();
-    this.on("Page.frameNavigated", () => {
-      this.worlds.clear();
-      this.objects.clear();
+    this.on("Page.frameNavigated", ({ frame }) => {
+      if (!frame.parentId) {
+        this.worlds.clear();
+        this.objects.clear();
+      } else this.invalidateFrame(frame.id);
     });
+    this.on("Page.frameDetached", ({ frameId }) => this.invalidateFrame(frameId));
+  }
+  private invalidateFrame(frameId: string) {
+    for (const [contextId, owner] of this.worlds)
+      if (owner === frameId) this.worlds.delete(contextId);
+    for (const [id, object] of this.objects)
+      if (!this.worlds.has(object.contextId)) this.objects.delete(id);
   }
   id() {
     return this.sessionId;
@@ -145,10 +154,10 @@ export class QuietSession extends EventEmitter {
     });
     return executionContextId;
   }
-  private remember(value: any, group: string) {
+  private remember(value: any, group: string, contextId: number) {
     if (!value || typeof value !== "object") return;
-    if (typeof value.objectId === "string") this.objects.set(value.objectId, group);
-    for (const item of Object.values(value)) this.remember(item, group);
+    if (typeof value.objectId === "string") this.objects.set(value.objectId, { group, contextId });
+    for (const item of Object.values(value)) this.remember(item, group, contextId);
     if (this.objects.size > 100_000) throw new Error("Quiet CDP object limit reached");
   }
   private async pointer(params: Fields) {
@@ -213,7 +222,11 @@ export class QuietSession extends EventEmitter {
       return this.conn.input.screenshot(params.format);
     }
     if (method === "Runtime.evaluate") {
-      if (params.contextId === undefined) params.contextId = await this.world();
+      if (params.contextId === undefined)
+        for (let attempt = 0; attempt < 3; attempt++) {
+          params.contextId = await this.world();
+          if (this.worlds.has(params.contextId)) break;
+        }
       if (!this.worlds.has(params.contextId))
         throw new Error("Quiet evaluation requires an isolated world");
     }
@@ -231,18 +244,25 @@ export class QuietSession extends EventEmitter {
         throw new Error("Quiet function calls require an isolated-world object or context");
     }
     const result = await this.raw(method, params);
-    if (method === "Page.createIsolatedWorld") this.worlds.add(result.executionContextId);
+    if (method === "Page.createIsolatedWorld")
+      this.worlds.set(result.executionContextId, params.frameId);
     if (
       method === "Runtime.evaluate" ||
       method === "Runtime.callFunctionOn" ||
       method === "DOM.resolveNode" ||
       method === "Runtime.getProperties"
     )
-      this.remember(result, params.objectGroup ?? this.objects.get(params.objectId) ?? "");
+      this.remember(
+        result,
+        params.objectGroup ?? this.objects.get(params.objectId)?.group ?? "",
+        params.contextId ??
+          params.executionContextId ??
+          this.objects.get(params.objectId)?.contextId,
+      );
     if (method === "Runtime.releaseObject") this.objects.delete(params.objectId);
     if (method === "Runtime.releaseObjectGroup")
-      for (const [id, group] of this.objects)
-        if (group === params.objectGroup) this.objects.delete(id);
+      for (const [id, object] of this.objects)
+        if (object.group === params.objectGroup) this.objects.delete(id);
     return result;
   }
 }
