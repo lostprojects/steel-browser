@@ -27,6 +27,8 @@ Settings come from the environment, then from the env file named by
 STEEL_ENV_FILE (default ~/nosync.nosync/-env/global.env): STEEL_URL,
 STEEL_API_KEY, EVOMI_RESIDENTIAL_PROXY_URL, EVOMI_PREMIUM_PROXY_URL.
 Credentials are never printed.
+STEEL_CDP_BASE optionally selects a local WebSocket origin when running the
+same checks beside the deployed service.
 
 Each run opens one Steel session at a time and releases it. Do not run two
 copies beyond MAX_SESSIONS (production allows three).
@@ -187,7 +189,10 @@ class Session:
         self.info = call('POST', '/v1/sessions', self.body)
         try:
             self.pw = sync_playwright().start()
-            self.browser = self.pw.chromium.connect_over_cdp(self.info['websocketUrl'] + '?apiKey=' + KEY)
+            endpoint = self.info['websocketUrl']
+            if os.environ.get('STEEL_CDP_BASE'):
+                endpoint = os.environ['STEEL_CDP_BASE'].rstrip('/') + f"/v1/sessions/{self.info['id']}/cdp"
+            self.browser = self.pw.chromium.connect_over_cdp(endpoint + '?apiKey=' + KEY)
             ctx = self.browser.contexts[0] if self.browser.contexts else self.browser.new_context()
             self.page = ctx.pages[0] if ctx.pages else ctx.new_page()
             self.page.set_default_timeout(60000)
@@ -340,6 +345,7 @@ def route_check(session, name, out, quiet=False):
                 if any(message in str(error) for message in (
                     'Execution context was destroyed', 'Frame was detached',
                     'Cannot find context with specified id',
+                    'Unable to adopt element handle from a different document',
                 )):
                     result['challengeNavigationRaces'] = result.get('challengeNavigationRaces', 0) + 1
                 else:
