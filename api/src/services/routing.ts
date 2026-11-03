@@ -203,6 +203,7 @@ export class Routing {
           }
           const before = session.info();
           let released = false;
+          let retained = false;
           let retrying = false;
           try {
             const page = await session.getPrimaryPage();
@@ -254,8 +255,10 @@ export class Routing {
                 split: known?.split ?? false,
               };
               await this.save();
-              if (options.retain)
+              if (options.retain) {
+                retained = true;
                 return { status: "ok", rung, attempts, html, session: session.info() };
+              }
               const settled = await this.pool.release(session.id);
               released = true;
               return { status: "ok", rung, attempts, html, settled };
@@ -278,7 +281,7 @@ export class Routing {
             }
             retrying = attempt + 1 < maxAttempts;
           } finally {
-            if (!released && !session.challenge && !options.retain)
+            if (!released && !retained && (rung < 3 || !session.challenge))
               await this.pool.release(session.id);
             // A retry releases its failed throwaway browser, including a visual puzzle.
             if (retrying && session.status === "live")

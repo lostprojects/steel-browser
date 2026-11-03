@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { validPayload } from "./routing.js";
+import { describe, expect, it, vi } from "vitest";
+import { validPayload, Routing } from "./routing.js";
+import * as challenges from "./challenge-service.js";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { hostRoute } from "../utils/proxy.js";
 describe("route payloads", () => {
   it("accepts Utah's real payload on 418 and rejects an empty successful page", () => {
@@ -25,4 +29,59 @@ describe("route payloads", () => {
         .payloads,
     ).toBe(10);
   });
+  it.each([false, true])(
+    "releases a challenged direct probe before escalating (retain=%s)",
+    async (retain) => {
+      const root = await mkdtemp(path.join(os.tmpdir(), "routing-test-"));
+      const released: string[] = [];
+      const clear = vi.spyOn(challenges, "clearChallenge").mockImplementation(async (session) => {
+        session.challenge = {
+          status: "challenge_required",
+          kind: "puzzle",
+          url: "https://newspapers.lib.utah.edu/search",
+        };
+        return {
+          ...session.challenge,
+          sessionId: session.id,
+          actions: [],
+          screenshot: { data: "" },
+          noVncUrl: "",
+          idleTimeoutMs: 600000,
+        } as any;
+      });
+      const pool = {
+        create: async (options: any) => {
+          const info = { proxyTxBytes: 0, proxyRxBytes: 0, directBytes: 0 };
+          return {
+            id: options.mode,
+            status: "live",
+            info: () => info,
+            getPrimaryPage: async () => ({
+              goto: async () => {},
+              url: () => "https://newspapers.lib.utah.edu/search",
+              evaluate: async () =>
+                options.mode === "agent"
+                  ? "<title>Human Verification</title>"
+                  : '<a href="/details/1">record</a>'.repeat(3),
+            }),
+          };
+        },
+        release: async (id: string) => {
+          released.push(id);
+          return {};
+        },
+      };
+      try {
+        const result = await new Routing(pool as any, root).fetch(
+          { url: "https://newspapers.lib.utah.edu/search", route: "udn", startRung: 2, retain },
+          { name: "test", dailyBudgetBytes: 1000 },
+        );
+        expect(result.status).toBe("ok");
+        expect(released).toEqual(retain ? ["agent"] : ["agent", "quiet"]);
+      } finally {
+        clear.mockRestore();
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 });
