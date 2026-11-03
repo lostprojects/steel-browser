@@ -60,6 +60,16 @@ const SessionDetails = z.object({
     .nonnegative()
     .describe("Amount of data received through the proxy"),
   solveCaptcha: z.boolean().optional().describe("Indicates if captcha solving is enabled"),
+  proxyTraffic: z
+    .array(
+      z.object({
+        hostname: z.string(),
+        txBytes: z.number().nonnegative(),
+        rxBytes: z.number().nonnegative(),
+      }),
+    )
+    .optional()
+    .describe("Proxy bytes by hostname, including open tunnels; no URLs or credentials"),
   deviceConfig: deviceConfigSchema,
 });
 

@@ -56,11 +56,14 @@ describe("ProxyServer close", () => {
       await tunnel(server.port, "example.com:443", 1_000);
       const stats = server.getConnectionStats(server.getConnectionIds()[0])!;
       expect(stats.trgRxBytes).toBeGreaterThan(1_000);
+      const traffic = [
+        { hostname: "example.com", txBytes: stats.trgTxBytes, rxBytes: stats.trgRxBytes },
+      ];
+      expect(server.traffic).toEqual(traffic);
       expect({ tx: server.txBytes, rx: server.rxBytes }).toEqual({
         tx: stats.trgTxBytes,
         rx: stats.trgRxBytes,
       });
-
       await new Promise<void>((resolve, reject) => {
         setTimeout(() => server.close(true).then(resolve, reject), 0);
       });
@@ -69,6 +72,7 @@ describe("ProxyServer close", () => {
         tx: stats.trgTxBytes,
         rx: stats.trgRxBytes,
       });
+      expect(server.traffic).toEqual(traffic);
     } finally {
       await server.close(true).catch(() => undefined);
       upstream.close();

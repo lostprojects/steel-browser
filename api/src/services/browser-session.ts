@@ -453,6 +453,7 @@ export class BrowserSession extends EventEmitter {
       noVncUrl: getUrl(`v1/sessions/${this.id}/view`),
       proxyTxBytes: this.proxyServer?.txBytes ?? 0,
       proxyRxBytes: this.proxyServer?.rxBytes ?? 0,
+      proxyTraffic: this.proxyServer?.traffic ?? [],
       eventCount: 0,
       creditsUsed: 0,
       ...(this.options.mode === "quiet"
