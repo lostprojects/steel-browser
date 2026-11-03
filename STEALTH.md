@@ -375,3 +375,8 @@ and release passed with zero residential bytes.
 
 The fix uses an inclusive one-byte minimum. A Fastify schema-compilation regression
 check passed, along with all ten session-pool tests and TypeScript.
+
+The HTTP reader's first local check failed with a TypeError because curl_cffi
+responses do not implement a context manager. Switching to `Session.stream`
+returned HTTP 200 from example.com, with 579 response bytes. This check used
+no residential traffic.

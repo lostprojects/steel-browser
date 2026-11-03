@@ -32,8 +32,8 @@ def main():
     if options.get("referer"):
         headers["Referer"] = options["referer"]
     try:
-        with session.get(url, headers=headers, proxy=options.get("proxy"), timeout=options.get("timeout", 30),
-                         stream=True, max_redirects=8) as response:
+        with session.stream("GET", url, headers=headers, proxy=options.get("proxy"), timeout=options.get("timeout", 30),
+                            max_redirects=8) as response:
             parts, size = [], 0
             for chunk in response.iter_content():
                 size += len(chunk)
