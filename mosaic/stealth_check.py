@@ -443,11 +443,18 @@ def navigate(page, url, timeout=60000, retries=None):
             if attempt or not transport:
                 raise
             if retries is not None:
-                retries.append({'url': url, 'error': type(error).__name__})
+                retries.append({'url': url, 'error': type(error).__name__,
+                                'message': str(error).splitlines()[0][:200]})
             print('Navigation retry on the same exit: ' + url, flush=True)
             cdp = page.context.new_cdp_session(page)
             try:
-                cdp.send('Page.stopLoading')
+                try:
+                    cdp.send('Page.stopLoading')
+                except Exception as stop_error:
+                    # Chrome's error document has no active Page agent. The
+                    # following goto can still start the recorded retry.
+                    if 'Not attached to an active page' not in str(stop_error):
+                        raise
             finally:
                 cdp.detach()
 
