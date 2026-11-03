@@ -10,9 +10,9 @@ This is a fork of [steel-dev/steel-browser](https://github.com/steel-dev/steel-b
 
 The service runs up to three independent sessions, with named profiles on a Railway volume. It deletes throwaway profiles on release and reports why each session ended. Deployment comes from `deploy`; documentation pushes are skipped.
 
-Phase 2 passed with pinned Google Chrome 156.0.8078.79, separate X displays and authenticated noVNC. The owner accepts replacing incomplete transport and fixture runs; 20 complete results on distinct exits passed the fingerprint checks. The quiet-mode candidate passed detector checks with full snapshots and native clicks. Route acceptance stopped within the residential budget, so phase 3 remains unaccepted and production has been restored to phase 2. `main` and `deploy` remain synchronized.
+Phases 0–3 are accepted on Google Chrome 156.0.8078.79. Twenty distinct exits passed the phase 2 fingerprint checks, and quiet-mode detector checks remained clear with full snapshots and native clicks active.
 
-The earlier singleton build passed deviceandbrowserinfo.com's bot test and loaded all six collector routes in supervised measurements, including Anna's Archive in three of four attempts. Those measurements are retained in [STEALTH.md](STEALTH.md); phase 2 fingerprint checks passed, while phase 3 still needs repeated route measurements before claiming the same results.
+All six final route sets met their pass marks. [STEALTH.md](STEALTH.md#phase-3-acceptance) records the earlier failures and Utah’s focused rerun. Production supports both agent and quiet modes; `main` and `deploy` remain synchronized.
 
 ## Documents
 

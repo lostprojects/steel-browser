@@ -1,6 +1,6 @@
 # Deployment
 
-Production runs the accepted phase 2 build with Google Chrome 156.0.8078.79. The owner accepts replacement of incomplete transport and fixture attempts; 20 complete fingerprint results on distinct exits passed. Documentation and measurement-client pushes remain excluded from deployments.
+Production runs the accepted phase 3 build with Google Chrome 156.0.8078.79. The owner accepts replacement of incomplete transport and fixture attempts; 20 complete fingerprint results on distinct exits passed. Documentation and measurement-client pushes remain excluded from deployments.
 
 ## Service
 
@@ -58,8 +58,14 @@ The Railway token for `rw` is `RAILWAY_TOKEN` in `global.env`, a workspace token
 
 The launch profile now includes the measured WebGL and WebRTC flags in code. Legacy fingerprint and extra Chrome-argument variables are unused. Browserbase remains the client fallback; this phase does not change Mosaic scripts.
 
-## Phase 3 candidate
+## Quiet mode
 
-Quiet Chrome is launched directly with the same pinned binary and per-session display. The commands connection starts when first requested. It permits isolated-world reads, refuses instrumentation domains and sends input through `xdotool`; `ffmpeg` captures the display. These programs were installed by phase 2. No new Railway variables are required. Quiet mode passed detector and native-input checks, but route acceptance stopped within the residential budget. Production was restored from accepted phase 2 deployment `6ffa7417-bc73-4f16-8090-59ed3c929e4a`; health, session creation, CDP and release checks passed. The repository keeps the candidate; a future code deployment from `deploy` will include it.
+Quiet Chrome starts directly with the pinned binary and its own display. The commands connection starts when first requested.
 
-The candidate’s byte getters include open proxy tunnels. The phase 2 image reports closed connections during a live session and settles all traffic on release, so its live totals cannot enforce a spending ceiling. Use settled totals for reporting. The current `rw rollback` wrapper sends an invalid GraphQL selection; use `rw api 'mutation { deploymentRollback(id: "6ffa7417-bc73-4f16-8090-59ed3c929e4a") }'`, first as a dry run and then with `--commit`.
+It permits isolated-world reads, refuses instrumentation subscriptions and sends input through `xdotool`; `ffmpeg` captures the display. No new Railway variables are required.
+
+The quiet launch disables `OptimizationHints`, matching the agent launch, because Chrome otherwise downloads Optimization Guide data in the background. Live byte getters include open proxy tunnels, and `proxyTraffic` reports hostname totals without paths or credentials. Released totals remain the final accounting record.
+
+Production application commit `bfbc39f` is deployment `89b38d9f-9008-45a5-86e3-4557db263f17`. This is the current accepted rollback target. The older phase 2 target is `6ffa7417-bc73-4f16-8090-59ed3c929e4a`; that older image lacks quiet mode and includes open-tunnel bytes only on release.
+
+The current `rw rollback` wrapper sends an invalid GraphQL selection. Use `rw api 'mutation { deploymentRollback(id: "<last-good-deployment-id>") }'`, first as a dry run and then with `--commit`.

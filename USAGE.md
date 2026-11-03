@@ -1,6 +1,6 @@
 # Using the service
 
-Production runs the accepted phase 2 build with Google Chrome 156.0.8078.79 and a separate display per session. Quiet mode is committed but unaccepted because route validation stopped within the residential budget; it is unavailable on the phase 2 rollback image.
+Production runs Google Chrome 156.0.8078.79 with a separate display per session. Phases 0–3 are accepted, including quiet mode. Browserbase remains available as a fallback.
 
 ## A session from start to finish
 
@@ -21,11 +21,13 @@ Release every session. The service allows three independent sessions. A fourth w
 
 `identity: "ancestry"` keeps a named profile under `/data/profiles`. Names may contain letters, digits, underscores and hyphens. A second claim on a name receives HTTP 409. Without an identity, the profile is unique and deleted on release.
 
-Sessions expire after ten minutes without a connected client or API activity, or after three hours regardless of activity. A released throwaway session reports `temporaryProfileRemoved: true` only after a filesystem check confirms its profile is gone. The response also reports `endReason` and settled `proxyTxBytes` / `proxyRxBytes`. A browser crash ends that session without launching an idle replacement.
+Sessions expire after ten minutes without a connected client or API activity, or after three hours regardless of activity. A released throwaway session reports `temporaryProfileRemoved: true` only after a filesystem check confirms its profile is gone.
+
+The response also reports `endReason` and settled `proxyTxBytes` / `proxyRxBytes`. Live totals include open tunnels; `proxyTraffic` breaks the same traffic down by hostname. A browser crash ends that session without launching an idle replacement.
 
 Use the returned session-specific `websocketUrl` and `sessionViewerUrl`. Commands use `POST /v1/sessions/{id}/commands`; scrape, screenshot and PDF actions use the same session prefix. The old `/v1/sessions/scrape` style works only when exactly one session exists. Stateless `/v1/scrape`, `/v1/screenshot`, `/v1/pdf` and `/v1/search` create and release a temporary agent session unless supplied `sessionId` or `steel-session-id`.
 
-The candidate accepts `mode: "agent"` (default) and `mode: "quiet"`. Quiet mode requires a visible X display and uses a named profile for saved state; it rejects `headless: true` and context injection. Arbitrary profile paths, Selenium and fingerprint injection are removed.
+The service accepts `mode: "agent"` (default) and `mode: "quiet"`. Quiet mode requires an X display and accepts a named profile for saved state; it rejects `headless: true` and context injection. Arbitrary profile paths, Selenium and fingerprint injection are removed.
 
 ## The API key
 
@@ -51,7 +53,7 @@ Requests from Railway and from a Mac with the same ID leave through the same IP.
 
 The client looks up the exit timezone through the same sticky proxy. Earlier tests changed both proxy stickiness and timezone handling together; they do not establish that Steel used Railway's location. Proxy rotation and differences between geolocation databases remain possible causes of the earlier mismatch.
 
-`exit_timezone()` asks ipwho.is through the same sticky proxy and passes the answer as `timezone`. The browser's timezone has matched its exit IP in every session since.
+`exit_timezone()` asks ipwho.is through the same sticky proxy and passes the answer as `timezone`. All accepted phase 2 samples matched their exit timezone after resolving IANA aliases.
 
 ## PDFs
 
@@ -63,7 +65,7 @@ When a site still shows a challenge, see [STEALTH.md](STEALTH.md#ddos-guard-on-a
 
 ## Quiet-mode commands
 
-On the unaccepted phase 3 candidate, create a session with `mode: "quiet"`, the sticky proxy and its timezone. Use its noVNC view for manual control. The commands API reads the page in isolated worlds and sends keyboard and pointer input through X11.
+Create a quiet session with `mode: "quiet"`, the sticky proxy and its timezone. Use its noVNC view for manual control. The commands API reads the page in isolated worlds and sends keyboard and pointer input through X11.
 
 ```json
 {"commands":[{"command":"navigate","url":"https://example.com"},{"command":"snapshot","compact":false}]}

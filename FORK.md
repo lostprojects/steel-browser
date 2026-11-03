@@ -6,7 +6,9 @@ Phase 1 removes the idle browser, Selenium and fingerprint injection. Each sessi
 
 Google Chrome stable is installed at an exact version and checksum. Each session owns an Xvfb display and a loopback VNC endpoint; noVNC uses the existing API key. The global display and unpinned Debian Chromium install are removed.
 
-Phase 2 passed after the owner accepted replacement of incomplete transport and fixture runs. Production runs Google Chrome 156.0.8078.79 with separate displays and noVNC. [STEALTH.md](STEALTH.md) records the 20 complete checks on distinct exits and the incomplete attempts. The phase 3 candidate adds quiet mode. Its detector and native-input checks passed, but route acceptance stopped within the residential budget; quiet mode remains unaccepted.
+Phase 2 passed after the owner accepted replacement of incomplete transport and fixture runs. Production runs Google Chrome 156.0.8078.79 with separate displays and noVNC. [STEALTH.md](STEALTH.md) records the 20 complete fingerprint checks on distinct exits and the incomplete attempts.
+
+Phase 3 is accepted with quiet mode and accurate live proxy metering. Full snapshots and native clicks passed the detector checks, and all six final route sets met their pass marks.
 
 ## Earlier fork fixes
 
@@ -38,6 +40,10 @@ This fork is Mosaic's browser service. Keep the Apache 2.0 licence and notices, 
 
 Typecheck with `cd api && npx tsc --noEmit` and run the tests covering changed modules. Check active sessions and Railway HTTP traffic before pushing a deployment to `deploy`, and keep `main` at the same commit. Railway ignores documentation and the local measurement client when deciding whether to deploy.
 
-## Quiet-mode candidate
+## Quiet mode
 
-Quiet sessions start Chrome as a plain child process. The commands engine uses a direct CDP adapter with isolated-world execution, no Runtime or console subscriptions, and unpaused iframe attachment. Native pointer and keyboard events use the session’s X display; screenshots come from ffmpeg’s X11 capture. Agent sessions keep Puppeteer and their existing instrumentation.
+Quiet sessions start Chrome as a plain child process. The commands engine uses a direct CDP adapter with isolated-world execution, no Runtime or console subscriptions, and unpaused iframe attachment. Native pointer and keyboard events use the session’s X display; screenshots come from ffmpeg’s X11 capture.
+
+Agent sessions keep Puppeteer and their existing instrumentation.
+
+Quiet contexts and object handles belong to their frames. An iframe redirect invalidates its own handles while preserving the main frame. Proxy metering includes open tunnels and reports bytes by hostname; quiet Chrome disables background Optimization Guide downloads.
