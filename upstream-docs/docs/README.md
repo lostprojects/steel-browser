@@ -18,7 +18,7 @@ Welcome to the Steel Browser documentation! This directory contains comprehensiv
 ### API Reference
 
 - **[API Documentation](http://localhost:3000/documentation)** - Interactive API reference (when running locally)
-- **[OpenAPI Schema](../api/openapi/schemas.json)** - Machine-readable API specification
+- **[OpenAPI Schema](../../api/openapi/schemas.json)** - Machine-readable API specification
 
 ## 🚀 Quick Links
 

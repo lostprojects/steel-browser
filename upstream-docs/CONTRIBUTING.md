@@ -41,7 +41,7 @@ The [Development Setup Guide](docs/DEVELOPMENT_SETUP.md) has install steps for e
 4. **Verify Setup**
    - API: Visit http://localhost:3000/documentation
    - UI: Visit http://localhost:5173
-   - REPL: Run `npm start -w repl` (see [repl/README.md](repl/README.md))
+   - REPL: Run `npm start -w repl` (see [repl/README.md](../repl/README.md))
 
 ### Docker Development (Alternative)
 
@@ -123,7 +123,7 @@ Steel Browser follows a plugin-based architecture. The [Architecture Overview](d
 
 ### PR Titles and Commit Messages
 
-We squash merge pull requests, so the PR title becomes the commit message on `main`. PR titles must follow [Conventional Commits](https://conventionalcommits.org/), and CI checks them ([`pr-checks.yml`](.github/workflows/pr-checks.yml)):
+We squash merge pull requests, so the PR title becomes the commit message on `main`. PR titles must follow [Conventional Commits](https://conventionalcommits.org/), and CI checks them ([`pr-checks.yml`](../.github/workflows/pr-checks.yml)):
 
 ```
 type(scope): description
@@ -233,17 +233,17 @@ CHROME_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Ch
 - [ ] PR description clearly explains changes
 - [ ] Breaking changes are documented
 
-CI runs the API tests ([`test.yml`](.github/workflows/test.yml)), builds the Docker images ([`check-build.yml`](.github/workflows/check-build.yml)), and checks the PR title ([`pr-checks.yml`](.github/workflows/pr-checks.yml)).
+CI runs the API tests ([`test.yml`](../.github/workflows/test.yml)), builds the Docker images ([`check-build.yml`](../.github/workflows/check-build.yml)), and checks the PR title ([`pr-checks.yml`](../.github/workflows/pr-checks.yml)).
 
 ### PR Template
 
-When you open a pull request, GitHub fills in our [PR template](.github/pull_request_template.md). Fill in the sections that apply to your change.
+When you open a pull request, GitHub fills in our [PR template](../.github/pull_request_template.md). Fill in the sections that apply to your change.
 
 ## 🐛 Reporting Issues
 
 ### Bug Reports
 
-Use our [bug report template](.github/ISSUE_TEMPLATE/bug_report.md) and include:
+Use our [bug report template](../.github/ISSUE_TEMPLATE/bug_report.md) and include:
 
 - Clear description of the issue
 - Steps to reproduce
@@ -253,7 +253,7 @@ Use our [bug report template](.github/ISSUE_TEMPLATE/bug_report.md) and include:
 
 ### Feature Requests
 
-Use our [feature request template](.github/ISSUE_TEMPLATE/feature_request.md) and:
+Use our [feature request template](../.github/ISSUE_TEMPLATE/feature_request.md) and:
 
 - Check existing issues first
 - Describe the use case and motivation
@@ -319,7 +319,7 @@ We appreciate all contributions! Contributors are recognized:
 
 ### Environment Variables
 
-The API reads `api/.env` when you run it locally. [`api/.env.example`](api/.env.example) lists the common variables, and [`api/src/env.ts`](api/src/env.ts) defines all of them with their defaults. These are handy while developing:
+The API reads `api/.env` when you run it locally. [`api/.env.example`](../api/.env.example) lists the common variables, and [`api/src/env.ts`](../api/src/env.ts) defines all of them with their defaults. These are handy while developing:
 
 ```bash
 CHROME_HEADLESS=false        # Show the browser window
@@ -365,7 +365,7 @@ Then attach a debugger, for example Chrome DevTools at `chrome://inspect`. The [
 
 ## 🚀 Release Process
 
-Releases are automated by [`release.yml`](.github/workflows/release.yml), which runs on every push to `main`:
+Releases are automated by [`release.yml`](../.github/workflows/release.yml), which runs on every push to `main`:
 
 1. **Version bump**: Picks the next version from commit messages. `breaking`, `breaking-change`, or `major` bumps the major version. Anything else, including `feat`, bumps the patch version.
 2. **Tag**: Tags the version with a `-beta` suffix, such as `v0.5.4-beta`. If that tag already exists, the release is skipped.

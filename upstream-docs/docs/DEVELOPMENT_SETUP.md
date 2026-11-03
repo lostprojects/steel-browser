@@ -210,7 +210,7 @@ docker run -p 5173:80 steel-browser-ui
 
 ### Environment Variables
 
-The API reads `api/.env` when you run it locally. Copy [`api/.env.example`](../api/.env.example) to `api/.env` and adjust it. For example:
+The API reads `api/.env` when you run it locally. Copy [`api/.env.example`](../../api/.env.example) to `api/.env` and adjust it. For example:
 
 ```bash
 # api/.env
@@ -229,7 +229,7 @@ DEBUG_CHROME_PROCESS=false
 LOG_CUSTOM_EMIT_EVENTS=true
 ```
 
-The UI dev server proxies `/api` and `/ws` to `http://localhost:3000`, so the UI needs no `.env`. Docker Compose reads the root `.env` instead. Copy [`.env.example`](../.env.example) to `.env` to set `DOMAIN`, `CDP_DOMAIN`, and `API_URL` there.
+The UI dev server proxies `/api` and `/ws` to `http://localhost:3000`, so the UI needs no `.env`. Docker Compose reads the root `.env` instead. Copy [`.env.example`](../../.env.example) to `.env` to set `DOMAIN`, `CDP_DOMAIN`, and `API_URL` there.
 
 ### Chrome Configuration
 

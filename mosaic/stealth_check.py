@@ -224,8 +224,8 @@ def main(argv):
     if mode not in PROXY:
         sys.exit(f'mode must be one of {", ".join(PROXY)}')
     names = argv[3:] or list(ROUTES)
-    results = {n: route(mode, n, Path('stealth-failures')) for n in names}
-    print(f'\n{mode}: {sum(v == "PASS" for v in results.values())}/{len(results)} passed')
+    results = [route(mode, n, Path('stealth-failures')) for n in names]
+    print(f'\n{mode}: {results.count("PASS")}/{len(results)} passed')
 
 
 if __name__ == '__main__':
