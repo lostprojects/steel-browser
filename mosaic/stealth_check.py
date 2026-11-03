@@ -14,8 +14,9 @@ Checks run against the deployed instance through the Evomi proxy:
   stealth_check.py quiet-probe [COUNT]
       Run fingerprint checks while full snapshots and native clicks execute.
 
-  stealth_check.py quiet-routes [COUNT]
-      Exercise commands during bot checks, then run all six routes per exit.
+  stealth_check.py quiet-routes [COUNT] [--routes-only]
+      Run all six routes per exit. --routes-only uses a separately completed
+      quiet-probe; otherwise each route group also repeats the bot checks.
 
   stealth_check.py routes core|premium|none [ROUTE ...]
       Load each Mosaic collector route that needs a residential IP and report
@@ -605,7 +606,7 @@ def fingerprints(count=1, quiet=False):
     return rows
 
 
-def quiet_routes(count=1):
+def quiet_routes(count=1, detectors=True):
     if not os.environ.get('STEEL_BYTE_LEDGER'):
         raise RuntimeError('Set STEEL_BYTE_LEDGER to a scratch JSONL path')
     rows = []
@@ -614,11 +615,19 @@ def quiet_routes(count=1):
         result = {'run': number + 1, 'mode': 'quiet', 'routes': []}
         try:
             with Session('core', {'mode': 'quiet'}) as session:
-                collect_fingerprint(session, result, exercise=True, deep=False)
-                if result['deviceFlags'] or any(r['rating'] > 0 for r in result['rebrowser']):
-                    raise RuntimeError('Positive detection; route checks stopped')
+                if detectors:
+                    collect_fingerprint(session, result, exercise=True, deep=False)
+                    if result['deviceFlags'] or any(r['rating'] > 0 for r in result['rebrowser']):
+                        raise RuntimeError('Positive detection; route checks stopped')
+                else:
+                    result['botChecks'] = 'separate quiet-probe required on this build'
+                    exit_signals(session, result)
+                    navigate(session.page, 'https://browserleaks.com/tcp')
+                    result['tcpOS'] = next((r for r in session.page.locator('tr').all_inner_texts() if 'Zardaxt OS Scoring' in r), 'No OS score returned')
+                    result['commandCheck'] = exercise_commands(session)
                 for name in ROUTES:
                     result['routes'].append(route_check(session, name, out, quiet=True))
+                result['commandMethods'] = call('GET', f"/v1/sessions/{session.info['id']}").get('commandMethods', [])
             for first in result['routes']:
                 transport_error = any(code in first.get('navigationError', '') for code in (
                     'net::ERR_TIMED_OUT', 'net::ERR_CONNECTION_RESET', 'net::ERR_CONNECTION_CLOSED',
@@ -651,7 +660,7 @@ def main(argv):
     if len(argv) < 2 or argv[1] not in ('probe', 'routes', 'fingerprints', 'quiet-probe', 'quiet-routes'):
         sys.exit(__doc__)
     if argv[1] == 'quiet-routes':
-        quiet_routes(int(argv[2]) if len(argv) > 2 else 1)
+        quiet_routes(int(argv[2]) if len(argv) > 2 else 1, detectors='--routes-only' not in argv)
         return
     if argv[1] in ('fingerprints', 'quiet-probe'):
         fingerprints(int(argv[2]) if len(argv) > 2 else 1, quiet=argv[1] == 'quiet-probe')
