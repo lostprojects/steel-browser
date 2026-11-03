@@ -150,7 +150,7 @@ export class QuietInput {
           0,
           Math.min(this.height - 1, Math.round(from.y + (y - from.y) * t - bend)),
         );
-        await this.run(["mousemove", "--sync", String(px), String(py)]);
+        await this.run(["mousemove", String(px), String(py)]);
         if (steps > 1) await new Promise((r) => setTimeout(r, 8));
       }
       this.position = { x, y };

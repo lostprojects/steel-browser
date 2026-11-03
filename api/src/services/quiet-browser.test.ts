@@ -71,7 +71,7 @@ test("native input keeps text on stdin and applies display coordinates", async (
   await input.text(text);
   expect(run).toHaveBeenCalledWith(["type", "--delay", "25", "--file", "-"], text);
   await input.mouse({ type: "mousePressed", x: 100, y: 100, button: "left" }, { x: 1, y: 88 });
-  expect(run).toHaveBeenCalledWith(["mousemove", "--sync", "101", "188"]);
+  expect(run).toHaveBeenCalledWith(["mousemove", "101", "188"]);
   expect(run).toHaveBeenCalledWith(["mousedown", "1"]);
   await expect(input.mouse({ type: "mouseMoved", x: 2000, y: 0 }, { x: 0, y: 0 })).rejects.toThrow(
     "outside",
@@ -147,8 +147,12 @@ describe.skipIf(!process.env.CHROME_EXECUTABLE_PATH)(
     });
     afterAll(async () => {
       engine?.sessionEnded();
+    const exited = child && child.exitCode === null && child.signalCode === null
+      ? new Promise<void>((resolve) => child.once("exit", () => resolve()))
+      : Promise.resolve();
       await browser?.close();
       child?.kill("SIGTERM");
+    await exited;
       if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
       if (profile) await rm(profile, { recursive: true, force: true });
     });
