@@ -217,6 +217,16 @@ def native_challenge(session, attempts):
     }''')
     if state['solved']:
         return None
+    # Turnstile can put its frame inside a closed shadow root. Chrome's frame
+    # inventory still exposes its owner, even when document selectors cannot.
+    for child in page.frames:
+        if 'challenges.cloudflare.com/' not in child.url:
+            continue
+        owner = child.frame_element()
+        box = owner.bounding_box(timeout=2000)
+        if box and box['x'] >= 0 and box['y'] >= 0:
+            state['frames'].append({'id': '', 'src': child.url,
+                                    'box': [box['x'], box['y'], box['width'], box['height']]})
     for frame in state['frames']:
         x, y, width, height = frame['box']
         if frame['id'] == 'ddg-iframe':
