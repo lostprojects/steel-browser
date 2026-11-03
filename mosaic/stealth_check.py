@@ -211,7 +211,7 @@ def native_challenge(session, attempts):
     state = page.evaluate(r'''() => {
       const box = e => { if (!e) return null; const r=e.getBoundingClientRect();
         return r.width && r.height && r.x>=0 && r.y>=0 ? [r.x,r.y,r.width,r.height] : null; };
-      return {title:document.title.toLowerCase(), text:document.body.innerText.slice(0,4000).toLowerCase(),
+      return {title:document.title.toLowerCase(), text:(document.body?.innerText || '').slice(0,4000).toLowerCase(),
         solved:[...document.querySelectorAll('[name="cf-turnstile-response"], [name="g-recaptcha-response"]')].some(e=>e.value.length>20),
         frames:[...document.querySelectorAll('iframe')].map(e=>({id:e.id,src:e.src,box:box(e)})).filter(e=>e.box)};
     }''')
@@ -296,6 +296,14 @@ def route_check(session, name, out, quiet=False):
                         break
             except NavigationTimeout:
                 result['challengeReadTimeout'] = True
+            except Exception as error:
+                if any(message in str(error) for message in (
+                    'Execution context was destroyed', 'Frame was detached',
+                    'Cannot find context with specified id',
+                )):
+                    result['challengeNavigationRaces'] = result.get('challengeNavigationRaces', 0) + 1
+                else:
+                    raise
         page.wait_for_timeout(2000)
     result['title'] = title
     if result['status'] != 'PASS':
