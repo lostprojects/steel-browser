@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+const seen = vi.hoisted(() => ({ urls: [] as string[] }));
 vi.mock("axios", () => ({
   default: {
     get: vi.fn(async () => ({
@@ -17,6 +18,7 @@ vi.mock("axios", () => ({
 }));
 vi.mock("../utils/proxy.js", () => ({
   ProxyServer: class {
+    constructor(url: string) { seen.urls.push(url); }
     url = "http://127.0.0.1:43210";
     rxBytes = 100;
     txBytes = 20;
@@ -49,6 +51,7 @@ describe("residential accounting", () => {
     const a = session("a"),
       b = session("b");
     await manager.prepare(a, agent);
+    expect(new URL(seen.urls.at(-1)!).password).toMatch(/_hardsession-[a-f0-9]{8}$/);
     await manager.prepare(b, agent);
     expect((await manager.totals()).totalResidentialBytes).toBe(240);
     (a.proxyServer as any).rxBytes = 400;

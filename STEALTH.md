@@ -380,3 +380,24 @@ The HTTP reader's first local check failed with a TypeError because curl_cffi
 responses do not implement a context manager. Switching to `Session.stream`
 returned HTTP 200 from example.com, with 579 response bytes. This check used
 no residential traffic.
+
+The corrected candidate passed health and direct quiet-session creation/release.
+Killing a client preserved the same session ID, page target and form value;
+reattachment and release passed with zero residential bytes.
+
+The first managed exit check failed before Chrome started (412 bytes). An explicit
+proxy using the existing client's eight-character sticky ID passed (19,015 bytes);
+a sixteen-character comparison failed (412 bytes). The manager now uses the proven
+eight-character format, covered by its passing two-test accounting/identity file.
+Ancestry's pilot also encountered this allocation error (412 bytes). Settled usage
+at this point is 20,251 residential bytes.
+
+Initial Railway route probes:
+
+| Route | Rung 1 | Rung 2 | Rung 3 | Residential bytes |
+|---|---|---|---|---:|
+| Utah | Missing payload; 2,896 direct response bytes | Passed; 50 payload links; 0.875 seconds | Unneeded | 0 |
+| Newspapers sign-in | Passed; two fields; 613,283 direct response bytes; 0.467 seconds | Unneeded | Unneeded | 0 |
+| Ancestry sign-in | Access denied; 541,024 direct response bytes | Challenge remained after 60.724 seconds | Allocation failed before navigation | 412 |
+
+These are pilots, separate from the declared twenty-attempt route sets.

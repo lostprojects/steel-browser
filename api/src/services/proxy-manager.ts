@@ -120,7 +120,7 @@ export class ProxyManager {
         statusCode: 409,
       });
     if (options.residential && !identity) {
-      identity = { country: options.residential.country, stickyId: randomBytes(8).toString("hex") };
+      identity = { country: options.residential.country, stickyId: randomBytes(4).toString("hex") };
       if (options.identity) {
         this.state.identities[options.identity] = identity;
         await this.persist();
@@ -137,7 +137,7 @@ export class ProxyManager {
         if (url.hostname !== "core-residential.evomi.com")
           throw new Error("Only Evomi Core is enabled");
         const stickyId =
-          options.identity || attempt === 0 ? identity.stickyId : randomBytes(8).toString("hex");
+          options.identity || attempt === 0 ? identity.stickyId : randomBytes(4).toString("hex");
         url.password = `${decodeURIComponent(url.password)}_country-${
           identity.country
         }_hardsession-${stickyId}`;
