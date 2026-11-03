@@ -223,7 +223,7 @@ def native_challenge(session, attempts):
         if 'challenges.cloudflare.com/' not in child.url:
             continue
         owner = child.frame_element()
-        box = owner.bounding_box(timeout=2000)
+        box = owner.bounding_box()
         if box and box['x'] >= 0 and box['y'] >= 0:
             state['frames'].append({'id': '', 'src': child.url,
                                     'box': [box['x'], box['y'], box['width'], box['height']]})
