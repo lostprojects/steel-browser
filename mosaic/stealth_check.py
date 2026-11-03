@@ -20,7 +20,10 @@ Credentials are never printed.
 Each run opens one Steel session at a time and releases it. Do not run two
 copies at once: the instance has a single browser.
 
-Requires: pip install playwright
+The CDP client is Patchright, which does not send Runtime.enable. Set
+STEEL_CLIENT=playwright to compare against stock Playwright.
+
+Requires: pip install patchright (and playwright for the comparison)
 """
 import json
 import os
@@ -32,7 +35,10 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+if os.environ.get('STEEL_CLIENT', 'patchright') == 'patchright':
+    from patchright.sync_api import sync_playwright
+else:
+    from playwright.sync_api import sync_playwright
 
 NAMES = ('STEEL_URL', 'STEEL_API_KEY', 'EVOMI_RESIDENTIAL_PROXY_URL', 'EVOMI_PREMIUM_PROXY_URL')
 
@@ -103,10 +109,21 @@ def call(method, path, payload=None):
 
 
 def sticky(proxy_url):
-    """US exit with one sticky IP for 30 minutes (Evomi password parameters)."""
+    """US exit that keeps one IP for as long as Evomi can (hardsession)."""
     u = urllib.parse.urlsplit(proxy_url)
-    pw = f'{u.password}_country-US_session-{secrets.token_hex(4)}_lifetime-30'
+    pw = f'{u.password}_country-US_hardsession-{secrets.token_hex(4)}'
     return f'{u.scheme}://{u.username}:{pw}@{u.hostname}:{u.port}'
+
+
+def exit_timezone(proxy_url):
+    """Timezone of the proxy's exit IP, looked up through that proxy.
+
+    Steel's own lookup sometimes returns the server's timezone instead, so the
+    client passes the timezone explicitly.
+    """
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({'http': proxy_url, 'https': proxy_url}))
+    data = json.loads(opener.open('https://ipwho.is/', timeout=30).read())
+    return (data.get('timezone') or {}).get('id')
 
 
 class Session:
@@ -116,6 +133,7 @@ class Session:
         body = {'blockAds': True, **(options or {})}
         if PROXY.get(mode):
             body['proxyUrl'] = sticky(PROXY[mode])
+            body.setdefault('timezone', exit_timezone(body['proxyUrl']))
         self.body = body
 
     def __enter__(self):
