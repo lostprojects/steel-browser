@@ -252,6 +252,7 @@ export class BrowserSession extends EventEmitter {
       "--no-default-browser-check",
       "--disable-background-networking",
       "--disable-component-update",
+      ...(this.options.mode === "quiet" ? ["--disable-features=OptimizationHints"] : []),
       "--disable-sync",
       "--password-store=basic",
       "--disable-session-crashed-bubble",

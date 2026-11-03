@@ -36,6 +36,7 @@ STEEL_CLIENT=playwright to compare against stock Playwright.
 Requires: pip install patchright (and playwright for the comparison)
 """
 import json
+import fcntl
 import os
 import re
 import secrets
@@ -166,10 +167,6 @@ class Session:
             ctx = self.browser.contexts[0] if self.browser.contexts else self.browser.new_context()
             self.page = ctx.pages[0] if ctx.pages else ctx.new_page()
             self.page.set_default_timeout(60000)
-            self.bytes = 0
-            cdp = ctx.new_cdp_session(self.page)
-            cdp.send('Network.enable')
-            cdp.on('Network.loadingFinished', lambda e: setattr(self, 'bytes', self.bytes + e.get('encodedDataLength', 0)))
             return self
         except BaseException:
             record_release(call('POST', f"/v1/sessions/{self.info['id']}/release"))
@@ -208,6 +205,60 @@ def probe(options):
         print('deviceandbrowserinfo flags:', flags or 'none')
 
 
+def native_challenge(session, attempts):
+    """Use native input for visible checkboxes and Bizapedia's drag challenge."""
+    page = session.page
+    state = page.evaluate(r'''() => {
+      const box = e => { if (!e) return null; const r=e.getBoundingClientRect();
+        return r.width && r.height && r.x>=0 && r.y>=0 ? [r.x,r.y,r.width,r.height] : null; };
+      return {title:document.title.toLowerCase(), text:document.body.innerText.slice(0,4000).toLowerCase(),
+        solved:[...document.querySelectorAll('[name="cf-turnstile-response"], [name="g-recaptcha-response"]')].some(e=>e.value.length>20),
+        frames:[...document.querySelectorAll('iframe')].map(e=>({id:e.id,src:e.src,box:box(e)})).filter(e=>e.box)};
+    }''')
+    if state['solved']:
+        return None
+    for frame in state['frames']:
+        x, y, width, height = frame['box']
+        if frame['id'] == 'ddg-iframe':
+            element = page.query_selector('#ddg-iframe')
+            inner = element.content_frame() if element else None
+            text = inner.inner_text('body').lower() if inner else ''
+            if height > 200 or 'type the text' in text or 'captcha' in text:
+                return 'puzzle'
+            point = (x + 64, y + 36)
+        elif 'challenges.cloudflare.com' in frame['src'] and height < 120:
+            point = (x + 30, y + height / 2)
+        elif 'recaptcha/api2/anchor' in frame['src']:
+            point = (x + 28, y + height / 2)
+        else:
+            continue
+        if attempts.get('checkbox', 0) >= 3:
+            return None
+        attempts['checkbox'] = attempts.get('checkbox', 0) + 1
+        page.wait_for_timeout(1000)
+        commands(session, [{'command': 'mouse', 'action': 'click', 'x': point[0], 'y': point[1]}])
+        page.wait_for_timeout(4000)
+        return 'checkbox'
+    if 'human verification' in state['text'] and 'drop here' in state['text'] and attempts.get('drag', 0) < 2:
+        start = page.get_by_text('Drag', exact=True).first.bounding_box()
+        end = page.get_by_text('Drop here').first.bounding_box()
+        if start and end:
+            attempts['drag'] = attempts.get('drag', 0) + 1
+            commands(session, [
+                {'command': 'mouse', 'action': 'move', 'x': start['x'] + start['width']/2, 'y': start['y'] + start['height']/2},
+                {'command': 'mouse', 'action': 'down'},
+                {'command': 'mouse', 'action': 'move', 'x': end['x'] + end['width']/2, 'y': end['y'] + end['height']/2},
+                {'command': 'mouse', 'action': 'up'},
+            ])
+            page.wait_for_timeout(1000)
+            button = page.get_by_text('Verify You Are Human').first.bounding_box()
+            if button:
+                commands(session, [{'command': 'mouse', 'action': 'click', 'x': button['x']+button['width']/2, 'y': button['y']+button['height']/2}])
+            page.wait_for_timeout(4000)
+            return 'drag'
+    return None
+
+
 def route_check(session, name, out, quiet=False):
     url, check, minimum = ROUTES[name]
     page = session.page
@@ -224,7 +275,8 @@ def route_check(session, name, out, quiet=False):
             {'command': 'mouse', 'action': 'wheel', 'x': 120, 'y': 140, 'deltaY': 80},
         ])
     title, text = '', ''
-    for _ in range(30):
+    attempts = {}
+    for step in range(30):
         check_budget(session)
         try:
             n, title, text = page.evaluate(check), page.title(), page.inner_text('body')[:500]
@@ -235,6 +287,15 @@ def route_check(session, name, out, quiet=False):
         if n >= minimum and not any(c in title.lower() for c in CHALLENGE):
             result['status'] = 'PASS'
             break
+        if quiet and step >= 2:
+            try:
+                action = native_challenge(session, attempts)
+                if action:
+                    result.setdefault('challengeActions', []).append(action)
+                    if action == 'puzzle':
+                        break
+            except NavigationTimeout:
+                result['challengeReadTimeout'] = True
         page.wait_for_timeout(2000)
     result['title'] = title
     if result['status'] != 'PASS':
@@ -278,11 +339,13 @@ def record_release(info):
     count = info.get('proxyTxBytes', 0) + info.get('proxyRxBytes', 0)
     path = os.environ.get('STEEL_BYTE_LEDGER')
     if path:
-        existing = [json.loads(line)['id'] for line in Path(path).read_text().splitlines()] if Path(path).exists() else []
-        if info['id'] in existing:
-            return
-        with Path(path).open('a') as f:
-            f.write(json.dumps({'id': info['id'], 'bytes': count}) + '\n')
+        with Path(path).open('a+') as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            f.seek(0)
+            existing = {json.loads(line)['id'] for line in f}
+            if info['id'] not in existing:
+                f.write(json.dumps({'id': info['id'], 'bytes': count, 'hosts': info.get('proxyTraffic', [])}) + '\n')
+                f.flush()
     active = os.environ.get('STEEL_ACTIVE_SESSION_FILE')
     if active and Path(active).exists() and Path(active).read_text() == info['id']:
         Path(active).unlink()
