@@ -1,6 +1,6 @@
 # Using the service
 
-Production runs Google Chrome 156.0.8078.79 with a separate display per session. Phases 0–3 are accepted, including quiet mode. Browserbase remains available as a fallback.
+Production runs Google Chrome 156.0.8078.79 with a separate display per session. Phases 0–3 are accepted, including quiet mode. Browserbase is a temporary Mosaic fallback until phase 6 moves the callers.
 
 ## A session from start to finish
 
@@ -72,3 +72,14 @@ Create a quiet session with `mode: "quiet"`, the sticky proxy and its timezone. 
 ```
 
 Quiet screenshots capture the visible display, including Chrome’s controls. Full-page and element screenshots are unavailable. Use commands for quiet reads and screenshots; the scrape, PDF and CDP casting routes return a conflict response for this mode. Raw CDP access remains available, so clients must follow the quiet policy themselves; Patchright is the measured client.
+
+## Mosaic pool client
+
+Mosaic's updated client removes its local lease. Three direct callers passed a
+concurrent check; a fourth received HTTP 429 after the service queue and opened
+Browserbase. This check used zero residential bytes.
+
+The client adds `identity_policy="wait"` (default, up to ten minutes) and
+`identity_policy="throwaway"`. Its residential profile migration depends on the
+phase 4 identity endpoint. The staged client becomes active with that service
+update; `mosaic/migrate_identity.py` imports the existing sticky exit and cookies.
