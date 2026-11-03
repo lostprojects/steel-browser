@@ -423,7 +423,10 @@ def device_result(page, timeout=60000):
     """Read the site's completed JSON response; empty or invalid output fails."""
     deadline = time.monotonic() + timeout / 1000
     while time.monotonic() < deadline:
-        text = page.locator('#jsonResult').text_content(timeout=5000)
+        try:
+            text = page.locator('#jsonResult').text_content(timeout=5000)
+        except NavigationTimeout:
+            continue
         if text and text.strip():
             result = json.loads(text)
             if not isinstance(result, dict) or not isinstance(result.get('isBot'), bool):
@@ -455,7 +458,10 @@ def rebrowser_result(page, timeout=60000):
     neutral = {'sourceUrlLeak', 'mainWorldExecution', 'exposeFunctionLeak'}
     deadline = time.monotonic() + timeout / 1000
     while time.monotonic() < deadline:
-        raw = page.locator('#detections-json').input_value(timeout=5000)
+        try:
+            raw = page.locator('#detections-json').input_value(timeout=5000)
+        except NavigationTimeout:
+            continue
         rows = json.loads(raw) if raw.strip() else []
         # Keep positive detections even when another check is still pending.
         if any(r.get('rating', 0) > 0 for r in rows):
