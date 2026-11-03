@@ -4,6 +4,8 @@ The fork is Mosaic's browser service. It retains Steel's commands, extraction ut
 
 Phase 1 removes the idle browser, Selenium and fingerprint injection. Each session owns its browser, forwarder and profile; routes select it by ID. `SessionPool.registerSessionHook()` lets integrations register fresh plugin instances or launch/shutdown callbacks before each browser starts.
 
+Google Chrome stable is installed at an exact version and checksum. Each session owns an Xvfb display and a loopback VNC endpoint; noVNC uses the existing API key. The global display and unpinned Debian Chromium install are removed.
+
 ## Earlier fork fixes
 
 | Commit | Files | Change | Why |

@@ -23,11 +23,13 @@ Sessions expire after ten minutes without a connected client or API activity, or
 
 Use the returned session-specific `websocketUrl` and `sessionViewerUrl`. Commands use `POST /v1/sessions/{id}/commands`; scrape, screenshot and PDF actions use the same session prefix. The old `/v1/sessions/scrape` style works only when exactly one session exists. Stateless `/v1/scrape`, `/v1/screenshot`, `/v1/pdf` and `/v1/search` create and release a temporary agent session unless supplied `sessionId` or `steel-session-id`.
 
-The service accepts `mode: "agent"` in phase 1. Quiet mode follows in phase 3. Arbitrary profile paths, Selenium and fingerprint injection are removed.
+The service currently accepts `mode: "agent"`. Quiet mode follows in phase 3. Arbitrary profile paths, Selenium and fingerprint injection are removed.
 
 ## The API key
 
-Send the key on every request. HTTP clients use the `steel-api-key` header. CDP clients add `?apiKey=` to the session's `websocketUrl`. `/v1/health` needs no key.
+Send the key on every request. HTTP clients use the `steel-api-key` header. CDP clients add `?apiKey=` to the session's `websocketUrl`. `/health` and `/v1/health` need no key.
+
+Open the session’s `noVncUrl` with `?apiKey=<key>` for its X display. The page stores the existing HttpOnly authentication cookie and removes the key from its URL. Its keyboard and pointer control only that session. CDP live view remains available at `sessionViewerUrl`.
 
 ## Use Patchright as the client
 

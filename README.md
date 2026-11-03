@@ -2,13 +2,13 @@
 
 A self-hosted remote browser on Railway for Mosaic's collector. Browserbase remains available as a fallback while this service develops. Railway compute plus Evomi residential traffic at about $1/GB costs a fraction of Browserbase's $10–12/GB for proxy traffic.
 
-The browser is tuned to look like an ordinary Linux desktop to anti-bot systems. It reports itself truthfully and consistently, leaves no automation traces, and goes out through a residential IP whose timezone it matches.
+The browser uses a Linux desktop display and accepts a residential proxy and its timezone. Detection results are measured separately for each build.
 
 This is a fork of [steel-dev/steel-browser](https://github.com/steel-dev/steel-browser). Upstream's README and guides are archived in [upstream-docs/](upstream-docs/), unchanged apart from links repaired for the new location.
 
 ## Status
 
-The phase 1 service runs up to three independent sessions, with named profiles on a Railway volume. It deletes throwaway profiles on release and reports why each session ended. Deployment comes from `deploy`; documentation pushes are skipped.
+The service runs up to three independent sessions, with named profiles on a Railway volume. It deletes throwaway profiles on release and reports why each session ended. Deployment comes from `deploy`; documentation pushes are skipped. The phase 2 candidate adds pinned Google Chrome 156.0.8078.79, a separate X display per session and authenticated noVNC; fingerprint acceptance is pending.
 
 The earlier singleton build passed deviceandbrowserinfo.com's bot test and loaded all six collector routes in supervised measurements, including Anna's Archive in three of four attempts. Those measurements are retained in [STEALTH.md](STEALTH.md); the replacement needs the phase 2 and phase 3 fingerprint and route checks before claiming the same results.
 

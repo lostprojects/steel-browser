@@ -1,19 +1,17 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import os from "node:os";
 import { selectedSession } from "./sessions.controller.js";
 import { handleScrape, handleScreenshot, handlePDF } from "../actions/actions.controller.js";
 import { quickAction } from "../commands/commands.guard.js";
 
 export default async function routes(server: FastifyInstance) {
-  server.get("/health", async (_req, reply) =>
-    reply.code(server.sessionPool.draining ? 503 : 200).send({
-      status: server.sessionPool.draining ? "draining" : "ok",
-      liveSessions: server.sessionPool.size,
-      maxSessions: server.sessionPool.maxSessions,
-      freeMemory: os.freemem(),
-      vault: "not_configured",
-    }),
-  );
+  server.get("/sessions/:sessionId/view", async (req, reply) => {
+    const session = selectedSession(server, req);
+    if (!session.display.name)
+      return reply.code(409).send({ error: "X display unavailable on this host" });
+    return reply
+      .header("referrer-policy", "no-referrer")
+      .view("session-vnc.ejs", { wsPath: `/v1/sessions/${session.id}/vnc` });
+  });
   server.post("/sessions", async (req) => (await server.sessionPool.create(req.body ?? {})).info());
   server.get("/sessions", async () => ({ sessions: server.sessionPool.list() }));
   server.get(

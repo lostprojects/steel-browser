@@ -91,3 +91,5 @@ Phase 0 passed on 2 November 2026 (New York time). Railway marked the documentat
 Phase 1 removes the shared profile, singleton and idle relaunch. TypeScript passes, and 68 tests across eight affected files passed before production acceptance. BrowserSession now contains the WebGL flags directly; no new anti-bot result is claimed here.
 
 Phase 1 production checks ran three sessions concurrently with three distinct cookie values and three working CDP connections. A fourth request returned HTTP 429 after 5.46 seconds. A full commands snapshot completed. A second claim on `mosaic-acceptance` returned HTTP 409; its persistent cookie survived a full Railway redeploy. All checks used direct traffic, with zero residential bytes.
+
+The final phase 1 release response confirmed `temporaryProfileRemoved: true` after a filesystem check. Phase 2 is being measured with Google Chrome 156.0.8078.79 and separate X displays.

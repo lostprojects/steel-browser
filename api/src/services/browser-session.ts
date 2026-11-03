@@ -3,7 +3,7 @@
 import { EventEmitter } from "node:events";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { createServer } from "node:net";
+import { SessionDisplay, unusedPort } from "./session-display.js";
 import type { Duplex } from "node:stream";
 import type { IncomingMessage } from "node:http";
 import puppeteer, { type Browser, type Page, type Target, type CDPSession } from "puppeteer-core";
@@ -42,6 +42,7 @@ export class BrowserSession extends EventEmitter {
   proxyServer?: IProxyServer;
   readonly filesPath: string;
   readonly engine: CommandEngine;
+  readonly display = new SessionDisplay();
   private browser: Browser | null = null;
   private primary: Page | null = null;
   private endpoint = "";
@@ -128,19 +129,20 @@ export class BrowserSession extends EventEmitter {
     }
     await writeFile(
       preferencesFile,
-      JSON.stringify(deepMerge(preferences, defaultPluginPreferences())),
+      JSON.stringify(
+        deepMerge(deepMerge(preferences, defaultPluginPreferences()), {
+          intl: { accept_languages: this.options.locale ?? "en-US,en" },
+        }),
+      ),
     );
     this.engine.prepare(this.id);
     await this.plugins.onSessionStart(this.launchConfig);
     const { width, height } = this.getDimensions();
-    const debugPort = await new Promise<number>((resolve, reject) => {
-      const server = createServer();
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", () => {
-        const port = (server.address() as { port: number }).port;
-        server.close(() => resolve(port));
-      });
+    await this.display.start(width, height, () => {
+      if (!this.stopping)
+        void this.end("display_exit").catch(() => this.logger.error("Display cleanup failed"));
     });
+    const debugPort = await unusedPort();
     this.browser = await puppeteer.launch({
       executablePath: getChromeExecutablePath(),
       userDataDir: this.profilePath,
@@ -148,7 +150,7 @@ export class BrowserSession extends EventEmitter {
       headless: this.launchConfig.options.headless,
       ignoreDefaultArgs: ["--enable-automation"],
       timeout: 30_000,
-      env: { ...process.env, TZ: timezone, DISPLAY: env.DISPLAY },
+      env: { ...process.env, TZ: timezone, DISPLAY: this.display.name ?? env.DISPLAY },
       args: [
         "--no-sandbox",
         "--disable-dev-shm-usage",
@@ -367,6 +369,8 @@ export class BrowserSession extends EventEmitter {
       sessionViewerUrl: this.getDebuggerUrl(),
       userAgent: this.userAgent,
       dimensions: this.getDimensions(),
+      display: this.display.name,
+      noVncUrl: getUrl(`v1/sessions/${this.id}/view`),
       proxyTxBytes: this.proxyServer?.txBytes ?? 0,
       proxyRxBytes: this.proxyServer?.rxBytes ?? 0,
       eventCount: 0,
@@ -392,6 +396,7 @@ export class BrowserSession extends EventEmitter {
     } finally {
       clearTimeout(kill);
       this.browser = null;
+      await this.display.close();
       await this.proxyServer?.close(true);
       this.wsProxy.close();
       this.status = reason === "launch_failed" || reason === "chrome_exit" ? "failed" : "released";

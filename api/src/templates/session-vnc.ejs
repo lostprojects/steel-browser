@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="referrer" content="no-referrer">
+  <title>Mosaic browser</title>
+  <style>html,body,#display{margin:0;width:100%;height:100%;background:#181818}#status{position:fixed;top:8px;left:12px;color:white;font:14px sans-serif}</style>
+</head>
+<body><div id="display"></div><div id="status">Connecting…</div>
+<script type="module">
+  import RFB from '/v1/novnc/core/rfb.js';
+  // Authentication uses the HttpOnly cookie set by the existing API key hook.
+  history.replaceState(null, '', location.pathname);
+  const url = new URL('<%= wsPath %>', location.href);
+  url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const rfb = new RFB(document.getElementById('display'), url.href);
+  rfb.scaleViewport = true;
+  rfb.addEventListener('connect', () => document.getElementById('status').remove());
+  rfb.addEventListener('disconnect', () => { document.getElementById('display').textContent = 'Session ended.'; });
+</script></body></html>

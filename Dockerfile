@@ -6,18 +6,12 @@ WORKDIR /app
 
 ENV NODE_ENV="production" \
     PUPPETEER_CACHE_DIR=/app/.cache \
-    DISPLAY=:10 \
     PATH="/usr/bin:${PATH}" \
-    CHROME_BIN=/usr/bin/chromium \
-    CHROME_PATH=/usr/bin/chromium
+    CHROME_BIN=/usr/bin/google-chrome-stable \
+    CHROME_PATH=/usr/bin/google-chrome-stable \
+    CHROME_EXECUTABLE_PATH=/app/api/chrome-launcher.sh
 
 LABEL org.opencontainers.image.source="https://github.com/steel-dev/steel-browser"
-
-# Install dependencies
-RUN rm -f /etc/apt/apt.conf.d/docker-clean; \
-    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache; \
-    apt-get update -qq && \
-    DEBIAN_FRONTEND=noninteractive apt-get -yq dist-upgrade
 
 # Stage 1: Build UI
 FROM node:${NODE_VERSION} AS ui-build
@@ -90,21 +84,21 @@ RUN apt-get update && \
     dbus-x11 \
     procps \
     tini \
-    x11-xserver-utils
+    x11-xserver-utils \
+    x11vnc novnc xdotool ffmpeg util-linux \
+    libgl1-mesa-dri libglx-mesa0 fonts-liberation fonts-noto-color-emoji
 
-# Install Chrome and ChromeDriver
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    wget \
-    ca-certificates \
-    curl \
-    unzip \
-    # Download and install Chromium
-    && apt-get install -y chromium \
-    # Clean up
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm -rf /var/cache/apt/*
+# Exact stable package; missing archived packages must fail the build.
+ARG CHROME_VERSION=156.0.8078.79-1
+ARG CHROME_SHA256=be1a1e161419f5c8272432f6860912550d8e29985e925913fa800493a0d0c955
+RUN curl --fail --location --retry 3 \
+    "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${CHROME_VERSION}_amd64.deb" \
+    -o /tmp/chrome.deb \
+    || { echo "Pinned Chrome unavailable: bump CHROME_VERSION and CHROME_SHA256." >&2; exit 1; }
+RUN echo "${CHROME_SHA256}  /tmp/chrome.deb" | sha256sum --check - \
+    && apt-get update && apt-get install -y --no-install-recommends /tmp/chrome.deb \
+    && test "$(dpkg-query -W -f='${Version}' google-chrome-stable)" = "${CHROME_VERSION}" \
+    && rm -f /tmp/chrome.deb && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /etc/chromium/policies/managed /etc/opt/chrome/policies/managed \
     && echo '{"URLBlocklist":["file://*"]}' \
@@ -119,7 +113,7 @@ COPY --from=api-build /app /app
 COPY --from=ui-build /app/ui/dist /app/ui/dist
 
 # Copy entrypoint script
-COPY --chmod=755 api/entrypoint.sh /app/api/entrypoint.sh
+COPY --chmod=755 api/entrypoint.sh api/chrome-launcher.sh /app/api/
 
 EXPOSE 3000 9223
 

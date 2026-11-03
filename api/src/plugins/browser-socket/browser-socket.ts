@@ -21,14 +21,22 @@ const plugin: FastifyPluginAsync<BrowserSocketOptions> = async (server, options)
     try {
       const url = new URL(request.url ?? "/", "http://localhost");
       const match = url.pathname.match(
-        /^\/v1\/sessions\/([^/]+)\/(cdp|cast|logs|recording|pageId)$/,
+        /^\/v1\/sessions\/([^/]+)\/(cdp|cast|logs|recording|pageId|vnc)$/,
       );
       const session = server.sessionPool.get(
         match?.[1] ?? url.searchParams.get("sessionId") ?? undefined,
       );
       const params = Object.fromEntries(url.searchParams);
       const handler = registry.matchHandler(match ? `/v1/sessions/${match[2]}` : url.pathname);
-      if (handler) {
+      if (match?.[2] === "vnc") {
+        session.clients++;
+        session.touch();
+        socket.once("close", () => {
+          session.clients--;
+          session.touch();
+        });
+        wss.handleUpgrade(request, socket, head, (ws) => session.display.attach(ws));
+      } else if (handler) {
         session.clients++;
         session.touch();
         socket.once("close", () => {

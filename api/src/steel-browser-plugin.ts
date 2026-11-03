@@ -1,3 +1,6 @@
+import fastifyStatic from "@fastify/static";
+import { existsSync } from "node:fs";
+import { healthRoutes } from "./modules/sessions/health.js";
 import fastifyView from "@fastify/view";
 import { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
@@ -9,13 +12,7 @@ import customBodyParser from "./plugins/custom-body-parser.js";
 import fileStoragePlugin from "./plugins/file-storage.js";
 import requestLogger from "./plugins/request-logger.js";
 import openAPIPlugin from "./plugins/schemas.js";
-import {
-  actionsRoutes,
-  cdpRoutes,
-  filesRoutes,
-  logsRoutes,
-  sessionsRoutes,
-} from "./routes.js";
+import { actionsRoutes, cdpRoutes, filesRoutes, logsRoutes, sessionsRoutes } from "./routes.js";
 import { fileURLToPath } from "node:url";
 import ejs from "ejs";
 import type { BrowserSession } from "./services/browser-session.js";
@@ -29,7 +26,6 @@ import { LogStorage } from "./services/cdp/instrumentation/storage/log-storage.i
 declare module "fastify" {
   interface FastifyInstance {
     steelBrowserConfig: SteelBrowserConfig;
-
   }
 
   interface LogStorageInterface extends LogStorage {}
@@ -66,6 +62,13 @@ const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastif
   });
   await fastify.register(customBodyParser);
 
+  await healthRoutes(fastify);
+  if (existsSync("/usr/share/novnc"))
+    await fastify.register(fastifyStatic, {
+      root: "/usr/share/novnc",
+      prefix: "/v1/novnc/",
+      decorateReply: false,
+    });
   // Routes
   const commands = env.ENABLE_COMMANDS_API
     ? await import("./modules/commands/commands.routes.js")
