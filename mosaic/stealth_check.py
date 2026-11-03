@@ -295,6 +295,8 @@ def navigate(page, url, timeout=60000, retries=None):
             transport = isinstance(error, NavigationTimeout) or any(code in str(error) for code in (
                 'net::ERR_TIMED_OUT', 'net::ERR_CONNECTION_RESET',
                 'net::ERR_EMPTY_RESPONSE', 'net::ERR_CONNECTION_CLOSED',
+                'net::ERR_TUNNEL_CONNECTION_FAILED', 'net::ERR_PROXY_CONNECTION_FAILED',
+                'net::ERR_SOCKS_CONNECTION_FAILED', 'net::ERR_NETWORK_CHANGED',
             ))
             if attempt or not transport:
                 raise
