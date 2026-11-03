@@ -47,3 +47,18 @@ Quiet sessions start Chrome as a plain child process. The commands engine uses a
 Agent sessions keep Puppeteer and their existing instrumentation.
 
 Quiet contexts and object handles belong to their frames. An iframe redirect invalidates its own handles while preserving the main frame. Proxy metering includes open tunnels and reports bytes by hostname; quiet Chrome disables background Optimization Guide downloads.
+
+## Phase 4
+
+The proxy manager allocates Core exits, resolves their timezones through the exit,
+and persists daily byte totals by agent key. Named identities keep their sticky IDs
+beside the persistent profiles. The default daily residential budget is 1 GB.
+
+The routing service validates collector payloads and records its lowest working
+route for seven days. It can fetch files directly with session cookies and retry
+through the exit. Measured site policies can split static hosts at the forwarder.
+
+Challenge clearing now belongs to the service, with isolated frame reads and
+native input. Visual puzzles retain their session for noVNC. API idempotency and
+Python CDP reattachment preserve work across dropped client connections.
+Browserbase is a temporary Mosaic fallback until phase 6 moves the callers.

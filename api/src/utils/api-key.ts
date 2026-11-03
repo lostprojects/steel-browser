@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import { env } from "../env.js";
+import { DAILY_BUDGET, type Agent } from "../services/proxy-manager.js";
 
 export const API_KEY_HEADER = "steel-api-key";
 export const API_KEY_COOKIE = "steel_api_key";
@@ -43,5 +44,26 @@ export function isAuthorized(req: IncomingMessage): boolean {
   if (!env.STEEL_API_KEY) return true;
   const path = new URL(req.url ?? "", "http://localhost").pathname;
   if (publicPaths.has(path)) return true;
-  return matches(suppliedKey(req).key, env.STEEL_API_KEY);
+  return agentFor(req) !== undefined;
+}
+
+export function agentFor(req: IncomingMessage): Agent | undefined {
+  const key = suppliedKey(req).key;
+  const dailyBudgetBytes = Number(process.env.RESIDENTIAL_DAILY_BUDGET_BYTES ?? DAILY_BUDGET);
+  if (!Number.isSafeInteger(dailyBudgetBytes) || dailyBudgetBytes < 1)
+    throw new Error("Invalid residential budget");
+  if (!env.STEEL_API_KEY || matches(key, env.STEEL_API_KEY))
+    return { name: "admin", admin: true, dailyBudgetBytes };
+  const entries = JSON.parse(process.env.STEEL_AGENT_KEYS ?? "[]") as Array<{
+    name: string;
+    key: string;
+    dailyBudgetBytes?: number;
+  }>;
+  const entry = entries.find((v) => matches(key, v.key));
+  if (!entry) return undefined;
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(entry.name) || entry.name === "admin")
+    throw new Error("Invalid agent name");
+  const budget = entry.dailyBudgetBytes ?? dailyBudgetBytes;
+  if (!Number.isSafeInteger(budget) || budget < 1) throw new Error("Invalid agent budget");
+  return { name: entry.name, dailyBudgetBytes: budget };
 }

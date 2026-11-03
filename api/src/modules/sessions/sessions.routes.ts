@@ -2,8 +2,15 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { selectedSession } from "./sessions.controller.js";
 import { handleScrape, handleScreenshot, handlePDF } from "../actions/actions.controller.js";
 import { quickAction } from "../commands/commands.guard.js";
+import { agentFor } from "../../utils/api-key.js";
+import { idempotent } from "../../utils/idempotency.js";
 
 export default async function routes(server: FastifyInstance) {
+  const access = (req: FastifyRequest, id: string) => {
+    const agent = agentFor(req.raw)!;
+    if (!agent.admin && server.sessionPool.owner(id)?.name !== agent.name)
+      throw Object.assign(new Error("Session belongs to another agent"), { statusCode: 403 });
+  };
   server.get("/sessions/:sessionId/view", async (req, reply) => {
     const session = selectedSession(server, req);
     if (!session.display.name)
@@ -12,24 +19,42 @@ export default async function routes(server: FastifyInstance) {
       .header("referrer-policy", "no-referrer")
       .view("session-vnc.ejs", { wsPath: `/v1/sessions/${session.id}/vnc` });
   });
-  server.post("/sessions", async (req) => (await server.sessionPool.create(req.body ?? {})).info());
-  server.get("/sessions", async () => ({ sessions: server.sessionPool.list() }));
+  server.post("/sessions", async (req) =>
+    idempotent(req, async () =>
+      (await server.sessionPool.create(req.body ?? {}, agentFor(req.raw))).info(),
+    ),
+  );
+  server.get("/sessions", async (req) => {
+    const agent = agentFor(req.raw)!;
+    return {
+      sessions: server.sessionPool
+        .list()
+        .filter((s) => agent.admin || server.sessionPool.owner(s.id)?.name === agent.name),
+    };
+  });
   server.get(
     "/sessions/:sessionId",
-    async (req: FastifyRequest<{ Params: { sessionId: string } }>) =>
-      server.sessionPool.details(req.params.sessionId),
+    async (req: FastifyRequest<{ Params: { sessionId: string } }>) => {
+      access(req, req.params.sessionId);
+      return server.sessionPool.details(req.params.sessionId);
+    },
   );
   server.post(
     "/sessions/:sessionId/release",
-    async (req: FastifyRequest<{ Params: { sessionId: string } }>) => ({
-      success: true,
-      ...(await server.sessionPool.release(req.params.sessionId)),
-    }),
+    async (req: FastifyRequest<{ Params: { sessionId: string } }>) => {
+      access(req, req.params.sessionId);
+      return {
+        success: true,
+        ...(await server.sessionPool.release(req.params.sessionId)),
+      };
+    },
   );
   server.delete(
     "/sessions/:sessionId",
-    async (req: FastifyRequest<{ Params: { sessionId: string } }>) =>
-      server.sessionPool.release(req.params.sessionId),
+    async (req: FastifyRequest<{ Params: { sessionId: string } }>) => {
+      access(req, req.params.sessionId);
+      return server.sessionPool.release(req.params.sessionId);
+    },
   );
   server.post("/sessions/release", async (req) =>
     server.sessionPool.release(selectedSession(server, req).id),
@@ -74,11 +99,9 @@ export default async function routes(server: FastifyInstance) {
       server.post(route, async (req, reply) => {
         const session = selectedSession(server, req);
         if (session.options.mode === "quiet")
-          return reply
-            .code(409)
-            .send({
-              error: "Use the commands API for quiet-session reads and display screenshots",
-            });
+          return reply.code(409).send({
+            error: "Use the commands API for quiet-session reads and display screenshots",
+          });
         return quickAction({ commandEngine: session.engine }, req as any, reply, () =>
           handler(session, session, req as any, reply),
         );

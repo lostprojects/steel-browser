@@ -1,85 +1,97 @@
 # Using the service
 
-Production runs Google Chrome 156.0.8078.79 with a separate display per session. Phases 0–3 are accepted, including quiet mode. Browserbase is a temporary Mosaic fallback until phase 6 moves the callers.
+The service runs Google Chrome 156.0.8078.79 with three independent browser sessions.
+Browserbase is Mosaic's temporary fallback until phase 6 moves the callers.
 
-## A session from start to finish
+## Sessions and identities
 
-```python
-proxy = sticky(EVOMI_RESIDENTIAL_PROXY_URL)                 # one exit IP for the job
-body = {"blockAds": False, "proxyUrl": proxy, "timezone": exit_timezone(proxy)}
-session = POST /v1/sessions, body                           # header steel-api-key: <key>
-browser = patchright.chromium.connect_over_cdp(session["websocketUrl"] + "?apiKey=" + key)
-context = browser.contexts[0]
-page = context.pages[0]
-...
-POST /v1/sessions/{id}/release
-```
+Send `steel-api-key` on HTTP requests. Use `STEEL_API_KEY` for administration;
+named client keys have separate daily residential budgets of 1 GB (1,000,000,000
+bytes). The day changes at midnight UTC. Direct traffic does not use that budget.
 
-`sticky()`, `exit_timezone()` and a `Session` context manager that does all of this are in [mosaic/stealth_check.py](mosaic/stealth_check.py).
+Create a direct session with `POST /v1/sessions {"mode":"agent"}`. For a managed
+residential exit, send `{"mode":"quiet","residential":{"country":"US"}}`.
+The service allocates a Core sticky exit, looks up its IP and timezone through
+that exit with ipwho.is, then starts Chrome with the returned timezone.
 
-Release every session. The service allows three independent sessions. A fourth waits up to five seconds and then receives HTTP 429; it cannot replace another browser.
+Add `identity: "residential-US"` to keep a named profile on `/data/profiles`.
+Its sticky ID lives in the service's private routing state. A second claim gets
+HTTP 409. Mosaic's client can wait (`identity_policy="wait"`, ten-minute default)
+or ask for a throwaway profile (`identity_policy="throwaway"`). Throwaway sessions
+receive independent sticky exits and profiles.
 
-`identity: "ancestry"` keeps a named profile under `/data/profiles`. Names may contain letters, digits, underscores and hyphens. A second claim on a name receives HTTP 409. Without an identity, the profile is unique and deleted on release.
+A fourth session waits up to five seconds, then gets HTTP 429. Mosaic currently
+uses Browserbase after that response. Three simultaneous Mosaic callers and the
+fourth-caller fallback passed before the service update, using zero residential bytes.
 
-Sessions expire after ten minutes without a connected client or API activity, or after three hours regardless of activity. A released throwaway session reports `temporaryProfileRemoved: true` only after a filesystem check confirms its profile is gone.
+Create requests accept a caller-generated UUID in `sessionId`. Send an
+`idempotency-key` header when retrying a create after a lost response. Reusing the
+key with different arguments returns 409.
 
-The response also reports `endReason` and settled `proxyTxBytes` / `proxyRxBytes`. Live totals include open tunnels; `proxyTraffic` breaks the same traffic down by hostname. A browser crash ends that session without launching an idle replacement.
+Connect Patchright to the returned `websocketUrl`, adding `?apiKey=<key>`.
+Stock Playwright adds instrumentation that quiet sessions avoid. A dropped API
+or CDP connection leaves the browser and page alive; reconnect to that same URL.
+Mosaic's `Browser.reconnect()` reattaches, and its API helper retries safe requests.
 
-Use the returned session-specific `websocketUrl` and `sessionViewerUrl`. Commands use `POST /v1/sessions/{id}/commands`; scrape, screenshot and PDF actions use the same session prefix. The old `/v1/sessions/scrape` style works only when exactly one session exists. Stateless `/v1/scrape`, `/v1/screenshot`, `/v1/pdf` and `/v1/search` create and release a temporary agent session unless supplied `sessionId` or `steel-session-id`.
+Release with `POST /v1/sessions/{id}/release`. Without a client or API activity,
+sessions expire after ten minutes; the lifetime cap is three hours. Release returns
+`endReason`, settled `proxyTxBytes` and `proxyRxBytes`, plus hostname traffic.
+Temporary profiles are removed. A budget termination reports
+`residential_budget_exceeded`; a busy stream without navigation can end as
+`stream_without_navigation`.
 
-The service accepts `mode: "agent"` (default) and `mode: "quiet"`. Quiet mode requires an X display and accepts a named profile for saved state; it rejects `headless: true` and context injection. Arbitrary profile paths, Selenium and fingerprint injection are removed.
+## Routing and downloads
 
-## The API key
+`POST /v1/fetch` accepts `url`, an optional collector `route`, `identity` and
+`retain`. It tries plain HTTP with Chrome TLS, an agent browser, then a quiet
+residential browser. Validation checks the payload, including Utah's valid HTTP
+418 responses. Known hosts begin at their recorded rung; entries expire after
+seven days. `startRung` requests an explicit starting point for measurement.
 
-Send the key on every request. HTTP clients use the `steel-api-key` header. CDP clients add `?apiKey=` to the session's `websocketUrl`. Both `/v1/health` and `/health` need no key and report the installed browser version.
+The six route names are `annas`, `bizapedia`, `udn`, `ancestry`, `newspapers` and
+`fold3`. Anonymous probes carry no identity cookies. Named identities use their
+own sticky residential exit throughout. A failed quiet attempt gets one fresh-exit
+retry; identity sessions retain their exit and do not retry under another identity.
 
-Open the session’s `noVncUrl` with `?apiKey=<key>` for its X display. The page stores the existing HttpOnly authentication cookie and removes the key from its URL. Its keyboard and pointer control only that session. CDP live view remains available at `sessionViewerUrl`.
+The result keeps each attempt's outcome, timing and residential bytes separately.
+A successful response includes HTML and either a retained session or its settled
+record. `GET /v1/routing` shows the host table; `GET /v1/usage` shows durable totals.
 
-## Use Patchright as the client
+Traffic splitting is off unless a site has an approved policy. It routes a small
+static-CDN list directly and refuses a small advertising/media list; unknown hosts,
+first-party resources and challenge providers retain the residential exit. Admin
+`splitTraffic` permits a detector check before enabling a site with
+`PUT /v1/routing/policies/{host} {"split":true}`.
 
-Stock Playwright sends `Runtime.enable` to every page, which pages detect and which undoes the server-side fixes. Patchright is a drop-in replacement that does not. Mosaic's `.venv` has it.
+`POST /v1/sessions/{id}/download {"url":"https://..."}` fetches from Railway with
+the browser's cookies and User-Agent. It retries through the session's exit when
+direct fetching fails. Cookies retain their domain/path/secure rules across redirects.
+The response contains base64 bytes, headers and the route used; one transfer is
+limited to 64 MB. Larger files need a later streaming interface.
 
-## The sticky proxy
+## Challenges and manual input
 
-Evomi reads targeting from the proxy password, with parameters joined by underscores. `sticky()` appends `_country-US_hardsession-<id>`.
+`POST /v1/sessions/{id}/challenge` waits out interstitials and uses native input
+for Cloudflare/Turnstile and DDoS-Guard checkboxes, plus Bizapedia's drag control.
+It reads frames through Chrome's inventory, including closed shadow roots.
 
-- A `hardsession` keeps one IP for as long as Evomi can, which a login or a cleared challenge needs.
-- The softer `session-<id>_lifetime-<minutes>` may change IP.
-- Use a new ID for each independent job.
+A visual puzzle returns `challenge_required`, a screenshot and `noVncUrl`. The
+session stays open under its idle timeout. Open the view with `?apiKey=<key>`;
+its authentication cookie removes the key from subsequent URLs. Other callers can
+use the remaining pool slots.
 
-Requests from Railway and from a Mac with the same ID leave through the same IP.
+Mosaic's `challenge.py` calls this API and accepts manual actions in screenshot
+pixels. The service's `/input` endpoint uses native display input for those actions.
+Both clients have removed their duplicate challenge solvers.
 
-## Pass the timezone yourself
+Quiet commands use `POST /v1/sessions/{id}/commands`; reads run in isolated worlds
+and keyboard/pointer events use X11. Screenshots capture the visible display.
+Full-page/element screenshots, scrape actions and CDP casting are unavailable in
+quiet mode. Agent sessions retain the existing instrumentation and action routes.
 
-The client looks up the exit timezone through the same sticky proxy. Earlier tests changed both proxy stickiness and timezone handling together; they do not establish that Steel used Railway's location. Proxy rotation and differences between geolocation databases remain possible causes of the earlier mismatch.
+## Existing identity migration
 
-`exit_timezone()` asks ipwho.is through the same sticky proxy and passes the answer as `timezone`. All accepted phase 2 samples matched their exit timezone after resolving IANA aliases.
-
-## PDFs
-
-With `ENABLE_PDF_VIEWER=true`, navigating to a PDF opens Chrome's viewer instead of downloading the file. Fetch PDFs over HTTP with the session's cookies and User-Agent. Mosaic's collector already does this for signed asset URLs.
-
-## Challenges
-
-When a site still shows a challenge, see [STEALTH.md](STEALTH.md#ddos-guard-on-annas-archive) for how DDoS-Guard's checkbox can be clicked.
-
-## Quiet-mode commands
-
-Create a quiet session with `mode: "quiet"`, the sticky proxy and its timezone. Use its noVNC view for manual control. The commands API reads the page in isolated worlds and sends keyboard and pointer input through X11.
-
-```json
-{"commands":[{"command":"navigate","url":"https://example.com"},{"command":"snapshot","compact":false}]}
-```
-
-Quiet screenshots capture the visible display, including Chrome’s controls. Full-page and element screenshots are unavailable. Use commands for quiet reads and screenshots; the scrape, PDF and CDP casting routes return a conflict response for this mode. Raw CDP access remains available, so clients must follow the quiet policy themselves; Patchright is the measured client.
-
-## Mosaic pool client
-
-Mosaic's updated client removes its local lease. Three direct callers passed a
-concurrent check; a fourth received HTTP 429 after the service queue and opened
-Browserbase. This check used zero residential bytes.
-
-The client adds `identity_policy="wait"` (default, up to ten minutes) and
-`identity_policy="throwaway"`. Its residential profile migration depends on the
-phase 4 identity endpoint. The staged client becomes active with that service
-update; `mosaic/migrate_identity.py` imports the existing sticky exit and cookies.
+`mosaic/migrate_identity.py FILE` imports the existing US sticky ID, opens the
+named profile under its identity lock and checks every unexpired cookie before
+release. Keep the source credential file until the login check passes. The updated
+client uses the server profile and does not read or overwrite that local file.

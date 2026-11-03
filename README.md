@@ -47,3 +47,5 @@ The [commands example](repl/README.md) creates and releases its own session. Bui
 ## Licence
 
 Apache 2.0, as upstream. See [LICENSE](LICENSE).
+
+Phase 4 adds managed Core exits, daily 1 GB budgets per agent key, payload-based routing and service challenge clearing. See [USAGE.md](USAGE.md) for the API and [STEALTH.md](STEALTH.md) for measured acceptance. Browserbase is temporary until phase 6 moves Mosaic callers.

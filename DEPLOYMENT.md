@@ -55,7 +55,7 @@ Values live in two files and nowhere else, under the same names:
 
 The Railway token for `rw` is `RAILWAY_TOKEN` in `global.env`, a workspace token for the "Projects" workspace.
 
-The launch profile now includes the measured WebGL and WebRTC flags in code. Legacy fingerprint and extra Chrome-argument variables are unused. Browserbase remains the client fallback; this phase does not change Mosaic scripts.
+The launch profile now includes the measured WebGL and WebRTC flags in code. Legacy fingerprint and extra Chrome-argument variables are unused. Browserbase is a temporary client fallback until phase 6 moves the callers.
 
 ## Quiet mode
 
@@ -67,4 +67,28 @@ The quiet launch disables `OptimizationHints`, matching the agent launch, becaus
 
 Production application commit `5174f4d` is deployment `097d4bac-9c8c-4e1e-8230-31f06fb72a0b`. The full phase 3 acceptance measurements came from `bfbc39f`, deployment `89b38d9f-9008-45a5-86e3-4557db263f17`, which remains a known-good rollback target. The older phase 2 target is `6ffa7417-bc73-4f16-8090-59ed3c929e4a`; that older image lacks quiet mode and includes open-tunnel bytes only on release.
 
-The current `rw rollback` wrapper sends an invalid GraphQL selection. Use `rw api 'mutation { deploymentRollback(id: "<last-good-deployment-id>") }'`, first as a dry run and then with `--commit`.
+The `rw rollback` wrapper now uses the scalar rollback result. Its dry run was
+checked against the accepted phase 3 deployment; repeat with `--commit` only when
+a rollback is needed.
+
+## Phase 4 settings
+
+Staged with `--skip-deploy`, after a dry run, for the phase 4 application build:
+
+| Variable | Value | Purpose |
+|---|---|---|
+| `EVOMI_RESIDENTIAL_PROXY_URL` | secret | Server-owned Evomi Core allocation and exit checks |
+| `STEEL_AGENT_KEYS` | secret JSON | Named `mosaic` client key; the existing key remains admin |
+| `RESIDENTIAL_DAILY_BUDGET_BYTES` | `1000000000` | Daily residential budget per key; midnight UTC reset |
+
+The existing `/data` volume and `MAX_SESSIONS=3` are unchanged. `/data/routing`
+holds sticky identity metadata, durable spend and the seven-day host table.
+It contains no proxy credentials. Profile cookies remain credentials.
+
+The existing one-second expiry timer also samples budgets and settles the ledger.
+A thirty-second check flags hosts above 10 MB and ends traffic above 5 MB per
+interval after two minutes without navigation. No separate daemon was added.
+The image adds Python and pinned `curl_cffi==0.16.3` for bounded HTTP reads.
+
+Use accepted phase 3 deployment `89b38d9f-9008-45a5-86e3-4557db263f17` as the
+first rollback target if phase 4 fails health or session creation.

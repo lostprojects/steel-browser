@@ -32,6 +32,7 @@ import type { SessionData } from "./context/types.js";
 import type { SessionOptions } from "./session-pool.js";
 import { QuietBrowser } from "./quiet-browser.js";
 import { QuietInput } from "./quiet-input.js";
+import type { Exit } from "./proxy-manager.js";
 
 export class BrowserSession extends EventEmitter {
   readonly createdAt = new Date().toISOString();
@@ -43,6 +44,14 @@ export class BrowserSession extends EventEmitter {
   temporaryProfileRemoved = false;
   endedAt?: number;
   proxyServer?: IProxyServer;
+  exit?: Exit;
+  priorProxyTxBytes = 0;
+  priorProxyRxBytes = 0;
+  lastNavigation = Date.now();
+  private lastUrl = "";
+  private trafficWindow = { at: Date.now(), bytes: 0 };
+  private warnedHosts = new Set<string>();
+  challenge?: { status: string; kind: string; url: string };
   readonly filesPath: string;
   readonly engine: CommandEngine;
   readonly display = new SessionDisplay();
@@ -108,7 +117,7 @@ export class BrowserSession extends EventEmitter {
     await mkdir(path.join(this.profilePath, "Default"), { recursive: true });
     await mkdir(this.filesPath, { recursive: true });
     await this.storage.initialize();
-    if (this.options.proxyUrl) {
+    if (this.options.proxyUrl && !this.proxyServer) {
       this.proxyServer = this.proxyFactory(this.options.proxyUrl);
       await this.proxyServer.listen();
     }
@@ -310,6 +319,33 @@ export class BrowserSession extends EventEmitter {
   touch() {
     this.lastActivity = Date.now();
   }
+  async trafficReason(now: number) {
+    if (!this.proxyServer || now - this.trafficWindow.at < 30_000) return;
+    const page = await this.getPrimaryPage();
+    const url = page.url();
+    if (url !== this.lastUrl) {
+      this.lastUrl = url;
+      this.lastNavigation = now;
+    }
+    for (const host of this.proxyServer.traffic ?? []) {
+      if (host.rxBytes + host.txBytes > 10_000_000 && !this.warnedHosts.has(host.hostname)) {
+        this.warnedHosts.add(host.hostname);
+        this.logger.warn(
+          {
+            sessionId: this.id,
+            hostname: host.hostname,
+            residentialBytes: host.rxBytes + host.txBytes,
+          },
+          "Host residential traffic exceeded 10 MB",
+        );
+      }
+    }
+    const bytes = this.proxyServer.rxBytes + this.proxyServer.txBytes;
+    const delta = bytes - this.trafficWindow.bytes;
+    this.trafficWindow = { at: now, bytes };
+    if (now - this.lastNavigation > 120_000 && delta > 5_000_000)
+      return "stream_without_navigation";
+  }
   getBrowserInstance() {
     return this.browser ?? this.quiet?.asBrowser() ?? null;
   }
@@ -452,8 +488,11 @@ export class BrowserSession extends EventEmitter {
       dimensions: this.getDimensions(),
       display: this.display.name,
       noVncUrl: getUrl(`v1/sessions/${this.id}/view`),
-      proxyTxBytes: this.proxyServer?.txBytes ?? 0,
-      proxyRxBytes: this.proxyServer?.rxBytes ?? 0,
+      exit: this.exit,
+      challenge: this.challenge,
+      proxyTxBytes: this.priorProxyTxBytes + (this.proxyServer?.txBytes ?? 0),
+      proxyRxBytes: this.priorProxyRxBytes + (this.proxyServer?.rxBytes ?? 0),
+      directBytes: this.proxyServer?.directBytes ?? 0,
       proxyTraffic: this.proxyServer?.traffic ?? [],
       eventCount: 0,
       creditsUsed: 0,

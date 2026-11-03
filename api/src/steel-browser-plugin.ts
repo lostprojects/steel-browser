@@ -15,6 +15,7 @@ import openAPIPlugin from "./plugins/schemas.js";
 import { actionsRoutes, cdpRoutes, filesRoutes, logsRoutes, sessionsRoutes } from "./routes.js";
 import { fileURLToPath } from "node:url";
 import ejs from "ejs";
+import routingRoutes from "./modules/sessions/routing.routes.js";
 import type { BrowserSession } from "./services/browser-session.js";
 import type { CommandEngine } from "./services/commands/engine.js";
 import type { BrowserLauncherOptions } from "./types/browser.js";
@@ -75,6 +76,7 @@ const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastif
     : null;
   await fastify.register(actionsRoutes, { prefix: "/v1" });
   await fastify.register(sessionsRoutes, { prefix: "/v1" });
+  await fastify.register(routingRoutes, { prefix: "/v1" });
   await fastify.register(cdpRoutes, { prefix: "/v1" });
   await fastify.register(filesRoutes, { prefix: "/v1" });
   if (commands) {

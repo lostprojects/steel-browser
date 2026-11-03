@@ -9,7 +9,7 @@ Checks run against the deployed instance through the Evomi proxy:
 
   stealth_check.py fingerprints [COUNT]
       Run fingerprint suites through Core and record settled byte totals. Set
-      STEEL_BYTE_LEDGER to a temporary JSONL path; the default ceiling is 280 MB.
+      STEEL_BYTE_LEDGER to a temporary JSONL path; the default ceiling is 1 GB.
 
   stealth_check.py quiet-probe [COUNT]
       Run fingerprint checks while full snapshots and native clicks execute.
@@ -125,19 +125,21 @@ def call(method, path, payload=None):
     """Reuse the API connection; retry only reads after a dropped connection."""
     base = urllib.parse.urlsplit(BASE)
     body = json.dumps(payload).encode() if payload is not None else None
-    for attempt in range(2):
+    retryable = method == 'GET' or path.endswith('/release') or path.endswith('/commands') or path.endswith('/challenge') or path == '/v1/sessions'
+    request_key = str(uuid.uuid4())
+    for attempt in range(3):
         if not getattr(_http, 'connection', None):
             connection = http.client.HTTPSConnection if base.scheme == 'https' else http.client.HTTPConnection
             _http.connection = connection(base.hostname, base.port, timeout=120)
         try:
             _http.connection.request(method, base.path + path, body=body,
-                                     headers={'Content-Type': 'application/json', 'steel-api-key': KEY})
+                                     headers={'Content-Type': 'application/json', 'steel-api-key': KEY, 'idempotency-key': request_key})
             response = _http.connection.getresponse()
             data = response.read()
         except (OSError, http.client.HTTPException):
             _http.connection.close()
             _http.connection = None
-            if method == 'GET' and attempt == 0:
+            if retryable and attempt < 2:
                 continue
             raise
         if response.status >= 400:
@@ -175,10 +177,10 @@ class Session:
 
     def __init__(self, mode='core', options=None):
         body = {'blockAds': False, **(options or {})}
-        if PROXY.get(mode):
-            body['proxyUrl'] = sticky(PROXY[mode])
-            if 'timezone' not in body:
-                body['timezone'] = exit_timezone(body['proxyUrl'])
+        if mode == 'premium':
+            raise ValueError('Only Evomi Core is enabled for these measurements')
+        if mode == 'core':
+            body['residential'] = {'country': 'US'}
         body.setdefault('sessionId', str(uuid.uuid4()))
         self.body = body
 
@@ -189,19 +191,29 @@ class Session:
         self.info = call('POST', '/v1/sessions', self.body)
         try:
             self.pw = sync_playwright().start()
-            endpoint = self.info['websocketUrl']
-            if os.environ.get('STEEL_CDP_BASE'):
-                endpoint = os.environ['STEEL_CDP_BASE'].rstrip('/') + f"/v1/sessions/{self.info['id']}/cdp"
-            self.browser = self.pw.chromium.connect_over_cdp(endpoint + '?apiKey=' + KEY)
-            ctx = self.browser.contexts[0] if self.browser.contexts else self.browser.new_context()
-            self.page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            self.page.set_default_timeout(60000)
+            self.reconnect()
             return self
         except BaseException:
             record_release(call('POST', f"/v1/sessions/{self.info['id']}/release"))
             if hasattr(self, 'pw'):
                 self.pw.stop()
             raise
+
+    def reconnect(self):
+        for attempt in range(3):
+            try:
+                endpoint = self.info['websocketUrl']
+                if os.environ.get('STEEL_CDP_BASE'):
+                    endpoint = os.environ['STEEL_CDP_BASE'].rstrip('/') + f"/v1/sessions/{self.info['id']}/cdp"
+                self.browser = self.pw.chromium.connect_over_cdp(endpoint + '?apiKey=' + KEY, timeout=30000)
+                ctx = self.browser.contexts[0]
+                self.page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                self.page.set_default_timeout(60000)
+                return self.page
+            except Exception:
+                if attempt == 2:
+                    raise
+                time.sleep(attempt + 1)
 
     def __exit__(self, *exc):
         if exc and exc[1]:
@@ -235,66 +247,9 @@ def probe(options):
 
 
 def native_challenge(session, attempts):
-    """Use native input for visible checkboxes and Bizapedia's drag challenge."""
-    page = session.page
-    state = page.evaluate(r'''() => {
-      const box = e => { if (!e) return null; const r=e.getBoundingClientRect();
-        return r.width && r.height && r.x>=0 && r.y>=0 ? [r.x,r.y,r.width,r.height] : null; };
-      return {title:document.title.toLowerCase(), text:(document.body?.innerText || '').slice(0,4000).toLowerCase(),
-        solved:[...document.querySelectorAll('[name="cf-turnstile-response"], [name="g-recaptcha-response"]')].some(e=>e.value.length>20),
-        frames:[...document.querySelectorAll('iframe')].map(e=>({id:e.id,src:e.src,box:box(e)})).filter(e=>e.box)};
-    }''')
-    if state['solved']:
-        return None
-    if 'human verification' in state['text'] and any(label in state['text'] for label in ('drop here', 'place here')) and attempts.get('drag', 0) < 2:
-        start = page.get_by_text('Drag', exact=True).first.bounding_box(timeout=2000)
-        end = page.get_by_text(re.compile(r'^(Drop|Place) here$', re.I)).first.bounding_box(timeout=2000)
-        if start and end:
-            attempts['drag'] = attempts.get('drag', 0) + 1
-            commands(session, [
-                {'command': 'mouse', 'action': 'move', 'x': start['x'] + start['width']/2, 'y': start['y'] + start['height']/2},
-                {'command': 'mouse', 'action': 'down'},
-                {'command': 'mouse', 'action': 'move', 'x': end['x'] + end['width']/2, 'y': end['y'] + end['height']/2},
-                {'command': 'mouse', 'action': 'up'},
-            ])
-            page.wait_for_timeout(1000)
-            button = page.get_by_text('Verify You Are Human').first.bounding_box(timeout=2000)
-            if button:
-                commands(session, [{'command': 'mouse', 'action': 'click', 'x': button['x']+button['width']/2, 'y': button['y']+button['height']/2}])
-            page.wait_for_timeout(4000)
-            return 'drag'
-    # Turnstile can put its frame inside a closed shadow root. Chrome's frame
-    # inventory still exposes its owner, even when document selectors cannot.
-    for child in page.frames:
-        if 'challenges.cloudflare.com/' not in child.url:
-            continue
-        owner = child.frame_element()
-        box = owner.bounding_box()
-        if box and box['x'] >= 0 and box['y'] >= 0:
-            state['frames'].append({'id': '', 'src': child.url,
-                                    'box': [box['x'], box['y'], box['width'], box['height']]})
-    for frame in state['frames']:
-        x, y, width, height = frame['box']
-        if frame['id'] == 'ddg-iframe':
-            # The compact frame is the observed checkbox; the taller frame is
-            # its text puzzle. Reading its body can stall during replacement.
-            if height > 200:
-                return 'puzzle'
-            point = (x + 64, y + 36)
-        elif 'challenges.cloudflare.com' in frame['src'] and height < 120:
-            point = (x + 30, y + height / 2)
-        elif 'recaptcha/api2/anchor' in frame['src']:
-            point = (x + 28, y + height / 2)
-        else:
-            continue
-        if attempts.get('checkbox', 0) >= 3:
-            return None
-        attempts['checkbox'] = attempts.get('checkbox', 0) + 1
-        page.wait_for_timeout(1000)
-        commands(session, [{'command': 'mouse', 'action': 'click', 'x': point[0], 'y': point[1]}])
-        page.wait_for_timeout(4000)
-        return 'checkbox'
-    return None
+    """The service owns interstitial waits and native challenge input."""
+    result = call('POST', f"/v1/sessions/{session.info['id']}/challenge", {'budgetMs': 45000})
+    return 'puzzle' if result['status'] == 'challenge_required' else (result.get('actions') or [None])[-1]
 
 
 def route_check(session, name, out, quiet=False):
@@ -411,7 +366,7 @@ def check_budget(session=None):
     if session:
         live = call('GET', f"/v1/sessions/{session.info['id']}")
         total += live.get('proxyTxBytes', 0) + live.get('proxyRxBytes', 0)
-    if total >= int(os.environ.get('STEEL_BYTE_LIMIT', '280000000')):
+    if total >= int(os.environ.get('STEEL_BYTE_LIMIT', '1000000000')):
         raise RuntimeError('Residential measurement budget reached')
 
 

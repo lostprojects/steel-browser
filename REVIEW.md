@@ -1,6 +1,6 @@
 # Review: is Steel the right foundation for Mosaic's remote browser?
 
-> **Superseded decision.** On 3 November 2026 the owner chose to adapt this fork into Mosaic's own browser service while retaining Browserbase as a fallback. [DESIGN.md](DESIGN.md) is the plan. The findings, risks, practice gaps and test plan below still apply; the recommendation to replace Steel does not. Browserbase remains a fallback.
+> **Superseded decision.** On 3 November 2026 the owner chose to adapt this fork into Mosaic's own browser service while retaining Browserbase temporarily until phase 6 moves the callers. [DESIGN.md](DESIGN.md) is the plan. The findings, risks, practice gaps and test plan below still apply; the recommendation to replace Steel does not. Browserbase is being retired after phase 6 moves the callers.
 
 Written 2 November 2026 from the fork at `ebc49c3`, the Railway deploy logs for `vigilant-peace / Steel Browser`, Mosaic's browser layer and published sources. Nothing was run against the service. Claims marked **[read]** were checked in code or logs; **[source]** claims come from the linked page; **[vendor]** marks a vendor's description of its own product; **[inference]** is reasoning that still needs a measurement.
 

@@ -351,3 +351,18 @@ The final direct smoke check passed health, quiet-session creation and release. 
 Cumulative residential usage is 760,504,808 bytes (760.505 MB) across 334 metered sessions, all Evomi Core. This continuation used 485,321,021 bytes; the total includes earlier attempts, incomplete fixtures, diagnostics and timezone preflights for new-exit retries. It is 239,495,192 bytes below the owner’s revised 1 GB ceiling.
 
 The production application remains healthy on the accepted phase 3 deployment. Browserbase remains available, and Mosaic’s scripts are unchanged. The temporary Railway measurement files and SSH key are removed after collecting these results.
+
+## Phase 4 implementation checks
+
+The owner set both the daily per-agent budget and this run's residential ceiling
+to 1,000,000,000 bytes. The phase 3 route table above is the comparison baseline;
+it has not been re-measured.
+
+Before deploying phase 4, three updated Mosaic callers ran concurrently on direct
+Steel sessions. A fourth received HTTP 429 after the queue and opened Browserbase.
+All three pages retained their independent titles. Residential traffic was zero.
+
+TypeScript passed. The existing focused set passed 18 tests with two skipped;
+six additional checks passed for durable budgets, identity metadata, route payloads
+and the observed challenge-frame cases. Live phase 4 acceptance remains pending.
+Browserbase is a temporary fallback until phase 6 moves the callers.

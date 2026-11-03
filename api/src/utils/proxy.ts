@@ -8,8 +8,31 @@ export interface IProxyServer {
   readonly txBytes: number;
   readonly rxBytes: number;
   readonly traffic?: Array<{ hostname: string; txBytes: number; rxBytes: number }>;
+  readonly directBytes?: number;
   listen(): Promise<void>;
   close(force?: boolean): Promise<void>;
+}
+
+export type HostRoute = "residential" | "direct" | "refused";
+// Unknown hosts and challenge providers retain the session's residential exit.
+export function hostRoute(host: string): HostRoute {
+  if (
+    [
+      "fonts.googleapis.com",
+      "fonts.gstatic.com",
+      "cdnjs.cloudflare.com",
+      "cdn.jsdelivr.net",
+      "unpkg.com",
+    ].includes(host)
+  )
+    return "direct";
+  if (
+    ["doubleclick.net", "googlesyndication.com", "google-analytics.com", "youtube.com"].some(
+      (s) => host === s || host.endsWith(`.${s}`),
+    )
+  )
+    return "refused";
+  return "residential";
 }
 
 export class ProxyServer extends Server implements IProxyServer {
@@ -20,10 +43,22 @@ export class ProxyServer extends Server implements IProxyServer {
   private hostConnections = new Set<number>();
   private connectionHosts = new Map<number, string>();
   private settledHosts = new Map<string, { txBytes: number; rxBytes: number }>();
+  private routes = new Map<number, HostRoute>();
+  private settledDirect = 0;
+  get directBytes() {
+    let bytes = this.settledDirect;
+    for (const [id, route] of this.routes)
+      if (route === "direct") {
+        const s = this.getConnectionStats(id);
+        bytes += (s?.trgTxBytes ?? 0) + (s?.trgRxBytes ?? 0);
+      }
+    return bytes;
+  }
 
   get traffic() {
     const totals = new Map([...this.settledHosts].map(([host, bytes]) => [host, { ...bytes }]));
     for (const [id, host] of this.connectionHosts) {
+      if (this.routes.get(id) !== "residential") continue;
       const stats = this.getConnectionStats(id);
       const bytes = totals.get(host) ?? { txBytes: 0, rxBytes: 0 };
       bytes.txBytes += stats?.trgTxBytes ?? 0;
@@ -37,7 +72,7 @@ export class ProxyServer extends Server implements IProxyServer {
 
   private openBytes(field: "trgTxBytes" | "trgRxBytes"): number {
     return this.getConnectionIds().reduce((total, id) => {
-      if (this.hostConnections.has(id)) return total;
+      if (this.hostConnections.has(id) || this.routes.get(id) !== "residential") return total;
       return total + (this.getConnectionStats(id)?.[field] ?? 0);
     }, 0);
   }
@@ -50,12 +85,14 @@ export class ProxyServer extends Server implements IProxyServer {
     return this.settledRxBytes + this.openBytes("trgRxBytes");
   }
 
-  constructor(proxyUrl: string) {
+  constructor(proxyUrl: string, split = false, allowed: () => boolean = () => true) {
     super({
       port: 0,
+      host: "127.0.0.1",
 
       prepareRequestFunction: (options) => {
         const { connectionId, hostname } = options;
+        if (!allowed()) throw new Error("Residential byte budget exhausted");
 
         const internalBypassTests = new Set(["0.0.0.0", process.env.HOST]);
 
@@ -75,15 +112,24 @@ export class ProxyServer extends Server implements IProxyServer {
           };
         }
         this.connectionHosts.set(connectionId, hostname);
+        const route = split ? hostRoute(hostname) : "residential";
+        this.routes.set(connectionId, route);
+        if (route === "refused") throw new Error("Host refused by measured traffic policy");
         return {
           requestAuthentication: false,
-          upstreamProxyUrl: proxyUrl,
+          upstreamProxyUrl: route === "direct" ? undefined : proxyUrl,
         };
       },
     });
 
     this.on("connectionClosed", ({ connectionId, stats }) => {
-      if (stats && !this.hostConnections.has(connectionId)) {
+      if (stats && this.routes.get(connectionId) === "direct")
+        this.settledDirect += (stats.trgTxBytes ?? 0) + (stats.trgRxBytes ?? 0);
+      if (
+        stats &&
+        !this.hostConnections.has(connectionId) &&
+        this.routes.get(connectionId) === "residential"
+      ) {
         this.settledTxBytes += stats.trgTxBytes ?? 0;
         this.settledRxBytes += stats.trgRxBytes ?? 0;
         const host = this.connectionHosts.get(connectionId);
@@ -96,6 +142,7 @@ export class ProxyServer extends Server implements IProxyServer {
       }
       this.connectionHosts.delete(connectionId);
       this.hostConnections.delete(connectionId);
+      this.routes.delete(connectionId);
     });
 
     this.url = `http://127.0.0.1:${this.port}`;

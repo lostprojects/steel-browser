@@ -20,6 +20,7 @@ export async function healthRoutes(server: FastifyInstance) {
         maxSessions: server.sessionPool.maxSessions,
         freeMemory: os.freemem(),
         vault: "not_configured",
+        capabilities: ["managed_residential", "routing", "challenge", "reattach"],
       }),
     );
 }

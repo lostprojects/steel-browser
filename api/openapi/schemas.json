@@ -271,6 +271,31 @@
             "type": "string",
             "format": "uuid"
           },
+          "residential": {
+            "type": "object",
+            "properties": {
+              "country": {
+                "type": "string",
+                "pattern": "^[A-Z]{2}$",
+                "default": "US"
+              }
+            },
+            "additionalProperties": false
+          },
+          "targetUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "splitTraffic": {
+            "type": "boolean",
+            "default": false
+          },
+          "budgetBytes": {
+            "type": "integer",
+            "exclusiveMinimum": true,
+            "minimum": 0,
+            "maximum": 1000000000
+          },
           "mode": {
             "type": "string",
             "enum": [

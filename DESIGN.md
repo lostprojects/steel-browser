@@ -1,6 +1,6 @@
 # Design: Mosaic's browser service
 
-Written 3 November 2026. The owner has decided to adapt this Steel fork into Mosaic's own browser service while retaining Browserbase as a fallback. This document sets out that design. [REVIEW.md](REVIEW.md) holds the evidence behind it; its recommendation to replace Steel is superseded.
+Written 3 November 2026. The owner has decided to adapt this Steel fork into Mosaic's own browser service while retaining Browserbase temporarily until phase 6 moves the callers. This document sets out that design. [REVIEW.md](REVIEW.md) holds the evidence behind it; its recommendation to replace Steel is superseded.
 
 ## Aim
 
@@ -39,6 +39,8 @@ noVNC (the owner)       ─┘        │              │               (own Xv
                                   ├─ Proxies    (providers, sticky sessions, budgets)
                                   └─ Log        (one JSON line per session)
 ```
+
+The owner selected `MAX_SESSIONS=3` and a default daily residential budget of 1 GB per agent key.
 
 One Railway service with one volume. A deploy causes a brief outage because Railway runs no overlap with a volume attached, so deploys come from a `deploy` branch and wait for running sessions (below).
 
@@ -223,6 +225,6 @@ Phase 1 is the largest change and the one everything else depends on. Phases 3 t
 1. **Concurrency.** How many sessions at once? This sets `MAX_SESSIONS` and the Railway memory limit. A quiet session uses roughly 0.5 to 1.5 GB **[inference]**.
 2. **Vault backend.** An encrypted file on the volume (recommended, no dependency) or an external manager such as 1Password or Bitwarden Secrets Manager?
 3. **Ancestry's exit.** Which US state should the identity live in? A static residential or ISP address would hold steadier than a hardsession, at a higher price.
-4. **Agent budgets.** A default daily byte budget per agent key, for example 500 MB (about 50 cents through Evomi Core)?
+4. **Agent budgets.** A default daily byte budget per agent key, 1 GB (1,000,000,000 bytes), as selected by the owner. The phase 4 run has a separate 1 GB ceiling.
 5. **Name and repository.** Keep `lostprojects/steel-browser`, or rename it now that it is our product?
 6. **Upstream.** Should the session-pool and profile fixes go back to Steel as pull requests? Upstream issues #347 and #350 ask for them.

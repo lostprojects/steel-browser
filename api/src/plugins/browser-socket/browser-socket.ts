@@ -4,7 +4,7 @@ import { WebSocketServer } from "ws";
 import { WebSocketRegistryService } from "../../services/websocket-registry.service.js";
 import type { WebSocketHandler } from "../../types/websocket.js";
 import { defaultHandlers } from "./handlers/index.js";
-import { isAuthorized } from "../../utils/api-key.js";
+import { isAuthorized, agentFor } from "../../utils/api-key.js";
 export interface BrowserSocketOptions {
   customHandlers?: WebSocketHandler[];
 }
@@ -26,6 +26,11 @@ const plugin: FastifyPluginAsync<BrowserSocketOptions> = async (server, options)
       const session = server.sessionPool.get(
         match?.[1] ?? url.searchParams.get("sessionId") ?? undefined,
       );
+      const agent = agentFor(request);
+      if (!agent?.admin && server.sessionPool.owner(session.id)?.name !== agent?.name) {
+        socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+        return;
+      }
       if (session.options.mode === "quiet" && match && !["cdp", "vnc"].includes(match[2])) {
         socket.end(
           "HTTP/1.1 409 Conflict\r\nConnection: close\r\n\r\nUse this session's noVNC view",

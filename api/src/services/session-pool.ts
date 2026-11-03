@@ -9,10 +9,22 @@ import { z } from "zod";
 import { BrowserSession } from "./browser-session.js";
 import { SessionContextSchema } from "./context/types.js";
 import { releaseStaleProfileLock } from "./cdp/utils/profile-lock.js";
+import { ProxyManager, DAILY_BUDGET, type Agent } from "./proxy-manager.js";
 
 export const sessionOptions = z
   .object({
     sessionId: z.string().uuid().optional(),
+    residential: z
+      .object({
+        country: z
+          .string()
+          .regex(/^[A-Z]{2}$/)
+          .default("US"),
+      })
+      .optional(),
+    targetUrl: z.string().url().optional(),
+    splitTraffic: z.boolean().default(false),
+    budgetBytes: z.number().int().positive().max(1_000_000_000).optional(),
     mode: z.enum(["agent", "quiet"]).default("agent"),
     identity: z
       .string()
@@ -97,6 +109,14 @@ export interface PoolOptions {
   ) => BrowserSession;
 }
 export class SessionPool {
+  readonly proxies?: ProxyManager;
+  private owners = new Map<string, Agent>();
+  owner(id: string) {
+    return this.owners.get(id);
+  }
+  identityBusy(name: string) {
+    return this.identities.has(name);
+  }
   private launchHooks: Array<(session: BrowserSession) => Promise<void> | void> = [];
   registerSessionHook(hook: (session: BrowserSession) => Promise<void> | void) {
     this.launchHooks.push(hook);
@@ -111,6 +131,7 @@ export class SessionPool {
   private launching = new Map<string, Promise<unknown>>();
   private closing = new Map<string, Promise<void>>();
   private stopping = false;
+  private expiring = false;
   private timer: NodeJS.Timeout;
   readonly maxSessions: number;
   readonly profilesRoot: string;
@@ -122,6 +143,8 @@ export class SessionPool {
     if (!Number.isInteger(this.maxSessions) || this.maxSessions < 1)
       throw new Error("MAX_SESSIONS must be a positive integer");
     this.profilesRoot = options.profilesRoot ?? process.env.PROFILES_ROOT ?? "/data/profiles";
+    if (!options.factory)
+      this.proxies = new ProxyManager(path.join(path.dirname(this.profilesRoot), "routing"));
     this.timer = setInterval(
       () => void this.expire().catch(() => logger.error("Session expiry cleanup failed")),
       1000,
@@ -184,7 +207,10 @@ export class SessionPool {
       item.resolve();
     }
   }
-  async create(body: unknown): Promise<BrowserSession> {
+  async create(
+    body: unknown,
+    agent: Agent = { name: "admin", admin: true, dailyBudgetBytes: DAILY_BUDGET },
+  ): Promise<BrowserSession> {
     const parsed = sessionOptions.safeParse(body);
     if (!parsed.success)
       throw new PoolError(
@@ -192,6 +218,9 @@ export class SessionPool {
         parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
       );
     const options = parsed.data;
+    if (!agent.admin && options.proxyUrl) throw new PoolError(403, "Use managed residential exits");
+    if (!agent.admin && options.splitTraffic)
+      throw new PoolError(403, "Traffic policy requires measured site approval");
     if (options.identity && options.profile && options.identity !== options.profile)
       throw new PoolError(400, "identity and profile must agree");
     options.identity ??= options.profile;
@@ -237,8 +266,12 @@ export class SessionPool {
         this.options.factory?.(id, options, profilePath, end) ??
         new BrowserSession(id, options, profilePath, this.logger, end);
       this.sessions.set(id, session);
+      this.owners.set(id, agent);
       for (const hook of this.launchHooks) await hook(session);
-      const launch = session.launch();
+      const launch = (async () => {
+        await this.proxies?.prepare(session, agent);
+        return session.launch();
+      })();
       this.launching.set(id, launch);
       try {
         await launch;
@@ -255,6 +288,7 @@ export class SessionPool {
       try {
         await session?.close("launch_failed");
       } finally {
+        await this.proxies?.settle(id);
         this.sessions.delete(id);
         if (profilePath && !identity) await rm(profilePath, { recursive: true, force: true });
         if (acquired && this.reservations.has(id)) this.free(id);
@@ -275,6 +309,7 @@ export class SessionPool {
     const work = (async () => {
       await this.launching.get(id)?.catch(() => undefined);
       await session.close(reason);
+      await this.proxies?.settle(id);
       if (!session.options.identity) {
         await rm(session.profilePath, { recursive: true, force: true });
         try {
@@ -310,20 +345,35 @@ export class SessionPool {
     }
   }
   async expire(now = Date.now()) {
-    await Promise.all(
-      [...this.sessions.values()]
-        .filter((s) => s.status === "live")
-        .map(async (s) => {
-          if (now - s.startedAt >= (this.options.lifetimeMs ?? 10_800_000))
-            await this.release(s.id, "lifetime");
-          else if (
-            !s.clients &&
-            !s.engine.busy() &&
-            now - s.lastActivity >= (this.options.idleMs ?? 600_000)
-          )
-            await this.release(s.id, "idle");
-        }),
-    );
+    if (this.expiring) return;
+    this.expiring = true;
+    try {
+      for (const id of (await this.proxies?.tick()) ?? []) {
+        if (this.sessions.get(id)?.status === "live")
+          await this.release(id, "residential_budget_exceeded");
+      }
+      await Promise.all(
+        [...this.sessions.values()]
+          .filter((s) => s.status === "live")
+          .map(async (s) => {
+            const trafficReason = await s.trafficReason?.(now);
+            if (trafficReason) {
+              await this.release(s.id, trafficReason);
+              return;
+            }
+            if (now - s.startedAt >= (this.options.lifetimeMs ?? 10_800_000))
+              await this.release(s.id, "lifetime");
+            else if (
+              !s.clients &&
+              !s.engine.busy() &&
+              now - s.lastActivity >= (this.options.idleMs ?? 600_000)
+            )
+              await this.release(s.id, "idle");
+          }),
+      );
+    } finally {
+      this.expiring = false;
+    }
   }
   async drain(
     ms = Math.max(

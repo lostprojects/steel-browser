@@ -85,7 +85,10 @@ RUN apt-get update && \
     tini \
     x11-xserver-utils \
     x11vnc novnc xdotool ffmpeg util-linux \
+    python3 python3-venv \
     libgl1-mesa-dri libglx-mesa0 fonts-liberation fonts-noto-color-emoji
+
+RUN python3 -m venv /opt/browser-fetch && /opt/browser-fetch/bin/pip install --no-cache-dir curl_cffi==0.16.3
 
 # Exact stable package; missing archived packages must fail the build.
 ARG CHROME_VERSION=156.0.8078.79-1
