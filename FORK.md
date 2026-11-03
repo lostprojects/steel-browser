@@ -17,6 +17,7 @@ Upstream: [steel-dev/steel-browser](https://github.com/steel-dev/steel-browser).
 | `8d4af8a` | `api/package.json`, `package-lock.json` | Alias `puppeteer-core` to `rebrowser-puppeteer-core@23.6.101` | Puppeteer sends `Runtime.enable` to every page and worker. The rebrowser build is the same 23.6.0 release without that call. Imports are unchanged |
 | `9933006` | `api/src/env.ts`, `api/src/services/cdp/instrumentation/target-manager.ts` | Optional `CAPTURE_CONSOLE_EVENTS` | Steel's own target manager enables `Runtime` and `Log` on every page and worker to log console output. Chrome then serializes console arguments, which pages detect. `false` skips those two domains; the default keeps upstream behaviour |
 | `e94f346`, `097cb0d` | `mosaic/stealth_check.py`, `FORK.md` | Measuring tool and this document | See [Measuring detection](#measuring-detection) |
+| — | `README.md` | One-line note at the top pointing here | Readers of the repo land on upstream's README first. Keep the note as the first line when merging upstream |
 
 When upstream merges PR #297, drop our copy of that line during the merge.
 
