@@ -14,9 +14,24 @@ export interface IProxyServer {
 export class ProxyServer extends Server implements IProxyServer {
   public url: string;
   public upstreamProxyUrl: string;
-  public txBytes = 0;
-  public rxBytes = 0;
+  private settledTxBytes = 0;
+  private settledRxBytes = 0;
   private hostConnections = new Set<number>();
+
+  private openBytes(field: "trgTxBytes" | "trgRxBytes"): number {
+    return this.getConnectionIds().reduce((total, id) => {
+      if (this.hostConnections.has(id)) return total;
+      return total + (this.getConnectionStats(id)?.[field] ?? 0);
+    }, 0);
+  }
+
+  get txBytes(): number {
+    return this.settledTxBytes + this.openBytes("trgTxBytes");
+  }
+
+  get rxBytes(): number {
+    return this.settledRxBytes + this.openBytes("trgRxBytes");
+  }
 
   constructor(proxyUrl: string) {
     super({
@@ -51,8 +66,8 @@ export class ProxyServer extends Server implements IProxyServer {
 
     this.on("connectionClosed", ({ connectionId, stats }) => {
       if (stats && !this.hostConnections.has(connectionId)) {
-        this.txBytes += stats.trgTxBytes;
-        this.rxBytes += stats.trgRxBytes;
+        this.settledTxBytes += stats.trgTxBytes ?? 0;
+        this.settledRxBytes += stats.trgRxBytes ?? 0;
       }
       this.hostConnections.delete(connectionId);
     });

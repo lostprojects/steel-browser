@@ -1,6 +1,6 @@
 """Measure how the self-hosted Steel browser looks to anti-bot systems.
 
-Two checks, both run against the deployed instance through the Evomi proxy:
+Checks run against the deployed instance through the Evomi proxy:
 
   stealth_check.py probe [SESSION_OPTIONS_JSON]
       Print the fingerprint signals a page can read (user agent, client hints,
@@ -10,6 +10,12 @@ Two checks, both run against the deployed instance through the Evomi proxy:
   stealth_check.py fingerprints [COUNT]
       Run fingerprint suites through Core and record settled byte totals. Set
       STEEL_BYTE_LEDGER to a temporary JSONL path; the default ceiling is 280 MB.
+
+  stealth_check.py quiet-probe [COUNT]
+      Run fingerprint checks while full snapshots and native clicks execute.
+
+  stealth_check.py quiet-routes [COUNT]
+      Exercise commands during bot checks, then run all six routes per exit.
 
   stealth_check.py routes core|premium|none [ROUTE ...]
       Load each Mosaic collector route that needs a residential IP and report
@@ -202,44 +208,63 @@ def probe(options):
         print('deviceandbrowserinfo flags:', flags or 'none')
 
 
-def route(mode, name, out):
+def route_check(session, name, out, quiet=False):
     url, check, minimum = ROUTES[name]
-    t0, verdict, detail, ip = time.time(), 'FAIL', '', '?'
-    with Session(mode) as s:
-        page = s.page
+    page = session.page
+    started = time.monotonic()
+    before = call('GET', f"/v1/sessions/{session.info['id']}")
+    result = {'name': name, 'status': 'FAIL', 'payloads': 0}
+    try:
+        navigate(page, url, timeout=60000, retries=result.setdefault('navigationRetries', []))
+    except Exception as error:
+        result['navigationError'] = str(error).splitlines()[0].replace(KEY, '[redacted]')[:200]
+    if quiet:
+        commands(session, [
+            {'command': 'mouse', 'action': 'move', 'x': 120, 'y': 140},
+            {'command': 'mouse', 'action': 'wheel', 'x': 120, 'y': 140, 'deltaY': 80},
+        ])
+    title, text = '', ''
+    for _ in range(30):
+        check_budget(session)
         try:
-            page.goto('https://api.ipify.org', timeout=45000)
-            ip = page.inner_text('body').strip()
-        except Exception:
-            pass
+            n, title, text = page.evaluate(check), page.title(), page.inner_text('body')[:500]
+            result['payloads'] = n
+        except Exception as error:
+            result['readError'] = type(error).__name__
+            n = 0
+        if n >= minimum and not any(c in title.lower() for c in CHALLENGE):
+            result['status'] = 'PASS'
+            break
+        page.wait_for_timeout(2000)
+    result['title'] = title
+    if result['status'] != 'PASS':
+        result['challenge'] = next((c for c in CHALLENGE if c in (title + ' ' + text).lower()), None)
+        out.mkdir(parents=True, exist_ok=True)
+        shot = out / f"{session.info['id']}-{name}.png"
         try:
-            page.goto(url, wait_until='domcontentloaded', timeout=90000)
-        except Exception as e:
-            detail = f'goto {type(e).__name__}: {str(e).splitlines()[0][:90]}'
-        n, title, text = 0, '', ''
-        for _ in range(20):  # up to ~60 s for interstitials to clear
-            try:
-                n, title, text = page.evaluate(check), page.title(), page.inner_text('body')[:400]
-            except Exception:
-                n, title, text = 0, '', ''
-            if n >= minimum and not any(c in title.lower() for c in CHALLENGE):
-                verdict, detail = 'PASS', f'{n} payload elements'
-                break
-            page.wait_for_timeout(3000)
-        else:
-            hit = next((c for c in CHALLENGE if c in (title + ' ' + text).lower()), None)
-            detail = (detail or (f'challenge: {hit}' if hit else f'{n} payload elements (need {minimum})')) + f' | title {title[:50]!r}'
-            out.mkdir(exist_ok=True)
-            shot = out / f'{mode}-{name}.png'
-            try:
+            if quiet:
+                import base64
+                captured = commands(session, [{'command': 'screenshot', 'format': 'png'}])[0]
+                shot.write_bytes(base64.b64decode(captured['data']))
+            else:
                 page.screenshot(path=str(shot))
-                shot.with_suffix('.txt').write_text(page.url + '\n\n' + page.inner_text('body')[:3000])
-                detail += f' | saved {shot}'
-            except Exception:
-                pass
-        kb = s.bytes / 1024
-    print(f'{mode:8} {name:11} {verdict:4} {time.time() - t0:5.0f}s {kb:7.0f} KB  ip {ip}  {detail}', flush=True)
-    return verdict
+            shot.with_suffix('.txt').write_text(page.url + '\n\n' + page.inner_text('body')[:5000])
+            result['artifact'] = str(shot)
+        except Exception as error:
+            result['captureError'] = type(error).__name__
+    # The payload has been checked; close its background traffic before the next route.
+    navigate(page, 'about:blank')
+    after = call('GET', f"/v1/sessions/{session.info['id']}")
+    result['bytes'] = sum(after.get(k, 0) - before.get(k, 0) for k in ('proxyTxBytes', 'proxyRxBytes'))
+    result['seconds'] = round(time.monotonic() - started, 2)
+    print('ROUTE ' + json.dumps(result), flush=True)
+    return result
+
+
+def route(mode, name, out):
+    with Session(mode) as session:
+        result = route_check(session, name, out)
+    return result['status']
 
 
 def ledger_total():
@@ -359,81 +384,127 @@ def rebrowser_result(page, timeout=60000):
     raise TimeoutError('Rebrowser did not finish all 20 checks within 60 seconds')
 
 
-def fingerprints(count=1):
+def commands(session, items):
+    path = f"/v1/sessions/{session.info['id']}/commands"
+    response = call('POST', path, {'commands': items})
+    while response.get('execution', {}).get('state') in ('running', 'queued'):
+        response = call('POST', path, {'commands': [
+            {'command': 'status', 'execution': response['execution']['id']}
+        ]})
+    if response.get('execution', {}).get('state') != 'completed':
+        raise RuntimeError('Commands failed: ' + json.dumps(response.get('results', response))[:1500])
+    return response['results']
+
+
+def exercise_commands(session):
+    results = commands(session, [
+        {'command': 'snapshot', 'compact': False},
+        {'command': 'mouse', 'action': 'click', 'x': 5, 'y': 5},
+    ])
+    return {'snapshotChars': len(results[0].get('snapshot', '')), 'nativeClick': results[1].get('ok') is True}
+
+
+def exit_signals(session, result):
+    page = session.page
+    retries = result.setdefault('navigationRetries', [])
+    navigate(page, 'https://ipwho.is/', timeout=45000, retries=retries)
+    ip = json.loads(page.inner_text('body'))
+    result['exitIP'] = ip.get('ip')
+    result['exitTimezone'] = (ip.get('timezone') or {}).get('id')
+    navigate(page, 'https://example.com', retries=retries)
+    result['fingerprint'] = page.evaluate(PROBE)
+    print('Basic signals: ' + json.dumps(result['fingerprint']), flush=True)
+
+
+def collect_fingerprint(session, result, exercise=False, deep=True, advisory=False):
+    def go(page, url, timeout=60000):
+        return navigate(page, url, timeout, result.setdefault('navigationRetries', []))
+
+    def fresh(page):
+        new = page.context.new_page()
+        page.close()
+        session.page = new
+        return new
+
+    page = session.page
+    exit_signals(session, result)
+    if exercise:
+        exercise_commands(session)  # Enable the command reader before detector code loads.
+    check_budget(session)
+    print('Probe: deviceandbrowserinfo', flush=True)
+    go(page, 'https://deviceandbrowserinfo.com/are_you_a_bot')
+    if exercise:
+        result.setdefault('commandChecks', {})['device'] = exercise_commands(session)
+    result['deviceResult'] = device_result(page)
+    result['deviceFlags'] = positive_flags(result['deviceResult'])
+    print('Device flags: ' + json.dumps(result['deviceFlags']), flush=True)
+    page = fresh(page)
+    if exercise:
+        exercise_commands(session)
+    print('Probe: rebrowser', flush=True)
+    go(page, 'https://bot-detector.rebrowser.net/')
+    main_value(page, 'window.dummyFn()')
+    page.evaluate("document.getElementById('detections-json')")
+    page.evaluate("document.getElementsByClassName('div')")
+    if exercise:
+        result.setdefault('commandChecks', {})['rebrowser'] = exercise_commands(session)
+    result['rebrowser'] = [{k: r.get(k) for k in ('type', 'rating', 'note')} for r in rebrowser_result(page)]
+    check_budget(session)
+    print('Rebrowser ratings: ' + json.dumps({r['type']: r['rating'] for r in result['rebrowser']}), flush=True)
+    if deep:
+        page = fresh(page)
+        print('Probe: workers', flush=True)
+        go(page, 'https://abrahamjuliot.github.io/creepjs/tests/workers.html')
+        page.wait_for_timeout(10000)
+        workers = page.locator('.worker').all_inner_texts()
+        result['workerHardware'] = [re.findall(r'hardware[^\n]*', text) for text in workers]
+        print('Worker hardware: ' + json.dumps(result['workerHardware']), flush=True)
+        page = fresh(page)
+        print('Probe: creepjs', flush=True)
+        go(page, 'https://abrahamjuliot.github.io/creepjs/')
+        page.wait_for_timeout(15000)
+        result['creep'] = main_value(page, 'window.Fingerprint && ({lies: Fingerprint.lies, headless: Fingerprint.headless, worker: Fingerprint.workerScope})')
+        print('CreepJS: ' + json.dumps({k: (result['creep'] or {}).get(k) for k in ['lies', 'headless']}), flush=True)
+        check_budget(session)
+        print('Probe: webrtc', flush=True)
+        go(page, 'https://browserleaks.com/webrtc')
+        page.wait_for_timeout(8000)
+        result['webrtc'] = page.inner_text('body')[:18000]
+    try:
+        go(page, 'https://browserleaks.com/tcp', timeout=45000)
+        tcp = page.locator('tr').all_inner_texts()
+        result['tcpOS'] = next((row for row in tcp if 'Zardaxt OS Scoring' in row), 'No OS score returned')
+        result['tcpFingerprint'] = [row for row in tcp if any(k in row for k in ['JA4T Fingerprint', 'Satori Signature', 'Initial TTL'])]
+    except Exception as error:
+        result['tcpOS'] = 'Unavailable: ' + type(error).__name__
+    if advisory:
+        for name, url in [('browserscan', 'https://www.browserscan.net/'), ('pixelscan', 'https://pixelscan.net/fingerprint-check')]:
+            try:
+                go(page, url)
+                page.wait_for_timeout(15000)
+                result[name] = page.inner_text('body')[:9000]
+            except Exception as error:
+                result[name] = type(error).__name__
+            check_budget(session)
+    if exercise:
+        result['commandMethods'] = call('GET', f"/v1/sessions/{session.info['id']}").get('commandMethods', [])
+        forbidden = [m for m in result['commandMethods'] if m == 'Runtime.enable' or m.startswith(('Input.', 'Log.', 'Network.', 'Fetch.'))]
+        if forbidden:
+            raise RuntimeError('Quiet policy violation: ' + ', '.join(forbidden))
+        if 'Accessibility.getFullAXTree' not in result['commandMethods']:
+            raise RuntimeError('Full accessibility tree was not exercised')
+    return page
+
+
+def fingerprints(count=1, quiet=False):
     if not os.environ.get('STEEL_BYTE_LEDGER'):
         raise RuntimeError('Set STEEL_BYTE_LEDGER to a scratch JSONL path')
     rows = []
     for number in range(count):
-        result = {'run': number + 1, 'tcpOS': 'not supplied by these probes'}
-        def go(page, url, timeout=60000):
-            return navigate(page, url, timeout, result.setdefault('navigationRetries', []))
-
+        result = {'run': number + 1, 'mode': 'quiet' if quiet else 'agent', 'tcpOS': 'not supplied by these probes'}
         try:
-            with Session('core') as s:
-                page = s.page
-                go(page, 'https://ipwho.is/', timeout=45000)
-                ip = json.loads(page.inner_text('body'))
-                result['exitIP'] = ip.get('ip')
-                result['exitTimezone'] = (ip.get('timezone') or {}).get('id')
-                go(page, 'https://example.com', timeout=60000)
-                result['fingerprint'] = page.evaluate(PROBE)
-                print('Basic signals: ' + json.dumps(result['fingerprint']), flush=True)
-                check_budget(s)
-                print('Probe: deviceandbrowserinfo', flush=True)
-                go(page, 'https://deviceandbrowserinfo.com/are_you_a_bot', timeout=60000)
-                result['deviceResult'] = device_result(page)
-                result['deviceFlags'] = positive_flags(result['deviceResult'])
-                print('Device flags: ' + json.dumps(result['deviceFlags']), flush=True)
-                previous = page
-                page = page.context.new_page()
-                previous.close()
-                print('Probe: rebrowser', flush=True)
-                go(page, 'https://bot-detector.rebrowser.net/', timeout=60000)
-                main_value(page, 'window.dummyFn()')
-                page.evaluate("document.getElementById('detections-json')")
-                page.evaluate("document.getElementsByClassName('div')")
-                result['rebrowser'] = [{k: r.get(k) for k in ('type', 'rating', 'note')} for r in rebrowser_result(page)]
-                check_budget(s)
-                print('Rebrowser ratings: ' + json.dumps({r['type']: r['rating'] for r in result['rebrowser']}), flush=True)
-                previous = page
-                page = page.context.new_page()
-                previous.close()
-                print('Probe: workers', flush=True)
-                go(page, 'https://abrahamjuliot.github.io/creepjs/tests/workers.html', timeout=60000)
-                page.wait_for_timeout(10000)
-                workers = page.locator('.worker').all_inner_texts()
-                result['workerHardware'] = [re.findall(r'hardware[^\n]*', text) for text in workers]
-                print('Worker hardware: ' + json.dumps(result['workerHardware']), flush=True)
-                previous = page
-                page = page.context.new_page()
-                previous.close()
-                print('Probe: creepjs', flush=True)
-                go(page, 'https://abrahamjuliot.github.io/creepjs/', timeout=60000)
-                page.wait_for_timeout(15000)
-                result['creep'] = main_value(page, 'window.Fingerprint && ({lies: Fingerprint.lies, headless: Fingerprint.headless, worker: Fingerprint.workerScope})')
-                print('CreepJS: ' + json.dumps({k: (result['creep'] or {}).get(k) for k in ['lies', 'headless']}), flush=True)
-                check_budget(s)
-                print('Probe: webrtc', flush=True)
-                go(page, 'https://browserleaks.com/webrtc', timeout=60000)
-                page.wait_for_timeout(8000)
-                result['webrtc'] = page.inner_text('body')[:18000]
-                try:
-                    go(page, 'https://browserleaks.com/tcp', timeout=45000)
-                    tcp = page.locator('tr').all_inner_texts()
-                    result['tcpOS'] = next((row for row in tcp if 'Zardaxt OS Scoring' in row), 'No OS score returned')
-                    result['tcpFingerprint'] = [row for row in tcp if any(k in row for k in ['JA4T Fingerprint', 'Satori Signature', 'Initial TTL'])]
-                except Exception as error:
-                    result['tcpOS'] = 'Unavailable: ' + type(error).__name__
-
-                if number == 0 and not os.environ.get('STEEL_SKIP_ADVISORY'):
-                    for name, url in [('browserscan', 'https://www.browserscan.net/'), ('pixelscan', 'https://pixelscan.net/fingerprint-check')]:
-                        try:
-                            go(page, url, timeout=60000)
-                            page.wait_for_timeout(15000)
-                            result[name] = page.inner_text('body')[:9000]
-                        except Exception as error:
-                            result[name] = type(error).__name__
-                        check_budget(s)
+            with Session('core', {'mode': 'quiet'} if quiet else None) as session:
+                collect_fingerprint(session, result, exercise=quiet, advisory=number == 0 and not os.environ.get('STEEL_SKIP_ADVISORY'))
         except Exception as error:
             result['error'] = type(error).__name__
             result['errorMessage'] = str(error).splitlines()[0].replace(KEY, '[redacted]')[:250]
@@ -444,11 +515,47 @@ def fingerprints(count=1):
     return rows
 
 
+def quiet_routes(count=1):
+    if not os.environ.get('STEEL_BYTE_LEDGER'):
+        raise RuntimeError('Set STEEL_BYTE_LEDGER to a scratch JSONL path')
+    rows = []
+    out = Path(os.environ.get('STEEL_FAILURE_DIR', 'stealth-failures'))
+    for number in range(count):
+        result = {'run': number + 1, 'mode': 'quiet', 'routes': []}
+        try:
+            with Session('core', {'mode': 'quiet'}) as session:
+                collect_fingerprint(session, result, exercise=True, deep=False)
+                if result['deviceFlags'] or any(r['rating'] > 0 for r in result['rebrowser']):
+                    raise RuntimeError('Positive detection; route checks stopped')
+                for name in ROUTES:
+                    result['routes'].append(route_check(session, name, out, quiet=True))
+            anna = next(r for r in result['routes'] if r['name'] == 'annas')
+            if anna['status'] != 'PASS':
+                retry = {}
+                with Session('core', {'mode': 'quiet'}) as session:
+                    exit_signals(session, retry)
+                    navigate(session.page, 'https://browserleaks.com/tcp')
+                    retry['tcpOS'] = next((r for r in session.page.locator('tr').all_inner_texts() if 'Zardaxt OS Scoring' in r), 'No OS score returned')
+                    retry['route'] = route_check(session, 'annas', out, quiet=True)
+                result['annasRetry'] = retry
+        except Exception as error:
+            result['error'] = type(error).__name__
+            result['errorMessage'] = str(error).splitlines()[0].replace(KEY, '[redacted]')[:1500]
+        rows.append(result)
+        print('QUIET_ROUTES ' + json.dumps(result), flush=True)
+        check_budget()
+    print(f"Quiet route rounds: {len(rows)}; residential bytes: {ledger_total()}; failure artifacts: {out}", flush=True)
+    return rows
+
+
 def main(argv):
-    if len(argv) < 2 or argv[1] not in ('probe', 'routes', 'fingerprints'):
+    if len(argv) < 2 or argv[1] not in ('probe', 'routes', 'fingerprints', 'quiet-probe', 'quiet-routes'):
         sys.exit(__doc__)
-    if argv[1] == 'fingerprints':
-        fingerprints(int(argv[2]) if len(argv) > 2 else 1)
+    if argv[1] == 'quiet-routes':
+        quiet_routes(int(argv[2]) if len(argv) > 2 else 1)
+        return
+    if argv[1] in ('fingerprints', 'quiet-probe'):
+        fingerprints(int(argv[2]) if len(argv) > 2 else 1, quiet=argv[1] == 'quiet-probe')
         return
     if argv[1] == 'probe':
         probe(json.loads(argv[2]) if len(argv) > 2 else {})

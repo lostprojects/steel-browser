@@ -33,7 +33,7 @@ describe("ProxyServer close", () => {
     await vi.waitFor(() => expect(echoed).toBe(size), { timeout: 5_000 });
   }
 
-  it("settles bytes for the connections it force-closes", async () => {
+  it("includes open tunnel bytes and settles them once when force-closing", async () => {
     const echo = net.createServer((socket) => {
       socket.on("error", () => undefined);
       socket.pipe(socket);
@@ -56,6 +56,10 @@ describe("ProxyServer close", () => {
       await tunnel(server.port, "example.com:443", 1_000);
       const stats = server.getConnectionStats(server.getConnectionIds()[0])!;
       expect(stats.trgRxBytes).toBeGreaterThan(1_000);
+      expect({ tx: server.txBytes, rx: server.rxBytes }).toEqual({
+        tx: stats.trgTxBytes,
+        rx: stats.trgRxBytes,
+      });
 
       await new Promise<void>((resolve, reject) => {
         setTimeout(() => server.close(true).then(resolve, reject), 0);
