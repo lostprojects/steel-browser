@@ -1,6 +1,6 @@
 # Deployment
 
-Production runs the accepted phase 3 build with Google Chrome 156.0.8078.79. The owner accepts replacement of incomplete transport and fixture attempts; 20 complete fingerprint results on distinct exits passed. Documentation and measurement-client pushes remain excluded from deployments.
+Production runs the phase 3 service with Google Chrome 156.0.8078.79, including the cleanup build listed below. The owner accepts replacement of incomplete transport and fixture attempts; 20 complete fingerprint results on distinct exits passed. Documentation and measurement-client pushes remain excluded from deployments.
 
 ## Service
 
@@ -65,6 +65,6 @@ It permits isolated-world reads, refuses instrumentation subscriptions and sends
 
 The quiet launch disables `OptimizationHints`, matching the agent launch, because Chrome otherwise downloads Optimization Guide data in the background. Live byte getters include open proxy tunnels, and `proxyTraffic` reports hostname totals without paths or credentials. Released totals remain the final accounting record.
 
-Production application commit `bfbc39f` is deployment `89b38d9f-9008-45a5-86e3-4557db263f17`. This is the current accepted rollback target. The older phase 2 target is `6ffa7417-bc73-4f16-8090-59ed3c929e4a`; that older image lacks quiet mode and includes open-tunnel bytes only on release.
+Production application commit `5174f4d` is deployment `097d4bac-9c8c-4e1e-8230-31f06fb72a0b`. The full phase 3 acceptance measurements came from `bfbc39f`, deployment `89b38d9f-9008-45a5-86e3-4557db263f17`, which remains a known-good rollback target. The older phase 2 target is `6ffa7417-bc73-4f16-8090-59ed3c929e4a`; that older image lacks quiet mode and includes open-tunnel bytes only on release.
 
 The current `rw rollback` wrapper sends an invalid GraphQL selection. Use `rw api 'mutation { deploymentRollback(id: "<last-good-deployment-id>") }'`, first as a dry run and then with `--commit`.
