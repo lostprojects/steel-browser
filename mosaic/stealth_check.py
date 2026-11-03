@@ -41,9 +41,9 @@ import urllib.request
 from pathlib import Path
 
 if os.environ.get('STEEL_CLIENT', 'patchright') == 'patchright':
-    from patchright.sync_api import sync_playwright
+    from patchright.sync_api import sync_playwright, TimeoutError as NavigationTimeout
 else:
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import sync_playwright, TimeoutError as NavigationTimeout
 
 NAMES = ('STEEL_URL', 'STEEL_API_KEY', 'EVOMI_RESIDENTIAL_PROXY_URL', 'EVOMI_PREMIUM_PROXY_URL')
 
@@ -128,7 +128,7 @@ def exit_timezone(proxy_url):
     """
     # A short metered session keeps the preflight within the same byte ledger.
     with Session('none', {'proxyUrl': proxy_url, 'timezone': 'UTC'}) as session:
-        session.page.goto('https://ipwho.is/', timeout=45000)
+        navigate(session.page, 'https://ipwho.is/', timeout=45000)
         data = json.loads(session.page.inner_text('body'))
     zone = (data.get('timezone') or {}).get('id')
     if not zone:
@@ -197,11 +197,8 @@ def probe(options):
               f"{(ip.get('timezone') or {}).get('id')} | {(ip.get('connection') or {}).get('isp')}")
         page.goto('https://example.com', timeout=60000)
         print(json.dumps(page.evaluate(PROBE), indent=1))
-        page.goto('https://deviceandbrowserinfo.com/are_you_a_bot', timeout=60000)
-        page.wait_for_timeout(8000)
-        text = page.inner_text('body')
-        i = text.find('"isBot"')
-        flags = re.findall(r'"(\w+)": true', text[i:i + 1500]) if i >= 0 else ['(result not found)']
+        navigate(page, 'https://deviceandbrowserinfo.com/are_you_a_bot')
+        flags = positive_flags(device_result(page))
         print('deviceandbrowserinfo flags:', flags or 'none')
 
 
@@ -289,6 +286,53 @@ def main_value(page, expression):
         cdp.detach()
 
 
+def navigate(page, url, timeout=60000, retries=None):
+    """Retry one failed navigation on the same exit, recording every retry."""
+    for attempt in range(2):
+        try:
+            return page.goto(url, timeout=timeout, wait_until='domcontentloaded')
+        except Exception as error:
+            transport = isinstance(error, NavigationTimeout) or any(code in str(error) for code in (
+                'net::ERR_TIMED_OUT', 'net::ERR_CONNECTION_RESET',
+                'net::ERR_EMPTY_RESPONSE', 'net::ERR_CONNECTION_CLOSED',
+            ))
+            if attempt or not transport:
+                raise
+            if retries is not None:
+                retries.append({'url': url, 'error': type(error).__name__})
+            print('Navigation retry on the same exit: ' + url, flush=True)
+            cdp = page.context.new_cdp_session(page)
+            try:
+                cdp.send('Page.stopLoading')
+            finally:
+                cdp.detach()
+
+
+def device_result(page, timeout=60000):
+    """Read the site's completed JSON response; empty or invalid output fails."""
+    deadline = time.monotonic() + timeout / 1000
+    while time.monotonic() < deadline:
+        text = page.locator('#jsonResult').text_content(timeout=5000)
+        if text and text.strip():
+            result = json.loads(text)
+            if not isinstance(result, dict) or not isinstance(result.get('isBot'), bool):
+                raise ValueError('Detector response has no boolean isBot verdict')
+            return result
+        page.wait_for_timeout(250)
+    raise TimeoutError('Detector did not publish a JSON verdict within 60 seconds')
+
+
+def positive_flags(result, prefix=''):
+    flags = []
+    for key, value in result.items():
+        name = f'{prefix}.{key}' if prefix else key
+        if value is True:
+            flags.append(name)
+        elif isinstance(value, dict):
+            flags.extend(positive_flags(value, name))
+    return flags
+
+
 def fingerprints(count=1):
     if not os.environ.get('STEEL_BYTE_LEDGER'):
         raise RuntimeError('Set STEEL_BYTE_LEDGER to a scratch JSONL path')
@@ -296,15 +340,7 @@ def fingerprints(count=1):
     for number in range(count):
         result = {'run': number + 1, 'tcpOS': 'not supplied by these probes'}
         def go(page, url, timeout=60000):
-            for attempt in range(2):
-                try:
-                    return page.goto(url, timeout=timeout, wait_until='domcontentloaded')
-                except Exception as error:
-                    transport = any(code in str(error) for code in ['net::ERR_TIMED_OUT', 'net::ERR_CONNECTION_RESET', 'net::ERR_EMPTY_RESPONSE', 'net::ERR_CONNECTION_CLOSED'])
-                    if attempt or not transport:
-                        raise
-                    result.setdefault('transportRetries', []).append(url)
-                    print('Transport retry on the same exit: ' + url, flush=True)
+            return navigate(page, url, timeout, result.setdefault('navigationRetries', []))
 
         try:
             with Session('core') as s:
@@ -319,10 +355,8 @@ def fingerprints(count=1):
                 check_budget(s)
                 print('Probe: deviceandbrowserinfo', flush=True)
                 go(page, 'https://deviceandbrowserinfo.com/are_you_a_bot', timeout=60000)
-                page.wait_for_timeout(8000)
-                body = page.inner_text('body')
-                i = body.find('"isBot"')
-                result['deviceFlags'] = re.findall(r'"(\w+)": true', body[i:i + 2000]) if i >= 0 else ['result_missing']
+                result['deviceResult'] = device_result(page)
+                result['deviceFlags'] = positive_flags(result['deviceResult'])
                 print('Device flags: ' + json.dumps(result['deviceFlags']), flush=True)
                 previous = page
                 page = page.context.new_page()
