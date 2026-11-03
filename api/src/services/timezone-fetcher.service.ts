@@ -19,22 +19,42 @@ interface TimezoneService {
 export class TimezoneFetcher {
   private logger: FastifyBaseLogger;
   private fetchPromises: Map<string, Promise<TimezoneFetchResult>> = new Map();
-  private readonly FETCH_TIMEOUT = 2000;
+  // Residential proxies often take more than 2 s to answer the first request
+  private readonly FETCH_TIMEOUT = 6000;
   private readonly services: TimezoneService[];
 
   constructor(logger: FastifyBaseLogger) {
     this.logger = logger;
 
-    // Use timezone service URL from env, default to ipinfo.io
-    const serviceUrl = env.TIMEZONE_SERVICE_URL || "https://ipinfo.io/json";
-
-    this.services = [
-      {
-        name: new URL(serviceUrl).hostname,
-        url: serviceUrl,
-        parseTimezone: (data) => data?.timezone || null,
-      },
-    ];
+    // A failed lookup falls back to the server's timezone (UTC), which then
+    // contradicts the proxy's exit IP. Ask several services and take the first
+    // answer, unless TIMEZONE_SERVICE_URL names a single one.
+    const serviceUrl = env.TIMEZONE_SERVICE_URL;
+    this.services = serviceUrl
+      ? [
+          {
+            name: new URL(serviceUrl).hostname,
+            url: serviceUrl,
+            parseTimezone: (data) => data?.timezone || null,
+          },
+        ]
+      : [
+          {
+            name: "ipinfo.io",
+            url: "https://ipinfo.io/json",
+            parseTimezone: (data) => data?.timezone || null,
+          },
+          {
+            name: "ip-api.com",
+            url: "http://ip-api.com/json/?fields=timezone",
+            parseTimezone: (data) => data?.timezone || null,
+          },
+          {
+            name: "ipwho.is",
+            url: "https://ipwho.is/",
+            parseTimezone: (data) => data?.timezone?.id || null,
+          },
+        ];
   }
 
   private startFetch(proxyUrl?: string): Promise<TimezoneFetchResult> {
