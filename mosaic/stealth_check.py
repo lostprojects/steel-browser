@@ -130,7 +130,7 @@ class Session:
     """One Steel session driven over CDP; released on exit."""
 
     def __init__(self, mode='core', options=None):
-        body = {'blockAds': True, **(options or {})}
+        body = {'blockAds': False, **(options or {})}
         if PROXY.get(mode):
             body['proxyUrl'] = sticky(PROXY[mode])
             body.setdefault('timezone', exit_timezone(body['proxyUrl']))
