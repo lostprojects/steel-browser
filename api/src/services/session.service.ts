@@ -5,6 +5,7 @@ import path, { dirname } from "path";
 import { fileURLToPath } from "url";
 import { v4 as uuidv4 } from "uuid";
 import { env } from "../env.js";
+import { defaultPluginPreferences } from "../utils/browser.js";
 import { BrowserFingerprintWithHeaders } from "fingerprint-generator";
 import { CredentialsOptions, SessionDetails } from "../modules/sessions/sessions.schema.js";
 import {
@@ -183,12 +184,7 @@ export class SessionService {
         : env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome");
     await mkdir(userDataDir, { recursive: true });
 
-    const defaultUserPreferences = {
-      plugins: {
-        always_open_pdf_externally: true,
-        plugins_disabled: ["Chrome PDF Viewer"],
-      },
-    };
+    const defaultUserPreferences = defaultPluginPreferences();
 
     const mergedUserPreferences = userPreferences
       ? deepMerge(defaultUserPreferences, userPreferences)

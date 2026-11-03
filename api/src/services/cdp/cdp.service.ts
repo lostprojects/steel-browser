@@ -37,7 +37,12 @@ import {
   normalizeHosts,
   isImageRequest,
 } from "../../utils/requests.js";
-import { filterHeaders, getChromeExecutablePath, installMouseHelper } from "../../utils/browser.js";
+import {
+  defaultPluginPreferences,
+  filterHeaders,
+  getChromeExecutablePath,
+  installMouseHelper,
+} from "../../utils/browser.js";
 import {
   deepMerge,
   extractStorageForPageWithTimeout,
@@ -172,12 +177,7 @@ export class CDPService extends EventEmitter {
       extensions: [],
       userDataDir: env.CHROME_USER_DATA_DIR || path.join(os.tmpdir(), "steel-chrome"),
       timezone: coldStartTimezone,
-      userPreferences: {
-        plugins: {
-          always_open_pdf_externally: true,
-          plugins_disabled: ["Chrome PDF Viewer"],
-        },
-      },
+      userPreferences: defaultPluginPreferences(),
       deviceConfig: { device: "desktop" },
     };
 

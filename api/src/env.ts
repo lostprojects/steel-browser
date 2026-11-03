@@ -39,6 +39,11 @@ const envSchema = z.object({
     .default("false"),
   // Enabling Runtime and Log on a target makes Chrome serialize console
   // messages, which pages detect. False keeps page console output out of logs.
+  ENABLE_PDF_VIEWER: z
+    .string()
+    .optional()
+    .transform((val) => val === "true" || val === "1")
+    .default("false"),
   CAPTURE_CONSOLE_EVENTS: z
     .string()
     .optional()

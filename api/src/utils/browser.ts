@@ -32,6 +32,17 @@ export const getChromeExecutablePath = () => {
   return "/usr/bin/chromium";
 };
 
+/**
+ * Default Chrome plugin preferences. Upstream turns the PDF viewer off so PDFs
+ * download, which also leaves navigator.plugins empty, unlike any desktop
+ * Chrome. ENABLE_PDF_VIEWER=true keeps the viewer and its five plugin entries.
+ */
+export function defaultPluginPreferences() {
+  return env.ENABLE_PDF_VIEWER
+    ? { plugins: { always_open_pdf_externally: false, plugins_disabled: [] as string[] } }
+    : { plugins: { always_open_pdf_externally: true, plugins_disabled: ["Chrome PDF Viewer"] } };
+}
+
 export async function installMouseHelper(page: Page, device: string) {
   await page.evaluateOnNewDocument((deviceType) => {
     // Install mouse helper only for top-level frame.
