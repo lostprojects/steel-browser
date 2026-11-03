@@ -335,6 +335,30 @@ def positive_flags(result, prefix=''):
     return flags
 
 
+def rebrowser_result(page, timeout=60000):
+    expected = {
+        'dummyFn', 'sourceUrlLeak', 'mainWorldExecution', 'runtimeEnableLeak',
+        'exposeFunctionLeak', 'navigatorWebdriver', 'viewport', 'pwInitScripts',
+        'platformMismatch', 'mobileEmulation', 'documentInterception', 'popupBlocking',
+        'ipcFloodingProtection', 'cdpBindingGlobals', 'headless', 'nativeTampering',
+        'bypassCsp', 'useragent', 'workerConsistency', 'storagePartitioning',
+    }
+    neutral = {'sourceUrlLeak', 'mainWorldExecution', 'exposeFunctionLeak'}
+    deadline = time.monotonic() + timeout / 1000
+    while time.monotonic() < deadline:
+        raw = page.locator('#detections-json').input_value(timeout=5000)
+        rows = json.loads(raw) if raw.strip() else []
+        # Keep positive detections even when another check is still pending.
+        if any(r.get('rating', 0) > 0 for r in rows):
+            return rows
+        if expected <= {r.get('type') for r in rows} and all(
+            r.get('rating') == -1 or r.get('type') in neutral for r in rows
+        ):
+            return rows
+        page.wait_for_timeout(250)
+    raise TimeoutError('Rebrowser did not finish all 20 checks within 60 seconds')
+
+
 def fingerprints(count=1):
     if not os.environ.get('STEEL_BYTE_LEDGER'):
         raise RuntimeError('Set STEEL_BYTE_LEDGER to a scratch JSONL path')
@@ -368,8 +392,7 @@ def fingerprints(count=1):
                 main_value(page, 'window.dummyFn()')
                 page.evaluate("document.getElementById('detections-json')")
                 page.evaluate("document.getElementsByClassName('div')")
-                page.wait_for_timeout(11000)
-                result['rebrowser'] = [{k: r.get(k) for k in ('type', 'rating', 'note')} for r in json.loads(page.locator('#detections-json').input_value())]
+                result['rebrowser'] = [{k: r.get(k) for k in ('type', 'rating', 'note')} for r in rebrowser_result(page)]
                 check_budget(s)
                 print('Rebrowser ratings: ' + json.dumps({r['type']: r['rating'] for r in result['rebrowser']}), flush=True)
                 previous = page

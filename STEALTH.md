@@ -92,7 +92,7 @@ Phase 1 removes the shared profile, singleton and idle relaunch. TypeScript pass
 
 Phase 1 production checks ran three sessions concurrently with three distinct cookie values and three working CDP connections. A fourth request returned HTTP 429 after 5.46 seconds. A full commands snapshot completed. A second claim on `mosaic-acceptance` returned HTTP 409; its persistent cookie survived a full Railway redeploy. All checks used direct traffic, with zero residential bytes.
 
-The final phase 1 release response confirmed `temporaryProfileRemoved: true` after a filesystem check. Phase 2 is being measured with Google Chrome 156.0.8078.79 and separate X displays.
+The final phase 1 release response confirmed `temporaryProfileRemoved: true` after a filesystem check. The following phase 2 measurements use Google Chrome 156.0.8078.79 and separate X displays.
 
 Phase 2 candidates install Google Chrome 156.0.8078.79. The production checks opened three distinct X displays, refused all three unauthenticated viewer requests, and connected noVNC to a 1920×1080 display. Both health paths return the installed version without authentication; noVNC assets return 401 without a key.
 
@@ -153,3 +153,42 @@ The whole phases 0–2 attempt used 137,169,680 residential bytes across 130 met
 The unresolved check is consistent completion of the detector fixture. A continuation should inspect the missing response and wait for the actual result, then address navigation timeouts within the owner’s chosen retry limit. Phase 3 requires a new passing phase 2 acceptance set first.
 
 After rollback, production reported Chromium 156.0.8078.73. Health and a fresh session’s creation/release passed. The release confirmed temporary-profile removal.
+
+## Phase 2 continuation and acceptance
+
+The owner authorized another attempt and then accepted replacing incomplete transport or fixture runs until 20 complete results had been collected on distinct exits. Positive detections still fail acceptance. All samples in this continuation used the same deployed phase 2 application and Google Chrome 156.0.8078.79.
+
+The measurement client now waits for Device and Browser Info’s JSON verdict and Rebrowser’s complete set of checks. It records one retry on the same sticky exit for navigation timeouts or transient proxy failures. One detector navigation timeout recovered on that retry.
+
+The accepted set contains 20 complete results on 20 distinct exits. Device and Browser Info returned no flags in all 20. Each Rebrowser result contained 17 green and the three accepted neutral checks. Page and worker hardware concurrency was eight throughout; Chrome brands and timezones matched in all 20. ANGLE/llvmpipe was stable, CreepJS reported zero lies and zero headless or stealth markers, and WebRTC exposed no address outside the recorded exit.
+
+Three incomplete attempts were excluded from that set: a session-capacity refusal before a fingerprint session started, a proxy-tunnel failure before the detector loaded, and a Rebrowser result containing only 19 checks because its user-agent check had not finished. No collected result contained a positive detection. The earlier failed batches remain documented above.
+
+BrowserScan reported 100% authenticity and no bot detection. Pixelscan completed its advisory scan and reported an inconsistent fingerprint and masking detected, with no automated behavior detected. Its verdict remains advisory under REVIEW.md.
+
+| Accepted exit IP | Browser timezone | TCP top score |
+|---|---|---|
+| 38.42.72.54 | America/New_York | Android (63%) |
+| 98.56.105.142 | America/New_York | Android (63%) |
+| 99.128.61.48 | America/New_York | Android (62%) |
+| 68.0.227.227 | America/New_York | Android (63%) |
+| 75.117.253.16 | America/New_York | Android (63%) |
+| 35.146.254.193 | America/Chicago | Android (58%) |
+| 107.220.73.233 | America/Chicago | Android (63%) |
+| 68.209.173.99 | America/New_York | Windows (53%) |
+| 172.58.133.146 | America/New_York | Android (58%) |
+| 96.231.135.152 | America/New_York | Android (63%) |
+| 71.239.67.192 | America/Chicago | Android (63%) |
+| 67.124.221.228 | America/Los_Angeles | Android (62%) |
+| 172.59.147.206 | America/Los_Angeles | Android (58%) |
+| 76.37.9.8 | America/New_York | Android (58%) |
+| 192.230.144.192 | America/New_York | Android (55%) |
+| 147.124.228.28 | America/New_York | Android (63%) |
+| 99.182.38.73 | America/Chicago | Android (63%) |
+| 173.89.151.52 | America/Chicago | Android (65%) |
+| 172.56.61.146 | America/Chicago | Android (58%) |
+| 184.164.116.150 | America/Denver | Android (63%) |
+
+Phase 2 is accepted. The production build passed health and session creation/release checks, including temporary-profile removal. It is the rollback target for phase 3.
+
+Checks already running when the twentieth complete exit was accepted brought this continuation to 24 complete results from 27 attempts, all 24 without a positive detection. The continuation used 61,782,678 residential bytes across 53 metered sessions. Cumulative phases 0–2 usage is 198,952,358 bytes, all Evomi Core.

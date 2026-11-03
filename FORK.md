@@ -6,7 +6,7 @@ Phase 1 removes the idle browser, Selenium and fingerprint injection. Each sessi
 
 Google Chrome stable is installed at an exact version and checksum. Each session owns an Xvfb display and a loopback VNC endpoint; noVNC uses the existing API key. The global display and unpinned Debian Chromium install are removed.
 
-Production was restored to phase 1 commit `c73bfc3` after phase 2’s detector-completion check remained incomplete. The phase 2 candidate remains on `main` and `deploy`, with its measurements in [STEALTH.md](STEALTH.md). Quiet mode was not started.
+Phase 2 passed after the owner accepted replacement of incomplete transport and fixture runs. Production runs Google Chrome 156.0.8078.79 with separate displays and noVNC. [STEALTH.md](STEALTH.md) records the 20 complete checks on distinct exits and the incomplete attempts. Quiet mode is the next phase.
 
 ## Earlier fork fixes
 
