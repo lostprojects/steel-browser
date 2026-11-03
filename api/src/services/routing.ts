@@ -215,14 +215,18 @@ export class Routing {
             let html = "";
             let validation = { pass: false, payloads: 0, title: "" };
             let challenge: Awaited<ReturnType<typeof clearChallenge>> | undefined;
+            const challengeActions: string[] = [];
             const deadline = Date.now() + 60_000;
             while (Date.now() < deadline && session.status === "live") {
               try {
                 html = await page.evaluate(() => document.documentElement.outerHTML);
                 validation = validPayload(html, 200, {}, route, page.url());
                 if (validation.pass) break;
-                if (rung === 3 && !challenge) {
+                // A redirect can insert a challenge after an earlier clear
+                // observation. Recheck until the actual payload arrives.
+                if (!challenge || challenge.status === "cleared") {
                   challenge = await clearChallenge(session, undefined, 45_000);
+                  challengeActions.push(...challenge.actions);
                   if (challenge.status === "challenge_required") break;
                 }
               } catch {
@@ -241,7 +245,7 @@ export class Routing {
               directBytes: after.directBytes - before.directBytes,
               sessionId: session.id,
               exit: session.exit,
-              challengeActions: challenge?.actions ?? [],
+              challengeActions,
             });
             if (validation.pass) {
               this.entries[host] = {

@@ -15,6 +15,7 @@ describe("route payloads", () => {
     expect(hostRoute("unknown.example")).toBe("residential");
     expect(hostRoute("fonts.gstatic.com")).toBe("direct");
     expect(hostRoute("ads.doubleclick.net")).toBe("refused");
+    expect(hostRoute("www.googletagmanager.com")).toBe("refused");
   });
   it("counts relative people links the same way as browser anchor hrefs", () => {
     const html =

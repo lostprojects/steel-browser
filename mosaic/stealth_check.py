@@ -122,29 +122,25 @@ _http = threading.local()
 
 
 def call(method, path, payload=None):
-    """Reuse the API connection; retry only reads after a dropped connection."""
+    """Retry reads, releases and keyed mutations after a dropped connection."""
     base = urllib.parse.urlsplit(BASE)
     body = json.dumps(payload).encode() if payload is not None else None
     retryable = method == 'GET' or path.endswith('/release') or path.endswith('/commands') or path.endswith('/challenge') or path in ('/v1/sessions', '/v1/fetch')
     request_key = str(uuid.uuid4())
     for attempt in range(3):
-        if not getattr(_http, 'connection', None):
-            connection = http.client.HTTPSConnection if base.scheme == 'https' else http.client.HTTPConnection
-            _http.connection = connection(base.hostname, base.port, timeout=300 if path == '/v1/fetch' else 120)
-        _http.connection.timeout = 300 if path == '/v1/fetch' else 120
-        if _http.connection.sock:
-            _http.connection.sock.settimeout(_http.connection.timeout)
+        connection = http.client.HTTPSConnection if base.scheme == 'https' else http.client.HTTPConnection
+        conn = connection(base.hostname, base.port, timeout=300 if path == '/v1/fetch' else 120)
         try:
-            _http.connection.request(method, base.path + path, body=body,
-                                     headers={'Content-Type': 'application/json', 'steel-api-key': KEY, 'idempotency-key': request_key})
-            response = _http.connection.getresponse()
+            conn.request(method, base.path + path, body=body,
+                         headers={'Content-Type': 'application/json', 'Connection': 'close', 'steel-api-key': KEY, 'idempotency-key': request_key})
+            response = conn.getresponse()
             data = response.read()
         except (OSError, http.client.HTTPException):
-            _http.connection.close()
-            _http.connection = None
             if retryable and attempt < 2:
                 continue
             raise
+        finally:
+            conn.close()
         if response.status >= 400:
             raise urllib.error.HTTPError(BASE + path, response.status, response.reason,
                                          response.headers, io.BytesIO(data))
@@ -186,6 +182,7 @@ class Session:
             body['residential'] = {'country': 'US'}
         body.setdefault('sessionId', str(uuid.uuid4()))
         self.body = body
+        self.target_id = None
 
     def __enter__(self):
         check_budget()
@@ -210,7 +207,18 @@ class Session:
                     endpoint = os.environ['STEEL_CDP_BASE'].rstrip('/') + f"/v1/sessions/{self.info['id']}/cdp"
                 self.browser = self.pw.chromium.connect_over_cdp(endpoint + '?apiKey=' + KEY, timeout=30000)
                 ctx = self.browser.contexts[0]
-                self.page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                self.page = None
+                for candidate in ctx.pages or [ctx.new_page()]:
+                    cdp = ctx.new_cdp_session(candidate)
+                    try:
+                        target = cdp.send('Target.getTargetInfo')['targetInfo']['targetId']
+                    finally:
+                        cdp.detach()
+                    if self.target_id is None or target == self.target_id:
+                        self.page, self.target_id = candidate, target
+                        break
+                if self.page is None:
+                    raise RuntimeError('The original page no longer exists')
                 self.page.set_default_timeout(60000)
                 return self.page
             except Exception:

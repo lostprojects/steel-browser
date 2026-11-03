@@ -8,7 +8,8 @@ import argparse
 import json
 import uuid
 from pathlib import Path
-from stealth_check import call
+from urllib.parse import urlsplit
+from stealth_check import call, sync_playwright, KEY
 
 
 def main():
@@ -26,6 +27,27 @@ def main():
     info = call('POST', '/v1/sessions', {'sessionId': str(uuid.uuid4()), 'mode': 'agent',
                 'identity': name, 'residential': {'country': args.country}, 'sessionContext': context})
     try:
+        storage_count = 0
+        if context.get('localStorage'):
+            with sync_playwright() as pw:
+                browser = pw.chromium.connect_over_cdp(info['websocketUrl'] + '?apiKey=' + KEY)
+                page = browser.contexts[0].pages[0]
+                # Materialize each origin without a site request. The temporary
+                # import session permits interception; quiet sessions do not.
+                page.route('**/*', lambda route: route.fulfill(status=200, content_type='text/html', body='<html></html>'))
+                for origin, values in context['localStorage'].items():
+                    parsed = urlsplit(origin)
+                    if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password or parsed.path not in ('', '/'):
+                        raise ValueError('Source storage has an invalid origin')
+                    page.goto(origin, wait_until='domcontentloaded')
+                    matched = page.evaluate('''values => {
+                        for (const [key, value] of Object.entries(values)) localStorage.setItem(key, value);
+                        return Object.entries(values).filter(([key, value]) => localStorage.getItem(key) === value).length;
+                    }''', values)
+                    if matched != len(values):
+                        raise RuntimeError('Source local storage was not fully preserved')
+                    storage_count += matched
+                browser.close()
         stored = call('GET', f"/v1/sessions/{info['id']}/context")
         wanted = {(c['domain'], c.get('path', '/'), c['name'], c['value']) for c in context['cookies']
                   if c.get('expires', -1) <= 0 or c['expires'] > __import__('time').time()}
@@ -33,7 +55,8 @@ def main():
         missing = len(wanted - actual)
         if missing:
             raise RuntimeError(f'{missing} unexpired source cookies were not preserved')
-        print(json.dumps({'identity': name, 'unexpired_cookies_verified': len(wanted), 'source_retained': str(args.file)}))
+        print(json.dumps({'identity': name, 'unexpired_cookies_verified': len(wanted),
+                          'local_storage_entries_verified': storage_count, 'source_retained': str(args.file)}))
     finally:
         settled = call('POST', f"/v1/sessions/{info['id']}/release")
         print(json.dumps({'migration_residential_bytes': settled['proxyTxBytes'] + settled['proxyRxBytes']}))

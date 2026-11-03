@@ -27,9 +27,13 @@ export function hostRoute(host: string): HostRoute {
   )
     return "direct";
   if (
-    ["doubleclick.net", "googlesyndication.com", "google-analytics.com", "youtube.com"].some(
-      (s) => host === s || host.endsWith(`.${s}`),
-    )
+    [
+      "doubleclick.net",
+      "googlesyndication.com",
+      "google-analytics.com",
+      "googletagmanager.com",
+      "youtube.com",
+    ].some((s) => host === s || host.endsWith(`.${s}`))
   )
     return "refused";
   return "residential";
