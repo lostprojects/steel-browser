@@ -65,7 +65,7 @@ Since WebGL and the PDF plugins were added, the automatic check passes in 3 of 4
 1. Give Mosaic a Steel backend in `scripts/browser/api.py` and move the collector routes to it, keeping Browserbase as a fallback.
 2. Handle a DDoS-Guard fallback: retry once on a new sticky session, then click the checkbox and read the text CAPTCHA from a screenshot.
 3. Watch the one remaining unusual value, 48 cores. CDP can override `navigator.hardwareConcurrency`, but an override that workers do not share would add a contradiction, so leave it unless a site is seen to care.
-4. Find out why Steel's own timezone lookup returns Railway's location through the proxy, then drop the client-side workaround if it can be fixed.
+4. Keep the client timezone lookup through the sticky exit. The earlier measurements do not separate IP rotation from geolocation database differences.
 
 ## Measuring detection
 
@@ -81,3 +81,5 @@ python mosaic/stealth_check.py routes premium annas ancestry  # chosen routes th
 Failed routes save a screenshot and the page text to `./stealth-failures/`. Run it from a temporary directory and delete that folder afterwards. The instance has one browser, so never run two copies at once.
 
 `chrome://gpu` explains why WebGL or GPU features are off. Its text is inside the `info-view` element's shadow root.
+
+The measurement client sends `blockAds: false`, so ad blocking does not pause every request in Node. Browserbase remains available as a fallback.

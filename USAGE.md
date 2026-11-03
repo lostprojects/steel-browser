@@ -4,7 +4,7 @@
 
 ```python
 proxy = sticky(EVOMI_RESIDENTIAL_PROXY_URL)                 # one exit IP for the job
-body = {"blockAds": True, "proxyUrl": proxy, "timezone": exit_timezone(proxy)}
+body = {"blockAds": False, "proxyUrl": proxy, "timezone": exit_timezone(proxy)}
 session = POST /v1/sessions, body                           # header steel-api-key: <key>
 browser = patchright.chromium.connect_over_cdp(session["websocketUrl"] + "?apiKey=" + key)
 context = browser.contexts[0]
@@ -37,7 +37,7 @@ Requests from Railway and from a Mac with the same ID leave through the same IP.
 
 ## Pass the timezone yourself
 
-Steel looks up the exit IP's timezone on its own, but on Railway the lookup returned Railway's location (Ashburn, America/New_York) in three of three sessions, while the browser left through residential IPs in Florida, California and Texas. The cause is not yet known.
+The client looks up the exit timezone through the same sticky proxy. Earlier tests changed both proxy stickiness and timezone handling together; they do not establish that Steel used Railway's location. Proxy rotation and differences between geolocation databases remain possible causes of the earlier mismatch.
 
 `exit_timezone()` asks ipwho.is through the same sticky proxy and passes the answer as `timezone`. The browser's timezone has matched its exit IP in every session since.
 

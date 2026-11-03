@@ -1,6 +1,6 @@
 # Steel Browser, Mosaic fork
 
-A self-hosted remote browser on Railway for Mosaic's collector. It replaces Browserbase for pages that need a real browser. Railway compute plus Evomi residential traffic at about $1/GB costs a fraction of Browserbase's $10–12/GB for proxy traffic.
+A self-hosted remote browser on Railway for Mosaic's collector. Browserbase remains available as a fallback while this service develops. Railway compute plus Evomi residential traffic at about $1/GB costs a fraction of Browserbase's $10–12/GB for proxy traffic.
 
 The browser is tuned to look like an ordinary Linux desktop to anti-bot systems. It reports itself truthfully and consistently, leaves no automation traces, and goes out through a residential IP whose timezone it matches.
 
@@ -17,7 +17,7 @@ As of 3 November 2026, the browser passes deviceandbrowserinfo.com's bot test wi
 | [USAGE.md](USAGE.md) | Connecting a client: the API key, Patchright, the sticky proxy and timezone |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | The Railway service, its variables and where the credentials live |
 | [STEALTH.md](STEALTH.md) | What anti-bot systems detect, what was fixed, route results and the measuring tool |
-| [FORK.md](FORK.md) | Every change from upstream, and how to merge upstream updates |
+| [FORK.md](FORK.md) | Every change from upstream, and how to take upstream fixes |
 | [upstream-docs/](upstream-docs/) | Steel's own README, contributing guide, architecture, API and troubleshooting docs |
 
 ## Quick check

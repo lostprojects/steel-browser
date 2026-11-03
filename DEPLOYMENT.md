@@ -5,13 +5,13 @@
 | Item | Value |
 |---|---|
 | Railway project / service | `vigilant-peace` / `Steel Browser` |
-| Source | `lostprojects/steel-browser`, branch `main`. Every push to `main` builds and deploys, including documentation-only pushes |
+| Source | `lostprojects/steel-browser`, branch `deploy`. Keep `main` at the same commit. Railway watches `/api/**`, `/ui/**`, `/Dockerfile`, `/package.json`, `/package-lock.json`, excluding `!/**/*.md`; documentation and `mosaic/` changes do not deploy |
 | Build | Root `Dockerfile`, which Railway detects |
 | URL | `https://steel-browser-production-e8d5.up.railway.app` |
 | Health check | `/v1/health`, the only path that needs no key |
 | Dashboard | `/ui/?apiKey=<key>` once per browser; an HttpOnly cookie keeps it working |
 
-A deploy restarts the browser and ends any open session. Push when no job is running.
+Before a deployment push, check `GET /v1/sessions` and recent Railway HTTP logs for active jobs. Record the last healthy deployment for `rw rollback`. Railway draining is set to 120 seconds; the current singleton still closes promptly, until phase 1 adds session draining.
 
 The instance runs one browser at a time. A new session replaces the current one, so clients must run one after another.
 
@@ -21,6 +21,7 @@ Manage the service with the `rw` CLI (`rw status`, `rw logs vigilant-peace "Stee
 
 | Variable | Value | Purpose |
 |---|---|---|
+| `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | `120` | Time allowed for the service to drain during deployment |
 | `DOMAIN` | `${{RAILWAY_PUBLIC_DOMAIN}}` | Session URLs use the public domain |
 | `USE_SSL` | `true` | Session URLs use `https` and `wss` |
 | `CDP_REDIRECT_PORT` | set by the template | Internal DevTools port |

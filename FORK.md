@@ -28,15 +28,8 @@ WebGL needed no code. Upstream's `FILTER_CHROME_ARGS` and `CHROME_ARGS` variable
 
 `.github/` is upstream's and unchanged. Its workflows and labeler still name the old `docs/`, `README.md` and `CONTRIBUTING.md` paths; GitHub does not run them on this fork unless Actions are enabled.
 
-## Merging upstream
+## Taking upstream fixes
 
-```bash
-git fetch upstream
-git merge upstream/main
-```
+This fork is Mosaic's browser service. Keep the Apache 2.0 licence and notices, and take useful upstream fixes individually with `git cherry-pick`. Do not merge `upstream/main` wholesale.
 
-1. Conflicts can arise in the code files listed above. Keep our change and take upstream's around it.
-2. Upstream edits to `README.md`, `CONTRIBUTING.md` or `docs/` arrive at the old paths. Move them into `upstream-docs/` and keep our root `README.md`.
-3. When upstream merges PR #297, drop our copy of the `changeOrigin` line.
-4. If upstream moves past Puppeteer 23.6, pick the matching `rebrowser-puppeteer-core` release.
-5. Typecheck with `cd api && npx tsc --noEmit`, push when no job is running, and rerun `mosaic/stealth_check.py probe` and `routes core` once the deploy finishes. Record any change in [STEALTH.md](STEALTH.md).
+Typecheck with `cd api && npx tsc --noEmit` and run the tests covering changed modules. Check active sessions and Railway HTTP traffic before pushing a deployment to `deploy`, and keep `main` at the same commit. Railway ignores documentation and the local measurement client when deciding whether to deploy.
