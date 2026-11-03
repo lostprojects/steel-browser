@@ -613,15 +613,24 @@ def quiet_routes(count=1):
                     raise RuntimeError('Positive detection; route checks stopped')
                 for name in ROUTES:
                     result['routes'].append(route_check(session, name, out, quiet=True))
-            anna = next(r for r in result['routes'] if r['name'] == 'annas')
-            if anna['status'] != 'PASS':
-                retry = {}
+            for first in result['routes']:
+                transport_error = any(code in first.get('navigationError', '') for code in (
+                    'net::ERR_TIMED_OUT', 'net::ERR_CONNECTION_RESET', 'net::ERR_CONNECTION_CLOSED',
+                    'net::ERR_EMPTY_RESPONSE', 'net::ERR_TUNNEL_CONNECTION_FAILED',
+                    'net::ERR_PROXY_CONNECTION_FAILED', 'net::ERR_SOCKS_CONNECTION_FAILED',
+                ))
+                if first['status'] == 'PASS' or (first['name'] != 'annas' and not transport_error):
+                    continue
+                retry = {'name': first['name']}
                 with Session('core', {'mode': 'quiet'}) as session:
                     exit_signals(session, retry)
                     navigate(session.page, 'https://browserleaks.com/tcp')
                     retry['tcpOS'] = next((r for r in session.page.locator('tr').all_inner_texts() if 'Zardaxt OS Scoring' in r), 'No OS score returned')
-                    retry['route'] = route_check(session, 'annas', out, quiet=True)
-                result['annasRetry'] = retry
+                    retry['route'] = route_check(session, first['name'], out, quiet=True)
+                if first['name'] == 'annas':
+                    result['annasRetry'] = retry
+                else:
+                    result.setdefault('transportRetries', []).append(retry)
         except Exception as error:
             result['error'] = type(error).__name__
             result['errorMessage'] = str(error).splitlines()[0].replace(KEY, '[redacted]')[:1500]
