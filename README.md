@@ -8,7 +8,9 @@ This is a fork of [steel-dev/steel-browser](https://github.com/steel-dev/steel-b
 
 ## Status
 
-The service runs up to three independent sessions, with named profiles on a Railway volume. It deletes throwaway profiles on release and reports why each session ended. Deployment comes from `deploy`; documentation pushes are skipped. The phase 2 candidate adds pinned Google Chrome 156.0.8078.79, a separate X display per session and authenticated noVNC; fingerprint acceptance is pending.
+The service runs up to three independent sessions, with named profiles on a Railway volume. It deletes throwaway profiles on release and reports why each session ended. Deployment comes from `deploy`; documentation pushes are skipped. Phase 2 adds pinned Google Chrome 156.0.8078.79, separate X displays and authenticated noVNC, but stopped at 18/20 completed detector results after two client fixes. Production was restored to accepted phase 1 commit `c73bfc3`. Quiet mode is unimplemented.
+
+The phase 2 candidate remains committed on synchronized `main` and `deploy`; a later code push would deploy it again. Resume its acceptance checks before beginning phase 3.
 
 The earlier singleton build passed deviceandbrowserinfo.com's bot test and loaded all six collector routes in supervised measurements, including Anna's Archive in three of four attempts. Those measurements are retained in [STEALTH.md](STEALTH.md); the replacement needs the phase 2 and phase 3 fingerprint and route checks before claiming the same results.
 

@@ -159,6 +159,7 @@ class Session:
             self.browser = self.pw.chromium.connect_over_cdp(self.info['websocketUrl'] + '?apiKey=' + KEY)
             ctx = self.browser.contexts[0] if self.browser.contexts else self.browser.new_context()
             self.page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            self.page.set_default_timeout(60000)
             self.bytes = 0
             cdp = ctx.new_cdp_session(self.page)
             cdp.send('Network.enable')
@@ -171,11 +172,17 @@ class Session:
             raise
 
     def __exit__(self, *exc):
+        if exc and exc[1]:
+            print('Original probe error: ' + type(exc[1]).__name__ + ': ' + str(exc[1]).splitlines()[0].replace(KEY, '[redacted]'), flush=True)
+            print('Client state: ' + json.dumps({'connected': self.browser.is_connected(), 'pages': [{'url': p.url, 'closed': p.is_closed()} for c in self.browser.contexts for p in c.pages]}), flush=True)
         # End remote spend before disposing of the client driver.
         self.released = call('POST', f"/v1/sessions/{self.info['id']}/release")
         record_release(self.released)
         try:
             self.browser.close()
+        except Exception as error:
+            if 'closed' not in str(error).lower():
+                raise
         finally:
             self.pw.stop()
 
@@ -288,19 +295,30 @@ def fingerprints(count=1):
     rows = []
     for number in range(count):
         result = {'run': number + 1, 'tcpOS': 'not supplied by these probes'}
+        def go(page, url, timeout=60000):
+            for attempt in range(2):
+                try:
+                    return page.goto(url, timeout=timeout, wait_until='domcontentloaded')
+                except Exception as error:
+                    transport = any(code in str(error) for code in ['net::ERR_TIMED_OUT', 'net::ERR_CONNECTION_RESET', 'net::ERR_EMPTY_RESPONSE', 'net::ERR_CONNECTION_CLOSED'])
+                    if attempt or not transport:
+                        raise
+                    result.setdefault('transportRetries', []).append(url)
+                    print('Transport retry on the same exit: ' + url, flush=True)
+
         try:
             with Session('core') as s:
                 page = s.page
-                page.goto('https://ipwho.is/', timeout=45000, wait_until='domcontentloaded')
+                go(page, 'https://ipwho.is/', timeout=45000)
                 ip = json.loads(page.inner_text('body'))
                 result['exitIP'] = ip.get('ip')
                 result['exitTimezone'] = (ip.get('timezone') or {}).get('id')
-                page.goto('https://example.com', timeout=60000, wait_until='domcontentloaded')
+                go(page, 'https://example.com', timeout=60000)
                 result['fingerprint'] = page.evaluate(PROBE)
                 print('Basic signals: ' + json.dumps(result['fingerprint']), flush=True)
                 check_budget(s)
                 print('Probe: deviceandbrowserinfo', flush=True)
-                page.goto('https://deviceandbrowserinfo.com/are_you_a_bot', timeout=60000, wait_until='domcontentloaded')
+                go(page, 'https://deviceandbrowserinfo.com/are_you_a_bot', timeout=60000)
                 page.wait_for_timeout(8000)
                 body = page.inner_text('body')
                 i = body.find('"isBot"')
@@ -310,9 +328,7 @@ def fingerprints(count=1):
                 page = page.context.new_page()
                 previous.close()
                 print('Probe: rebrowser', flush=True)
-                page.add_init_script('void 0')
-                page.expose_function('exposedFn', lambda: None)
-                page.goto('https://bot-detector.rebrowser.net/', timeout=60000, wait_until='domcontentloaded')
+                go(page, 'https://bot-detector.rebrowser.net/', timeout=60000)
                 main_value(page, 'window.dummyFn()')
                 page.evaluate("document.getElementById('detections-json')")
                 page.evaluate("document.getElementsByClassName('div')")
@@ -324,7 +340,7 @@ def fingerprints(count=1):
                 page = page.context.new_page()
                 previous.close()
                 print('Probe: workers', flush=True)
-                page.goto('https://abrahamjuliot.github.io/creepjs/tests/workers.html', timeout=60000, wait_until='domcontentloaded')
+                go(page, 'https://abrahamjuliot.github.io/creepjs/tests/workers.html', timeout=60000)
                 page.wait_for_timeout(10000)
                 workers = page.locator('.worker').all_inner_texts()
                 result['workerHardware'] = [re.findall(r'hardware[^\n]*', text) for text in workers]
@@ -333,18 +349,27 @@ def fingerprints(count=1):
                 page = page.context.new_page()
                 previous.close()
                 print('Probe: creepjs', flush=True)
-                page.goto('https://abrahamjuliot.github.io/creepjs/', timeout=60000, wait_until='domcontentloaded')
+                go(page, 'https://abrahamjuliot.github.io/creepjs/', timeout=60000)
                 page.wait_for_timeout(15000)
                 result['creep'] = main_value(page, 'window.Fingerprint && ({lies: Fingerprint.lies, headless: Fingerprint.headless, worker: Fingerprint.workerScope})')
+                print('CreepJS: ' + json.dumps({k: (result['creep'] or {}).get(k) for k in ['lies', 'headless']}), flush=True)
                 check_budget(s)
                 print('Probe: webrtc', flush=True)
-                page.goto('https://browserleaks.com/webrtc', timeout=60000, wait_until='domcontentloaded')
+                go(page, 'https://browserleaks.com/webrtc', timeout=60000)
                 page.wait_for_timeout(8000)
                 result['webrtc'] = page.inner_text('body')[:18000]
-                if number == 0:
-                    for name, url in [('browserscan', 'https://www.browserscan.net/'), ('pixelscan', 'https://pixelscan.net/')]:
+                try:
+                    go(page, 'https://browserleaks.com/tcp', timeout=45000)
+                    tcp = page.locator('tr').all_inner_texts()
+                    result['tcpOS'] = next((row for row in tcp if 'Zardaxt OS Scoring' in row), 'No OS score returned')
+                    result['tcpFingerprint'] = [row for row in tcp if any(k in row for k in ['JA4T Fingerprint', 'Satori Signature', 'Initial TTL'])]
+                except Exception as error:
+                    result['tcpOS'] = 'Unavailable: ' + type(error).__name__
+
+                if number == 0 and not os.environ.get('STEEL_SKIP_ADVISORY'):
+                    for name, url in [('browserscan', 'https://www.browserscan.net/'), ('pixelscan', 'https://pixelscan.net/fingerprint-check')]:
                         try:
-                            page.goto(url, timeout=60000, wait_until='domcontentloaded')
+                            go(page, url, timeout=60000)
                             page.wait_for_timeout(15000)
                             result[name] = page.inner_text('body')[:9000]
                         except Exception as error:

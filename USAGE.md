@@ -1,5 +1,7 @@
 # Using the service
 
+Production is on accepted phase 1 commit `c73bfc3`. Phase 2’s Google Chrome/noVNC candidate remains in the repository after an incomplete acceptance run. Quiet mode has not been implemented.
+
 ## A session from start to finish
 
 ```python
@@ -27,9 +29,9 @@ The service currently accepts `mode: "agent"`. Quiet mode follows in phase 3. Ar
 
 ## The API key
 
-Send the key on every request. HTTP clients use the `steel-api-key` header. CDP clients add `?apiKey=` to the session's `websocketUrl`. `/health` and `/v1/health` need no key.
+Send the key on every request. HTTP clients use the `steel-api-key` header. CDP clients add `?apiKey=` to the session's `websocketUrl`. Production `/v1/health` needs no key. The candidate adds a public `/health` with the browser version.
 
-Open the session’s `noVncUrl` with `?apiKey=<key>` for its X display. The page stores the existing HttpOnly authentication cookie and removes the key from its URL. Its keyboard and pointer control only that session. CDP live view remains available at `sessionViewerUrl`.
+In the phase 2 candidate, open the session’s `noVncUrl` with `?apiKey=<key>` for its X display. The page stores the existing HttpOnly authentication cookie and removes the key from its URL. Its keyboard and pointer control only that session. CDP live view remains available at `sessionViewerUrl`.
 
 ## Use Patchright as the client
 

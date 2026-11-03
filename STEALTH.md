@@ -93,3 +93,63 @@ Phase 1 removes the shared profile, singleton and idle relaunch. TypeScript pass
 Phase 1 production checks ran three sessions concurrently with three distinct cookie values and three working CDP connections. A fourth request returned HTTP 429 after 5.46 seconds. A full commands snapshot completed. A second claim on `mosaic-acceptance` returned HTTP 409; its persistent cookie survived a full Railway redeploy. All checks used direct traffic, with zero residential bytes.
 
 The final phase 1 release response confirmed `temporaryProfileRemoved: true` after a filesystem check. Phase 2 is being measured with Google Chrome 156.0.8078.79 and separate X displays.
+
+Phase 2 candidates install Google Chrome 156.0.8078.79. The production checks opened three distinct X displays, refused all three unauthenticated viewer requests, and connected noVNC to a 1920×1080 display. Both health paths return the installed version without authentication; noVNC assets return 401 without a key.
+
+Puppeteer's default popup and IPC protection overrides were removed. Rebrowser's popup test had exposed a closed-target error in Patchright 1.60.1. The corrected launch keeps those native protections enabled.
+
+An initial 20-exit fingerprint batch completed 14 full checks with no detection flags. Six page reads failed before results could be collected; those samples are incomplete. The next batch uses a 60-second page-read timeout and preserves the original error before releasing the session. That batch completed 19 of 20 checks; one exit timed out before Device and Browser Info loaded. Chrome remained connected. The final batch allowed one recorded retry for explicit transport errors on the same exit. It returned 18 clear Device and Browser Info results, one missing result and one 60-second navigation timeout; no transport retry was triggered. Phase 2 stopped under the owner’s two-fix limit. Phase 3 was not started, and production was restored to accepted phase 1 commit `c73bfc3`.
+
+The owner accepts Rebrowser's expected neutral results. Its current suite leaves isolated-world `sourceUrlLeak` and `mainWorldExecution` checks neutral when page hooks cannot observe them; `exposeFunctionLeak` remains neutral because no function is exposed. The service must have no positive detection result. Adding an artificial Patchright init script produced a document-interception flag, so acceptance uses the client's ordinary behavior without init scripts or exposed bindings.
+
+### Phase 2 final measurements
+
+All 20 final samples used Evomi Core and Google Chrome 156.0.8078.79. They used 20 distinct exit IPs. The table counts completed checks; a missing check does not pass.
+
+| Check | Final result |
+|---|---|
+| Device and Browser Info | 18/20 clear; one result missing; one navigation timeout |
+| Rebrowser | 19/20 completed with 17 green and three accepted neutral checks each; zero positive detections |
+| Google Chrome full-version brand; webdriver false | 20/20 |
+| Page hardwareConcurrency | 8 in 20/20 |
+| Dedicated, shared and service worker hardwareConcurrency | 8 in all 19 completed worker checks |
+| Timezone against ipwho.is | 20/20, after resolving the Indianapolis alias |
+| WebGL | The same ANGLE/llvmpipe renderer in 20/20 |
+| CreepJS | 19 completed: zero lies, 0% headless and 0% stealth; its weaker “like headless” score was 44% |
+| BrowserLeaks WebRTC | 19 completed: no leak, no local or WebRTC public address; remote IP matched the recorded exit |
+| TCP OS scoring | 19 completed; Android had the highest probabilistic score, 54–63%. These scores do not establish the exit’s actual OS |
+| BrowserScan, advisory | One earlier candidate sample reported 100% authenticity and no bot detection |
+| Pixelscan, advisory | Full fingerprint scan not completed; the first visit reached its homepage. The client now targets its fingerprint-check page |
+
+Chrome returned `America/Indianapolis` for the exit geolocated as `America/Indiana/Indianapolis`. [IANA defines them as aliases](https://data.iana.org/time-zones/tzdb/backward), so this is a match.
+
+Every row below used Chrome 156.0.8078.79. “Complete” means the detector result was collected without a positive detection; it does not erase the incomplete rows. TCP values are BrowserLeaks’ highest score, and the measurement client prints the full score distribution.
+
+| Exit IP | Browser timezone | Device check | TCP top score |
+|---|---|---|---|
+| 98.206.164.224 | America/Chicago | Complete | Android (55%) |
+| 172.59.91.130 | America/Chicago | Result missing | Android (58%) |
+| 47.195.195.79 | America/New_York | Complete | Android (63%) |
+| 208.59.107.46 | America/Chicago | Complete | Android (63%) |
+| 73.146.157.102 | America/Indianapolis | Complete | Android (55%) |
+| 47.159.33.175 | America/Los_Angeles | Navigation timeout | Not collected |
+| 130.44.172.232 | America/New_York | Complete | Android (55%) |
+| 67.184.143.154 | America/Chicago | Complete | Android (63%) |
+| 67.163.35.18 | America/Chicago | Complete | Android (63%) |
+| 184.14.108.112 | America/New_York | Complete | Android (63%) |
+| 76.49.211.39 | America/New_York | Complete | Android (63%) |
+| 76.87.0.19 | America/Los_Angeles | Complete | Android (55%) |
+| 174.74.57.36 | America/Chicago | Complete | Android (54%) |
+| 50.144.237.66 | America/New_York | Complete | Android (63%) |
+| 23.187.120.199 | America/New_York | Complete | Android (63%) |
+| 100.10.38.27 | America/New_York | Complete | Android (63%) |
+| 35.150.242.19 | America/New_York | Complete | Android (58%) |
+| 174.161.232.208 | America/Chicago | Complete | Android (63%) |
+| 71.73.187.72 | America/New_York | Complete | Android (63%) |
+| 172.118.80.80 | America/Los_Angeles | Complete | Android (55%) |
+
+The whole phases 0–2 attempt used 137,169,680 residential bytes across 130 metered sessions, including timezone preflights and unsuccessful probes. All residential traffic used Evomi Core. Phase 0 and phase 1 acceptance used zero residential bytes. Quiet-mode and six-route acceptance were not run.
+
+The unresolved check is consistent completion of the detector fixture. A continuation should inspect the missing response and wait for the actual result, then address navigation timeouts within the owner’s chosen retry limit. Phase 3 requires a new passing phase 2 acceptance set first.
+
+After rollback, production reported Chromium 156.0.8078.73. Health and a fresh session’s creation/release passed. The release confirmed temporary-profile removal.
