@@ -7,6 +7,10 @@ Two checks, both run against the deployed instance through the Evomi proxy:
       screen, GPU, cores, plugins, timezone against the exit IP) and the flags
       raised by deviceandbrowserinfo.com's bot test.
 
+  stealth_check.py fingerprints [COUNT]
+      Run fingerprint suites through Core and record settled byte totals. Set
+      STEEL_BYTE_LEDGER to a temporary JSONL path; the default ceiling is 280 MB.
+
   stealth_check.py routes core|premium|none [ROUTE ...]
       Load each Mosaic collector route that needs a residential IP and report
       pass/fail, seconds and bytes received. Failed pages are saved as a
@@ -31,6 +35,7 @@ import re
 import secrets
 import sys
 import time
+import uuid
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -141,10 +146,13 @@ class Session:
             body['proxyUrl'] = sticky(PROXY[mode])
             if 'timezone' not in body:
                 body['timezone'] = exit_timezone(body['proxyUrl'])
+        body.setdefault('sessionId', str(uuid.uuid4()))
         self.body = body
 
     def __enter__(self):
         check_budget()
+        if os.environ.get('STEEL_ACTIVE_SESSION_FILE'):
+            Path(os.environ['STEEL_ACTIVE_SESSION_FILE']).write_text(self.body['sessionId'])
         self.info = call('POST', '/v1/sessions', self.body)
         try:
             self.pw = sync_playwright().start()
@@ -163,12 +171,13 @@ class Session:
             raise
 
     def __exit__(self, *exc):
+        # End remote spend before disposing of the client driver.
+        self.released = call('POST', f"/v1/sessions/{self.info['id']}/release")
+        record_release(self.released)
         try:
             self.browser.close()
-            self.pw.stop()
         finally:
-            self.released = call('POST', f"/v1/sessions/{self.info['id']}/release")
-            record_release(self.released)
+            self.pw.stop()
 
 
 def probe(options):
@@ -240,8 +249,14 @@ def record_release(info):
     count = info.get('proxyTxBytes', 0) + info.get('proxyRxBytes', 0)
     path = os.environ.get('STEEL_BYTE_LEDGER')
     if path:
+        existing = [json.loads(line)['id'] for line in Path(path).read_text().splitlines()] if Path(path).exists() else []
+        if info['id'] in existing:
+            return
         with Path(path).open('a') as f:
             f.write(json.dumps({'id': info['id'], 'bytes': count}) + '\n')
+    active = os.environ.get('STEEL_ACTIVE_SESSION_FILE')
+    if active and Path(active).exists() and Path(active).read_text() == info['id']:
+        Path(active).unlink()
     print(f"Settled residential bytes: {count}; ledger total: {ledger_total()}", flush=True)
 
 
@@ -282,12 +297,21 @@ def fingerprints(count=1):
                 result['exitTimezone'] = (ip.get('timezone') or {}).get('id')
                 page.goto('https://example.com', timeout=60000, wait_until='domcontentloaded')
                 result['fingerprint'] = page.evaluate(PROBE)
+                print('Basic signals: ' + json.dumps(result['fingerprint']), flush=True)
                 check_budget(s)
+                print('Probe: deviceandbrowserinfo', flush=True)
                 page.goto('https://deviceandbrowserinfo.com/are_you_a_bot', timeout=60000, wait_until='domcontentloaded')
                 page.wait_for_timeout(8000)
                 body = page.inner_text('body')
                 i = body.find('"isBot"')
                 result['deviceFlags'] = re.findall(r'"(\w+)": true', body[i:i + 2000]) if i >= 0 else ['result_missing']
+                print('Device flags: ' + json.dumps(result['deviceFlags']), flush=True)
+                previous = page
+                page = page.context.new_page()
+                previous.close()
+                print('Probe: rebrowser', flush=True)
+                page.add_init_script('void 0')
+                page.expose_function('exposedFn', lambda: None)
                 page.goto('https://bot-detector.rebrowser.net/', timeout=60000, wait_until='domcontentloaded')
                 main_value(page, 'window.dummyFn()')
                 page.evaluate("document.getElementById('detections-json')")
@@ -295,14 +319,25 @@ def fingerprints(count=1):
                 page.wait_for_timeout(11000)
                 result['rebrowser'] = [{k: r.get(k) for k in ('type', 'rating', 'note')} for r in json.loads(page.locator('#detections-json').input_value())]
                 check_budget(s)
+                print('Rebrowser ratings: ' + json.dumps({r['type']: r['rating'] for r in result['rebrowser']}), flush=True)
+                previous = page
+                page = page.context.new_page()
+                previous.close()
+                print('Probe: workers', flush=True)
                 page.goto('https://abrahamjuliot.github.io/creepjs/tests/workers.html', timeout=60000, wait_until='domcontentloaded')
                 page.wait_for_timeout(10000)
                 workers = page.locator('.worker').all_inner_texts()
                 result['workerHardware'] = [re.findall(r'hardware[^\n]*', text) for text in workers]
+                print('Worker hardware: ' + json.dumps(result['workerHardware']), flush=True)
+                previous = page
+                page = page.context.new_page()
+                previous.close()
+                print('Probe: creepjs', flush=True)
                 page.goto('https://abrahamjuliot.github.io/creepjs/', timeout=60000, wait_until='domcontentloaded')
                 page.wait_for_timeout(15000)
                 result['creep'] = main_value(page, 'window.Fingerprint && ({lies: Fingerprint.lies, headless: Fingerprint.headless, worker: Fingerprint.workerScope})')
                 check_budget(s)
+                print('Probe: webrtc', flush=True)
                 page.goto('https://browserleaks.com/webrtc', timeout=60000, wait_until='domcontentloaded')
                 page.wait_for_timeout(8000)
                 result['webrtc'] = page.inner_text('body')[:18000]

@@ -148,7 +148,11 @@ export class BrowserSession extends EventEmitter {
       userDataDir: this.profilePath,
       defaultViewport: null,
       headless: this.launchConfig.options.headless,
-      ignoreDefaultArgs: ["--enable-automation"],
+      ignoreDefaultArgs: [
+        "--enable-automation",
+        "--disable-popup-blocking",
+        "--disable-ipc-flooding-protection",
+      ],
       timeout: 30_000,
       env: { ...process.env, TZ: timezone, DISPLAY: this.display.name ?? env.DISPLAY },
       args: [
