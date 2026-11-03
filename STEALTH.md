@@ -366,3 +366,12 @@ TypeScript passed. The existing focused set passed 18 tests with two skipped;
 six additional checks passed for durable budgets, identity metadata, route payloads
 and the observed challenge-frame cases. Live phase 4 acceptance remains pending.
 Browserbase is a temporary fallback until phase 6 moves the callers.
+
+The first phase 4 deployment failed startup because the generated budget schema
+used an OpenAPI boolean `exclusiveMinimum`, which Fastify's JSON Schema validator
+rejected. No browser session or residential check ran on that image. Production
+was rolled back to the accepted phase 3 application; health, direct session creation
+and release passed with zero residential bytes.
+
+The fix uses an inclusive one-byte minimum. A Fastify schema-compilation regression
+check passed, along with all ten session-pool tests and TypeScript.

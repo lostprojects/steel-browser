@@ -2,7 +2,9 @@ import { describe, test, expect, afterEach, vi } from "vitest";
 import { mkdir, mkdtemp, rm, stat, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { SessionPool, type PoolOptions } from "./session-pool.js";
+import { SessionPool, sessionOptions, type PoolOptions } from "./session-pool.js";
+import fastify from "fastify";
+import { buildJsonSchemas } from "../utils/schema.js";
 import type { BrowserSession } from "./browser-session.js";
 import type { FastifyBaseLogger } from "fastify";
 const pools: SessionPool[] = [];
@@ -55,6 +57,17 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 describe("session pool", () => {
+  test("its generated budget schema compiles in Fastify and rejects zero bytes", async () => {
+    const app = fastify();
+    const { schemas, $ref } = buildJsonSchemas({ CreateSession: sessionOptions });
+    for (const schema of schemas) app.addSchema(schema);
+    app.post("/create", { schema: { body: $ref("CreateSession") } }, async () => ({ ok: true }));
+    try {
+      await app.ready();
+      expect((await app.inject({ method: "POST", url: "/create", payload: { budgetBytes: 1 } })).statusCode).toBe(200);
+      expect((await app.inject({ method: "POST", url: "/create", payload: { budgetBytes: 0 } })).statusCode).toBe(400);
+    } finally { await app.close(); }
+  });
   test("runs three isolated sessions and refuses a fourth after its queue deadline", async () => {
     const pool = await fixture();
     const sessions = await Promise.all([pool.create({}), pool.create({}), pool.create({})]);

@@ -24,7 +24,7 @@ export const sessionOptions = z
       .optional(),
     targetUrl: z.string().url().optional(),
     splitTraffic: z.boolean().default(false),
-    budgetBytes: z.number().int().positive().max(1_000_000_000).optional(),
+    budgetBytes: z.number().int().min(1).max(1_000_000_000).optional(),
     mode: z.enum(["agent", "quiet"]).default("agent"),
     identity: z
       .string()
