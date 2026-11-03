@@ -241,6 +241,23 @@ def native_challenge(session, attempts):
     }''')
     if state['solved']:
         return None
+    if 'human verification' in state['text'] and any(label in state['text'] for label in ('drop here', 'place here')) and attempts.get('drag', 0) < 2:
+        start = page.get_by_text('Drag', exact=True).first.bounding_box(timeout=2000)
+        end = page.get_by_text(re.compile(r'^(Drop|Place) here$', re.I)).first.bounding_box(timeout=2000)
+        if start and end:
+            attempts['drag'] = attempts.get('drag', 0) + 1
+            commands(session, [
+                {'command': 'mouse', 'action': 'move', 'x': start['x'] + start['width']/2, 'y': start['y'] + start['height']/2},
+                {'command': 'mouse', 'action': 'down'},
+                {'command': 'mouse', 'action': 'move', 'x': end['x'] + end['width']/2, 'y': end['y'] + end['height']/2},
+                {'command': 'mouse', 'action': 'up'},
+            ])
+            page.wait_for_timeout(1000)
+            button = page.get_by_text('Verify You Are Human').first.bounding_box(timeout=2000)
+            if button:
+                commands(session, [{'command': 'mouse', 'action': 'click', 'x': button['x']+button['width']/2, 'y': button['y']+button['height']/2}])
+            page.wait_for_timeout(4000)
+            return 'drag'
     # Turnstile can put its frame inside a closed shadow root. Chrome's frame
     # inventory still exposes its owner, even when document selectors cannot.
     for child in page.frames:
@@ -254,10 +271,9 @@ def native_challenge(session, attempts):
     for frame in state['frames']:
         x, y, width, height = frame['box']
         if frame['id'] == 'ddg-iframe':
-            element = page.query_selector('#ddg-iframe')
-            inner = element.content_frame() if element else None
-            text = inner.inner_text('body', timeout=2000).lower() if inner else ''
-            if height > 200 or 'type the text' in text or 'captcha' in text:
+            # The compact frame is the observed checkbox; the taller frame is
+            # its text puzzle. Reading its body can stall during replacement.
+            if height > 200:
                 return 'puzzle'
             point = (x + 64, y + 36)
         elif 'challenges.cloudflare.com' in frame['src'] and height < 120:
@@ -273,23 +289,6 @@ def native_challenge(session, attempts):
         commands(session, [{'command': 'mouse', 'action': 'click', 'x': point[0], 'y': point[1]}])
         page.wait_for_timeout(4000)
         return 'checkbox'
-    if 'human verification' in state['text'] and 'drop here' in state['text'] and attempts.get('drag', 0) < 2:
-        start = page.get_by_text('Drag', exact=True).first.bounding_box(timeout=2000)
-        end = page.get_by_text('Drop here').first.bounding_box(timeout=2000)
-        if start and end:
-            attempts['drag'] = attempts.get('drag', 0) + 1
-            commands(session, [
-                {'command': 'mouse', 'action': 'move', 'x': start['x'] + start['width']/2, 'y': start['y'] + start['height']/2},
-                {'command': 'mouse', 'action': 'down'},
-                {'command': 'mouse', 'action': 'move', 'x': end['x'] + end['width']/2, 'y': end['y'] + end['height']/2},
-                {'command': 'mouse', 'action': 'up'},
-            ])
-            page.wait_for_timeout(1000)
-            button = page.get_by_text('Verify You Are Human').first.bounding_box(timeout=2000)
-            if button:
-                commands(session, [{'command': 'mouse', 'action': 'click', 'x': button['x']+button['width']/2, 'y': button['y']+button['height']/2}])
-            page.wait_for_timeout(4000)
-            return 'drag'
     return None
 
 
