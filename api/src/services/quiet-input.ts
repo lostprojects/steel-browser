@@ -12,7 +12,7 @@ export function runDisplay(
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
-      env: { ...process.env, DISPLAY: display },
+      env: { ...process.env, DISPLAY: display, LANG: "C.UTF-8", LC_ALL: "C.UTF-8" },
       stdio: ["pipe", "pipe", "pipe"],
     });
     const chunks: Buffer[] = [];
