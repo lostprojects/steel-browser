@@ -337,7 +337,7 @@ export class LoginService {
         return { identity: session.options.identity, site, status: "unchecked", check: "none" };
     }
     if (site === "hathitrust-google")
-      return this.record(session, site, "check_required", "google", agent);
+      return this.record(session, site, "not_attempted", "google_flow_unimplemented", agent);
     await go(spec.url);
     let submissions = 0,
       otpUsed = false,
