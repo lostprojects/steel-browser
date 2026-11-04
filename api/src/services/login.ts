@@ -306,6 +306,9 @@ export class LoginService {
         { selector, label },
       );
     const click = async (selector: string, label?: string) => {
+      // Native X11 input goes to the visible tab. A restored profile can have
+      // another tab active even when CDP reads the primary page successfully.
+      if (site === "mary-ferrell") await page.bringToFront();
       const p = await point(selector, label);
       if (!p) return false;
       await input.mouse({ type: "mousePressed", x: p.x, y: p.y, button: "left" }, p.offset);
