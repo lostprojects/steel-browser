@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 const seen = vi.hoisted(() => ({ urls: [] as string[] }));
@@ -18,7 +18,9 @@ vi.mock("axios", () => ({
 }));
 vi.mock("../utils/proxy.js", () => ({
   ProxyServer: class {
-    constructor(url: string) { seen.urls.push(url); }
+    constructor(url: string) {
+      seen.urls.push(url);
+    }
     url = "http://127.0.0.1:43210";
     rxBytes = 100;
     txBytes = 20;
@@ -32,8 +34,28 @@ const roots: string[] = [];
 afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
   vi.unstubAllEnvs();
+  vi.useRealTimers();
 });
 describe("residential accounting", () => {
+  it("keeps cumulative per-key totals distinct from the new UTC day's budget", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-04T00:01:00Z"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "proxy-days-"));
+    roots.push(root);
+    await writeFile(
+      path.join(root, "proxy-state.json"),
+      JSON.stringify({
+        days: { "2026-11-03": { collector: 540, admin: 7 }, "2026-11-04": { collector: 120 } },
+        total: 667,
+        identities: {},
+        bad: {},
+      }),
+    );
+    const totals = await new ProxyManager(root).totals();
+    expect(totals.agents).toEqual({ collector: 120 });
+    expect(totals.totalByAgent).toEqual({ collector: 660, admin: 7 });
+    expect(totals.totalResidentialBytes).toBe(667);
+  });
   it("counts active bytes once, enforces a shared agent budget and retains totals after restart", async () => {
     vi.stubEnv("EVOMI_RESIDENTIAL_PROXY_URL", "http://user:secret@core-residential.evomi.com:1000");
     const root = await mkdtemp(path.join(os.tmpdir(), "proxy-budget-"));

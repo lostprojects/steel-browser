@@ -48,6 +48,7 @@ export default async function routes(server: FastifyInstance) {
           date: totals.date,
           agent: agent.name,
           residentialBytes: totals.agents[agent.name] ?? 0,
+          totalResidentialBytes: totals.totalByAgent[agent.name] ?? 0,
           dailyBudgetBytes: agent.dailyBudgetBytes,
         };
   });

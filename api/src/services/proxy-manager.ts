@@ -74,10 +74,16 @@ export class ProxyManager {
     await this.ready;
     this.collect();
     await this.persist();
+    const totalByAgent: Record<string, number> = {};
+    for (const totals of Object.values(this.state.days)) {
+      for (const [agent, bytes] of Object.entries(totals))
+        totalByAgent[agent] = (totalByAgent[agent] ?? 0) + bytes;
+    }
     return {
       date: day(),
       totalResidentialBytes: this.state.total,
       agents: this.state.days[day()] ?? {},
+      totalByAgent,
     };
   }
   async saveIdentity(name: string, identity: Identity) {
