@@ -1900,6 +1900,8 @@ Mail automation and both local databases passed access checks without reading me
 
 Synthetic Mail checks accepted the intended account and sender while excluding a different recipient, a spoofed sender domain and a stale message. Password-reset messages were excluded, multiple codes were rejected as ambiguous, and an expired request was refused. Synthetic Messages checks matched the requested service and phone suffix and excluded a different phone, a different service, an old code and a password reset.
 
+Synthetic service checks also passed owner binding, URL changes, expiry, one-time submission, account confirmation and code masking. They used no network or native input.
+
 TypeScript passed and the existing secret-handling file passed all seven tests. No real message content was read, no login code was printed or stored, and these local checks used zero residential bytes. Successful completion of an actual site’s email or SMS challenge remains unverified until such a challenge occurs.
 
 The service endpoint waits for a collector-free deployment window. The preceding verified application remains `b2da0b3`.
