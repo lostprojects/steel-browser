@@ -1,3 +1,5 @@
+import vaultRoutes from "./modules/sessions/vault.routes.js";
+import { vault, scrub, scrubObject } from "./services/vault.js";
 import fastifyStatic from "@fastify/static";
 import { existsSync } from "node:fs";
 import { healthRoutes } from "./modules/sessions/health.js";
@@ -47,6 +49,13 @@ export interface SteelBrowserConfig {
 
 const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastify, opts) => {
   fastify.decorate("steelBrowserConfig", opts);
+  await vault.ready;
+  fastify.addHook("preSerialization", async (_req, _reply, payload) => scrubObject(payload));
+  fastify.addHook("onSend", async (_req, reply, payload) => {
+    const type = String(reply.getHeader("content-type") ?? "");
+    if (typeof payload === "string" && /json|text|javascript/.test(type)) return scrub(payload);
+    return payload;
+  });
   // Plugins
   await fastify.register(fastifyView, {
     engine: {
@@ -77,6 +86,7 @@ const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastif
   await fastify.register(actionsRoutes, { prefix: "/v1" });
   await fastify.register(sessionsRoutes, { prefix: "/v1" });
   await fastify.register(routingRoutes, { prefix: "/v1" });
+  await fastify.register(vaultRoutes, { prefix: "/v1" });
   await fastify.register(cdpRoutes, { prefix: "/v1" });
   await fastify.register(filesRoutes, { prefix: "/v1" });
   if (commands) {

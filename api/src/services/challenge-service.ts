@@ -1,3 +1,4 @@
+import { protectedDisplays } from "./vault.js";
 // Clear observed interstitials with isolated reads and native input. Puzzles
 // needing visual interpretation stay open for the owner; do not guess answers.
 import type { BrowserSession } from "./browser-session.js";
@@ -167,7 +168,9 @@ export async function clearChallenge(
     ...session.challenge,
     sessionId: session.id,
     actions,
-    screenshot: await input.screenshot(),
+    ...(protectedDisplays.has(session.display.name)
+      ? {}
+      : { screenshot: await input.screenshot() }),
     noVncUrl: session.info().noVncUrl,
     idleTimeoutMs: 600_000,
   };

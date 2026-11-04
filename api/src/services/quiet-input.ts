@@ -1,3 +1,4 @@
+import { protectedDisplays } from "./vault.js";
 // Native input and screenshots for one session's display. Do not send CDP Input
 // events or shell commands containing page text, credentials, or filenames.
 import { spawn } from "node:child_process";
@@ -213,6 +214,8 @@ export class QuietInput {
   }
 
   async screenshot(format = "png") {
+    if (protectedDisplays.has(this.display))
+      throw new Error("Image capture is unavailable for protected identities");
     if (format !== "png" && format !== "jpeg" && format !== "webp")
       throw new Error("Unsupported image format");
     const data = await runDisplay(this.display, "ffmpeg", [

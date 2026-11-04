@@ -105,7 +105,7 @@ The vault holds site logins, two-factor seeds and the proxy providers' credentia
 
 - **Storage:** one AES-256-GCM encrypted file on the volume, using Node's own `crypto`. The key is a Railway variable, `VAULT_KEY`, kept in `global.env` and Mosaic's `.env` like the other credentials. There is no external dependency.
 - **API:** write values with `PUT /v1/vault/{name}`. `GET` returns names, fields and last-use times, never values.
-- **Use:** `login {identity}` runs a stored login flow for that site. The engine finds the fields in the isolated world, focuses them, and types the values through X11 in quiet mode or CDP in agent mode. A TOTP code is generated at the moment of use. An email or SMS code hands the session to a person (below).
+- **Use:** `login {identity}` runs a stored login flow for that site. The engine finds the fields in the isolated world, focuses them, and types the values through X11 in quiet mode or CDP in agent mode. A TOTP code is generated at the moment of use. Emailed codes require mailbox credentials stored in the vault. SMS and Google checks stop with a classified result; the owner must agree before a person becomes involved.
 - **Leaks:** the engine's existing masking hides password fields in snapshots. Vault values are also scrubbed from every response and log line.
 - **Audit:** every use is logged with the session, the agent's key and the site.
 
@@ -146,7 +146,7 @@ A per-host routing table records the lowest rung that worked, with a 7-day expir
 
 | Host | Start at | Evidence |
 |---|---|---|
-| Ancestry, Newspapers.com, Fold3 after login | 2 | Search, viewer, canvas and downloads cleared Cloudflare on datacenter egress (`bb_session.py`, Browserbase IPs) |
+| Ancestry, Newspapers.com, Fold3 after login | 3 | Keep authenticated pages and API requests on the identity’s fixed residential allocation, using the same egress as login |
 | Ancestry-family sign-in | 3 | The device check is the step a residential IP helps (`ancestry_com_fetch.py`) |
 | Bizapedia | 3 | 0 of 3 on datacenter egress, 3 of 3 residential (`companies_fetch.py`, 20 Aug 2026) |
 | Anna's Archive | 3 | DDoS-Guard does not clear without the proxy (`aa.py`) |
@@ -165,7 +165,7 @@ Never probe with an identity's cookies. A logged-in request from a second IP is 
 
 Splitting traffic, or refusing it, is a change from an ordinary browser, so measure both with the bot tests before turning them on for a site.
 
-**Fetch files direct with the session's cookies.** Once the browser has a file's URL, the service fetches it from Railway with the session's cookies and User-Agent, and uses the residential exit only if that fails. Mosaic already does this for signed asset URLs because "a signed CDN URL is authenticated by its signature, not by the egress IP" (`bb_session.py`). Downloads are the largest bytes Mosaic moves, so this saves the most.
+**Fetch signed CDN files direct.** A recognized CDN URL carrying a signature may use Railway direct, with a residential fallback. Other authenticated files use the identity’s egress. Mosaic already does this for signed asset URLs because "a signed CDN URL is authenticated by its signature, not by the egress IP" (`bb_session.py`). Downloads are the largest bytes Mosaic moves, so this saves the most.
 
 **Keep media off the meter.** Quiet sessions run with `--autoplay-policy=user-gesture-required`. Agent sessions may also block images and media, since nothing is watching them.
 
@@ -173,7 +173,7 @@ Splitting traffic, or refusing it, is a change from an ordinary browser, so meas
 
 ### Hand-off to a person
 
-Any session can be handed to the owner. The tool returns a noVNC link behind the API key, and the agent waits. This covers the first Ancestry login, email codes, DDoS-Guard's text CAPTCHA and interactive Turnstile. The session then goes back to the agent with its state intact.
+The service performs logins from the vault. It answers machine-readable device checks when the necessary vault entry exists and reports the exact missing access otherwise. Protected identities refuse noVNC and image capture because those paths can expose credentials. A request for human help requires the owner’s agreement.
 
 ### Access and observability
 

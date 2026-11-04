@@ -8,7 +8,9 @@ import { SessionDisplay, unusedPort } from "./session-display.js";
 import type { Duplex } from "node:stream";
 import type { IncomingMessage } from "node:http";
 import puppeteer, { type Browser, type Page, type Target, type CDPSession } from "puppeteer-core";
-import httpProxy from "http-proxy";
+import { WebSocket, WebSocketServer } from "ws";
+import { scrubObject, protectedDisplays } from "./vault.js";
+import { identityVault } from "./login.js";
 import type { FastifyBaseLogger } from "fastify";
 import { env } from "../env.js";
 import { getChromeExecutablePath, defaultPluginPreferences } from "../utils/browser.js";
@@ -38,6 +40,8 @@ export class BrowserSession extends EventEmitter {
   readonly createdAt = new Date().toISOString();
   readonly startedAt = Date.now();
   lastActivity = Date.now();
+  lastLoginOk?: string;
+  loginBusy = false;
   clients = 0;
   status: "starting" | "live" | "released" | "failed" = "starting";
   endReason?: string;
@@ -71,7 +75,7 @@ export class BrowserSession extends EventEmitter {
   private instrumentation;
   private targets;
   private plugins;
-  private wsProxy = httpProxy.createProxyServer();
+  private cdpRelay = new WebSocketServer({ noServer: true });
   private launchHooks: Array<(config: BrowserLauncherOptions) => Promise<void> | void> = [];
   private shutdownHooks: Array<(config: BrowserLauncherOptions | null) => Promise<void> | void> =
     [];
@@ -129,7 +133,6 @@ export class BrowserSession extends EventEmitter {
       released: () => this.status !== "live",
       quickActionsDone: () => quickActionsDone(this.engine),
     });
-    this.wsProxy.on("error", () => this.logger.warn({ sessionId: id }, "CDP proxy disconnected"));
   }
 
   async launch(): Promise<Browser | void> {
@@ -308,6 +311,7 @@ export class BrowserSession extends EventEmitter {
     this.commandSetup ??= (async () => {
       if (!this.display.name || !this.endpoint) throw new Error("Quiet session is not ready");
       const { width, height } = this.getDimensions();
+      if (identityVault(this.options.identity)) protectedDisplays.add(this.display.name);
       this.quiet = await QuietBrowser.connect(
         this.endpoint,
         new QuietInput(this.display.name, width, height),
@@ -486,13 +490,69 @@ export class BrowserSession extends EventEmitter {
       this.sockets.delete(socket);
     });
     socket.on("error", () => socket.destroy());
-    req.url = new URL(this.endpoint).pathname;
-    this.wsProxy.ws(req, socket, head, {
-      target: this.endpoint,
-      ignorePath: true,
-      changeOrigin: true,
+    this.cdpRelay.handleUpgrade(req, socket, head, (client) => {
+      const upstream = new WebSocket(this.endpoint);
+      const queued: string[] = [];
+      const pending = new Map<number, string>();
+      client.on("message", (data) => {
+        const raw = data.toString();
+        let message: any;
+        try {
+          message = JSON.parse(raw);
+        } catch {
+          client.close(1003);
+          return;
+        }
+        if (identityVault(this.options.identity)) {
+          if (
+            this.loginBusy ||
+            ["Page.captureScreenshot", "Page.startScreencast", "Page.printToPDF"].includes(
+              message.method,
+            )
+          ) {
+            client.send(
+              JSON.stringify({
+                id: message.id,
+                sessionId: message.sessionId,
+                error: {
+                  code: -32000,
+                  message: "Protected identity output unavailable during login or image capture",
+                },
+              }),
+            );
+            return;
+          }
+          pending.set(message.id, message.method);
+        }
+        if (upstream.readyState === WebSocket.OPEN) upstream.send(raw);
+        else queued.push(raw);
+      });
+      upstream.on("open", () => {
+        for (const raw of queued) upstream.send(raw);
+        queued.length = 0;
+      });
+      upstream.on("message", (data) => {
+        let payload: any;
+        try {
+          payload = JSON.parse(data.toString());
+        } catch {
+          client.close(1011);
+          return;
+        }
+        if (pending.has(payload.id)) {
+          if (/^(Storage|Network)\.get(?:All)?Cookies$/.test(pending.get(payload.id)!))
+            for (const cookie of payload.result?.cookies ?? []) cookie.value = "[redacted]";
+          pending.delete(payload.id);
+        }
+        if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(scrubObject(payload)));
+      });
+      client.on("close", () => upstream.terminate());
+      upstream.on("close", () => client.close());
+      client.on("error", () => upstream.terminate());
+      upstream.on("error", () => client.close(1011));
     });
   }
+
   info() {
     return {
       id: this.id,
@@ -500,6 +560,7 @@ export class BrowserSession extends EventEmitter {
       status: this.status,
       mode: this.options.mode,
       identity: this.options.identity,
+      last_login_ok: this.lastLoginOk,
       duration: (this.endedAt ?? Date.now()) - this.startedAt,
       endReason: this.endReason,
       temporaryProfileRemoved: this.temporaryProfileRemoved,
@@ -583,9 +644,11 @@ export class BrowserSession extends EventEmitter {
     } finally {
       clearTimeout(kill);
       this.browser = null;
+      if (this.display.name) protectedDisplays.delete(this.display.name);
       await this.display.close();
       await this.proxyServer?.close(true);
-      this.wsProxy.close();
+      for (const client of this.cdpRelay.clients) client.terminate();
+      this.cdpRelay.close();
       this.status = reason === "launch_failed" || reason === "chrome_exit" ? "failed" : "released";
       this.endedAt = Date.now();
       for (const hook of this.shutdownHooks) await hook(this.launchConfig ?? null);

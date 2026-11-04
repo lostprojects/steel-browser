@@ -1,3 +1,4 @@
+import { vault } from "../../services/vault.js";
 import os from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -19,8 +20,8 @@ export async function healthRoutes(server: FastifyInstance) {
         liveSessions: server.sessionPool.size,
         maxSessions: server.sessionPool.maxSessions,
         freeMemory: os.freemem(),
-        vault: "not_configured",
-        capabilities: ["managed_residential", "routing", "challenge", "reattach"],
+        vault: vault.status,
+        capabilities: ["managed_residential", "routing", "challenge", "reattach", "vault", "login"],
       }),
     );
 }

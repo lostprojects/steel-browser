@@ -12,6 +12,9 @@ export type HttpResult = {
 };
 export function httpFetch(options: {
   url: string;
+  method?: "GET" | "POST";
+  data?: string;
+  headers?: Record<string, string>;
   cookies?: unknown[];
   userAgent?: string;
   proxy?: string;
@@ -63,6 +66,17 @@ export async function downloadFile(session: BrowserSession, url: string, referer
     maxBytes: 64_000_000,
     timeout: 120,
   };
+  // Logged-in first-party reads keep the identity exit. Only signed CDN assets
+  // may try direct when the browser supplied a reusable signature.
+  const parsed = new URL(url);
+  const signedAsset =
+    /^(?:img\.newspapers\.com|img\d*\.fold3\.com|.*\.cloudfront\.net)$/.test(parsed.hostname) &&
+    [...parsed.searchParams.keys()].some((k) => /signature|token|^sig$|^h$|^auth$/i.test(k));
+  const identityPage = !!session.options.identity && !signedAsset;
+  if (identityPage && session.proxyServer) {
+    const response = await httpFetch({ ...options, proxy: session.proxyServer.url });
+    return { ...response, route: "residential" };
+  }
   let directError: unknown;
   const valid = (r: HttpResult) =>
     r.status >= 200 &&

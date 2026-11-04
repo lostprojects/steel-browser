@@ -1,3 +1,4 @@
+import { scrubObject } from "./services/vault.js";
 import { FastifyServerOptions } from "fastify";
 import { env } from "./env.js";
 import stringify from "json-stringify-safe";
@@ -46,3 +47,13 @@ export const loggingConfig: LoggingConfig = {
   production: {},
   test: false,
 };
+
+// Pino hooks cover structured messages and errors before serializers or transports.
+for (const config of Object.values(loggingConfig)) {
+  if (config && typeof config === "object")
+    config.hooks = {
+      logMethod(args, method) {
+        return method.apply(this, args.map(scrubObject) as any);
+      },
+    };
+}

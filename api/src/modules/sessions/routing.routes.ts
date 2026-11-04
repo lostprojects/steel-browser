@@ -1,10 +1,11 @@
+import { scrub } from "../../services/vault.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import path from "node:path";
 import { z } from "zod";
 import { agentFor } from "../../utils/api-key.js";
 import { Routing } from "../../services/routing.js";
 import { clearChallenge } from "../../services/challenge-service.js";
-import { downloadFile } from "../../services/http-fetch.js";
+import { downloadFile, httpFetch } from "../../services/http-fetch.js";
 import { selectedSession } from "./sessions.controller.js";
 import { idempotent } from "../../utils/idempotency.js";
 import { QuietInput } from "../../services/quiet-input.js";
@@ -105,6 +106,37 @@ export default async function routes(server: FastifyInstance) {
       .strict()
       .parse(req.body);
     return downloadFile(selectedSession(server, req), url, referer);
+  });
+  server.post("/sessions/:sessionId/request", async (req) => {
+    const session = selectedSession(server, req);
+    const options = z
+      .object({
+        url: httpUrl,
+        method: z.enum(["GET", "POST"]).default("GET"),
+        data: z.string().max(2000000).optional(),
+        headers: z.record(z.string()).default({}),
+      })
+      .strict()
+      .parse(req.body);
+    for (const key of Object.keys(options.headers))
+      if (!/^(accept|content-type|accept-language|referer)$/i.test(key))
+        throw Object.assign(new Error("Request header is not allowed"), { statusCode: 400 });
+    const result = await httpFetch({
+      ...options,
+      cookies: await session.getCookies(),
+      userAgent: session.getUserAgent(),
+      proxy: session.proxyServer?.url,
+      maxBytes: 64000000,
+      timeout: 120,
+    });
+    delete result.headers["set-cookie"];
+    const type = result.headers["content-type"] ?? "";
+    if (/json|text|javascript/.test(type))
+      result.body = Buffer.from(scrub(Buffer.from(result.body, "base64").toString())).toString(
+        "base64",
+      );
+    session.touch();
+    return result;
   });
   server.post("/sessions/:sessionId/input", async (req) => {
     const session = selectedSession(server, req);

@@ -1,3 +1,4 @@
+import { identityVault } from "../../services/login.js";
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import { WebSocketServer } from "ws";
@@ -39,6 +40,10 @@ const plugin: FastifyPluginAsync<BrowserSocketOptions> = async (server, options)
       }
       const params = Object.fromEntries(url.searchParams);
       const handler = registry.matchHandler(match ? `/v1/sessions/${match[2]}` : url.pathname);
+      if (match?.[2] === "vnc" && identityVault(session.options.identity)) {
+        socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\nProtected identity");
+        return;
+      }
       if (match?.[2] === "vnc") {
         session.clients++;
         session.touch();

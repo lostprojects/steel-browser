@@ -80,3 +80,52 @@ describe("hideSecrets", () => {
     expect(hide(secrets[29])).toBe(secrets[29]);
   });
 });
+
+// Service vault checks use generated values; assertions never include those values.
+import { Vault, scrub, totp } from "../vault.js";
+import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { randomBytes } from "node:crypto";
+test("vault encrypts, scopes, reopens and fails closed after tampering", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "vault-check-"));
+  const file = path.join(dir, "vault"),
+    key = randomBytes(32).toString("hex"),
+    secret = randomBytes(24).toString("hex");
+  const admin = { name: "admin", admin: true, dailyBudgetBytes: 1 },
+    allowed = { name: "mosaic", dailyBudgetBytes: 1 },
+    denied = { name: "other", dailyBudgetBytes: 1 };
+  try {
+    const v = new Vault(file, key);
+    await v.put(
+      "example",
+      { fields: { username: "fixture-account", password: secret }, allowedAgents: ["mosaic"] },
+      admin,
+    );
+    expect((await readFile(file)).includes(Buffer.from(secret))).toBe(false);
+    expect(JSON.stringify(await v.list(allowed)).includes(secret)).toBe(false);
+    expect((await v.list(denied)).length).toBe(0);
+    await expect(v.use("example", denied, async () => true)).rejects.toThrow("unavailable");
+    const reopened = new Vault(file, key);
+    expect(await reopened.use("example", allowed, async (f) => f.password === secret)).toBe(true);
+    expect(scrub(JSON.stringify({ secret })).includes(secret)).toBe(false);
+    const bytes = await readFile(file);
+    bytes[bytes.length - 1] ^= 1;
+    await writeFile(file, bytes);
+    const damaged = new Vault(file, key);
+    await damaged.ready;
+    expect(damaged.status).toBe("locked");
+    await expect(
+      damaged.put(
+        "replacement",
+        { fields: { password: "fixture" }, allowedAgents: ["mosaic"] },
+        admin,
+      ),
+    ).rejects.toThrow("locked");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+test("TOTP follows the RFC 6238 timestamp vector", () => {
+  expect(totp("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", 59000)).toBe("287082");
+});

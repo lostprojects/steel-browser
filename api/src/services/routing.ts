@@ -188,7 +188,8 @@ export class Routing {
                 targetUrl: options.url,
                 splitTraffic: rung === 3 && (options.splitTraffic ?? known?.split ?? false),
               },
-              { ...agent, admin: true },
+              agent,
+              true,
             );
           } catch (error) {
             attempts.push({

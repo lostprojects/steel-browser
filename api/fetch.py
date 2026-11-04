@@ -26,13 +26,13 @@ def main():
             expires=int(cookie["expires"]) if cookie.get("expires", -1) > 0 else None,
             discard=False, comment=None, comment_url=None, rest={}, rfc2109=False,
         ))
-    headers = {}
+    headers = options.get("headers", {})
     if options.get("userAgent"):
         headers["User-Agent"] = options["userAgent"]
     if options.get("referer"):
         headers["Referer"] = options["referer"]
     try:
-        with session.stream("GET", url, headers=headers, proxy=options.get("proxy"), timeout=options.get("timeout", 30),
+        with session.stream(options.get("method", "GET"), url, headers=headers, data=options.get("data"), proxy=options.get("proxy"), timeout=options.get("timeout", 30),
                             max_redirects=8) as response:
             parts, size = [], 0
             for chunk in response.iter_content():

@@ -104,4 +104,14 @@ client uses the server profile and does not read or overwrite that local file.
 The US migration preserved 87 unexpired cookies and 48 local-storage entries.
 The three sites still displayed sign-in links after both migration fixes, so the
 logged-in state remains unconfirmed. Keep the original credential file until a
-manual login check succeeds; the updated client leaves it unused.
+vault login check succeeds; the updated client leaves it unused.
+
+## Vault login
+
+An administrator imports values with `PUT /v1/vault/{name}` using `fields` and `allowedAgents`. `GET /v1/vault` and `GET /v1/vault/{name}` return names, field names and last-use times. `mosaic/vault_import.py` transfers the selected project env fields through that API without printing values.
+
+Create a quiet session with identity `ancestry` or `mary-ferrell`, then call `POST /v1/sessions/{id}/login {"site":"ancestry"}`. The Ancestry identity also accepts sites `newspapers` and `fold3`. The service validates account content, types through X11 and records `last_login_ok`. `current:true` checks the present page and signs in again when it observes signed-out controls. An unrecognized page returns `unchecked`; it does not establish authentication.
+
+Protected identities require access to their vault entry and use a fixed sticky residential allocation throughout. `/request` sends authenticated GET or POST requests over that same exit. Signed CDN downloads can try direct egress. Protected profile exports and image capture are refused because they can expose login details; text responses and CDP replies are scrubbed.
+
+Two-step outcomes remain explicit. Stored authenticator seeds generate TOTP codes at use. Email checks report missing mailbox access; SMS and Google checks stop for owner action. The service does not request a manual login.

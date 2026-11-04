@@ -67,3 +67,9 @@ Python CDP reattachment preserve work across dropped client connections.
 The measurement client uses fresh API connections after reused connections stalled
 during live checks. Completed and interrupted attempts remain in `STEALTH.md`.
 Browserbase is a temporary Mosaic fallback until phase 6 moves the callers.
+
+## Vault and login service
+
+Credentials use Node's AES-256-GCM in one encrypted volume file. Vault entries restrict use to named agents; metadata reads expose no values. Login flows use isolated page reads and native typing, with positive account checks and persistent last-login times. The CDP relay and HTTP output scrub known values, and protected identities refuse profile export and image capture.
+
+Authenticated API requests remain on the profile's egress. A daily timer checks previously authenticated identities when the pool is free and records device checks and exit addresses across deployments. Live acceptance is recorded in STEALTH.md.

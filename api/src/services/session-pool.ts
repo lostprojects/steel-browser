@@ -1,3 +1,5 @@
+import { identityVault } from "./login.js";
+import { vault } from "./vault.js";
 // Coordinates exclusive profile ownership and browser lifetimes. It must not reuse
 // a throwaway profile, expose proxy credentials, or start browsers between jobs.
 import { randomUUID } from "node:crypto";
@@ -210,6 +212,7 @@ export class SessionPool {
   async create(
     body: unknown,
     agent: Agent = { name: "admin", admin: true, dailyBudgetBytes: DAILY_BUDGET },
+    measuredPolicy = false,
   ): Promise<BrowserSession> {
     const parsed = sessionOptions.safeParse(body);
     if (!parsed.success)
@@ -219,12 +222,21 @@ export class SessionPool {
       );
     const options = parsed.data;
     if (!agent.admin && options.proxyUrl) throw new PoolError(403, "Use managed residential exits");
-    if (!agent.admin && options.splitTraffic)
+    if (!agent.admin && options.splitTraffic && !measuredPolicy)
       throw new PoolError(403, "Traffic policy requires measured site approval");
     if (options.identity && options.profile && options.identity !== options.profile)
       throw new PoolError(400, "identity and profile must agree");
     options.identity ??= options.profile;
     const identity = options.identity;
+    const credential = identityVault(identity);
+    if (credential) {
+      if (!(await vault.list(agent, credential)).length)
+        throw new PoolError(403, "Identity unavailable for this agent");
+      if (options.proxyUrl || options.sessionContext || options.headless)
+        throw new PoolError(403, "Protected identities use their managed exit and profile");
+      options.mode = "quiet";
+      options.residential = { country: "US" };
+    }
     if (identity && this.identities.has(identity))
       throw new PoolError(409, "Identity is already in use");
     const id = options.sessionId ?? randomUUID();

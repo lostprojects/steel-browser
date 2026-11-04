@@ -1,3 +1,4 @@
+import { identityVault } from "../../services/login.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { selectedSession } from "./sessions.controller.js";
 import { handleScrape, handleScreenshot, handlePDF } from "../actions/actions.controller.js";
@@ -59,9 +60,14 @@ export default async function routes(server: FastifyInstance) {
   server.post("/sessions/release", async (req) =>
     server.sessionPool.release(selectedSession(server, req).id),
   );
-  server.get("/sessions/:sessionId/context", async (req) =>
-    selectedSession(server, req).getBrowserState(),
-  );
+  server.get("/sessions/:sessionId/context", async (req) => {
+    const session = selectedSession(server, req);
+    if (identityVault(session.options.identity))
+      throw Object.assign(new Error("Protected identity state cannot be exported"), {
+        statusCode: 403,
+      });
+    return session.getBrowserState();
+  });
   server.get("/sessions/:sessionId/live-details", async (req) => {
     const session = selectedSession(server, req);
     const pages = await session.getAllPages();
