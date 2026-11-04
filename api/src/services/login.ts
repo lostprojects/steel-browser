@@ -10,21 +10,26 @@ import { vault, totp, protect } from "./vault.js";
 import { QuietInput } from "./quiet-input.js";
 import { clearChallenge } from "./challenge-service.js";
 
+// `signedIn` marks a member page whose sign-out control sits in an unopened
+// menu (observed 4 November 2026 on all three Ancestry-family sites).
 export const loginSites = {
   ancestry: {
     vault: "ancestry",
     url: "https://www.ancestry.com/account/signin",
     hosts: ["www.ancestry.com", "www.newspapers.com", "www.fold3.com"],
+    signedIn: "#navAccountUsername,#navAccount",
   },
   newspapers: {
     vault: "ancestry",
     url: "https://www.newspapers.com/signin/",
     hosts: ["www.newspapers.com", "www.ancestry.com"],
+    signedIn: '[data-cy="member-menu"],a[href^="/account/edit-profile"]',
   },
   fold3: {
     vault: "ancestry",
     url: "https://www.fold3.com/login",
     hosts: ["www.fold3.com", "www.ancestry.com"],
+    signedIn: 'a[href="/signoff"],[data-cy="footer-sign-out"]',
   },
   "mary-ferrell": {
     vault: "mary-ferrell",
@@ -311,8 +316,9 @@ export class LoginService {
     const input = new QuietInput(session.display.name!, width, height);
     const back = resume?.back ?? (current ? page.url() : undefined);
     const started = Date.now();
+    const signedIn = "signedIn" in spec ? spec.signedIn : "";
     const state = () =>
-      page.evaluate((otpSelector) => {
+      page.evaluate(({ otpSelector, signedIn }) => {
         const visible = (e: Element) => {
           const b = e.getBoundingClientRect();
           return b.width > 0 && b.height > 0 && getComputedStyle(e).visibility !== "hidden";
@@ -324,11 +330,15 @@ export class LoginService {
         return {
           host: location.hostname,
           path: location.pathname,
-          loggedIn: links.some(
-            (a) =>
-              /sign\s*out|log\s*out/i.test(a.textContent ?? "") ||
-              /\/(?:signout|logout)(?:[/?]|$)/i.test(a.href),
-          ),
+          loggedIn:
+            links.some(
+              (a) =>
+                /sign\s*out|log\s*out/i.test(a.textContent ?? "") ||
+                /\/(?:signout|logout)(?:[/?]|$)/i.test(a.href),
+            ) ||
+            (!!signedIn &&
+              !!document.querySelector(signedIn) &&
+              !inputs.some((e) => e.type === "password")),
           mary: /sign out/i.test(text) && /my membership/i.test(text),
           signedOut:
             inputs.some((e) => e.type === "password") ||
@@ -372,7 +382,7 @@ export class LoginService {
             (e) => visible(e) && /(?:sign in|continue).*ancestry/i.test(e.textContent ?? ""),
           ),
         };
-      }, codeInputs);
+      }, { otpSelector: codeInputs, signedIn });
     const point = async (selector: string, label?: string) =>
       page.evaluate(
         ({ selector, label }) => {
@@ -401,7 +411,7 @@ export class LoginService {
     const click = async (selector: string, label?: string) => {
       // Native X11 input goes to the visible tab. A restored profile can have
       // another tab active even when CDP reads the primary page successfully.
-      if (site === "mary-ferrell" || resume) await page.bringToFront();
+      await page.bringToFront();
       const p = await point(selector, label);
       if (!p) return false;
       await input.mouse({ type: "mousePressed", x: p.x, y: p.y, button: "left" }, p.offset);
