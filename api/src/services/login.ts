@@ -12,6 +12,10 @@ import { clearChallenge } from "./challenge-service.js";
 
 // `signedIn` marks a member page whose sign-out control sits in an unopened
 // menu (observed 4 November 2026 on all three Ancestry-family sites).
+// Newspapers.com's "Sign in with Ancestry" button opens /signin/api/ancestry/
+// in a popup and ignores clicks while it thinks one is open, so the flow starts
+// at that URL in the main tab. Its OAuth callback (`ssoReturn`) shows only
+// "Please close the window"; the flow then loads `home` to confirm membership.
 export const loginSites = {
   ancestry: {
     vault: "ancestry",
@@ -21,9 +25,11 @@ export const loginSites = {
   },
   newspapers: {
     vault: "ancestry",
-    url: "https://www.newspapers.com/signin/",
+    url: "https://www.newspapers.com/signin/api/ancestry/",
     hosts: ["www.newspapers.com", "www.ancestry.com"],
     signedIn: '[data-cy="member-menu"],a[href^="/account/edit-profile"]',
+    ssoReturn: "/api/userauth/ancestry/sso",
+    home: "https://www.newspapers.com/",
   },
   fold3: {
     vault: "ancestry",
@@ -471,6 +477,10 @@ export class LoginService {
         if (back && back !== page.url()) await go(back);
         return this.record(session, site, "ok", check, agent);
       }
+      if ("ssoReturn" in spec && s.host === targetHost && s.path.startsWith(spec.ssoReturn)) {
+        await go(spec.home);
+        continue;
+      }
       if (s.rejected) return this.record(session, site, "failed", "credentials_rejected", agent);
       if (otpUsed && s.codeRejected)
         return this.record(session, site, "failed", "code_rejected", agent);
@@ -548,7 +558,7 @@ export class LoginService {
         }
         return this.record(session, site, "check_required", s.check, agent);
       }
-      if ((site === "newspapers" || site === "fold3") && s.host === targetHost && s.oauth) {
+      if (site === "fold3" && s.host === targetHost && s.oauth) {
         await click("button,a", "(?:sign in|continue).*ancestry");
         await pause(2500);
         continue;
