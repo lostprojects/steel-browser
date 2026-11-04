@@ -114,7 +114,9 @@ export class LoginService {
             JSON.stringify({
               at: new Date().toISOString(),
               ...outcome,
-              deviceCheck: outcome.check !== "none",
+              deviceCheck: ["email_mailbox_missing", "sms", "totp", "device", "google"].includes(
+                outcome.check,
+              ),
             }) + "\n",
             { mode: 0o600 },
           );

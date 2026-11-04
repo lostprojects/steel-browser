@@ -343,6 +343,9 @@ class QuietPage {
   async title() {
     return (await this.evaluate(() => document.title)) as string;
   }
+  async bringToFront() {
+    await this.client.send("Page.bringToFront");
+  }
   async evaluate(fn: Function | string, ...args: unknown[]): Promise<any> {
     const expression =
       typeof fn === "string" ? fn : `(${fn.toString()})(...${JSON.stringify(args)})`;
