@@ -140,6 +140,7 @@ export class LoginService {
     agent: Agent,
   ) {
     const identity = session.options.identity!;
+    await session.getCookies().catch(() => undefined);
     const key = `${identity}/${site}`;
     const row = {
       ...this.records[key],
@@ -232,17 +233,23 @@ export class LoginService {
         return {
           host: location.hostname,
           path: location.pathname,
-          loggedIn:
-            links.some(
-              (a) =>
-                /sign\s*out|log\s*out/i.test(a.textContent ?? "") ||
-                /\/(?:signout|logout)(?:[/?]|$)/i.test(a.href),
-            ),
+          loggedIn: links.some(
+            (a) =>
+              /sign\s*out|log\s*out/i.test(a.textContent ?? "") ||
+              /\/(?:signout|logout)(?:[/?]|$)/i.test(a.href),
+          ),
           mary: /sign out/i.test(text) && /my membership/i.test(text),
           signedOut:
             inputs.some((e) => e.type === "password") ||
             links.some((a) => /^(?:sign|log)\s*in$/i.test(a.textContent?.trim() ?? "")),
           password: inputs.some((e) => e.type === "password"),
+          submitDisabled: [
+            ...document.querySelectorAll<HTMLButtonElement>(
+              'button[type="submit"],input[type="submit"]',
+            ),
+          ]
+            .filter(visible)
+            .some((e) => e.disabled || e.getAttribute("aria-disabled") === "true"),
           username: inputs.some((e) => /email|username|userId/i.test(e.name + e.id + e.type)),
           otp: inputs.some(
             (e) =>
@@ -335,7 +342,10 @@ export class LoginService {
     let submissions = 0,
       otpUsed = false,
       check = "none";
-    for (let step = 0; step < 20; step++) {
+    let submittedPassword = false;
+    let formFilled = false;
+    const deadline = Date.now() + 120000;
+    for (let step = 0; step < 60 && Date.now() < deadline; step++) {
       session.touch();
       let s;
       try {
@@ -386,19 +396,34 @@ export class LoginService {
         continue;
       }
       if (s.password || s.username) {
+        // Authentication can keep the form visible while its request runs.
+        // Wait for that result instead of submitting the same password again.
+        if (submittedPassword) {
+          await pause(2000);
+          continue;
+        }
         if (submissions >= 2)
           return this.record(session, site, "failed", "form_did_not_advance", agent);
         // Ancestry credentials are typed only at Ancestry, including sibling OAuth.
         if (spec.vault === "ancestry" && s.host !== "www.ancestry.com")
           return this.record(session, site, "failed", "ancestry_oauth_missing", agent);
-        await type(
-          'input[type="email"],input[name="username"],input#username,input[name="email"],input#email,input[name="userId"]',
-          fields.username || fields.email,
-        );
-        if (s.password) await type('input[type="password"]', fields.password);
+        if (!formFilled) {
+          await type(
+            'input[type="email"],input[name="username"],input#username,input[name="email"],input#email,input[name="userId"]',
+            fields.username || fields.email,
+          );
+          if (s.password) await type('input[type="password"]', fields.password);
+          formFilled = true;
+        }
+        if ((await state()).submitDisabled) {
+          await pause(2000);
+          continue;
+        }
         if (!(await click('button[type="submit"],input[type="submit"],#submit_button')))
           await click("button", "^(sign in|log in|continue|next)$");
         submissions++;
+        submittedPassword = s.password;
+        formFilled = false;
         await pause(3000);
         continue;
       }

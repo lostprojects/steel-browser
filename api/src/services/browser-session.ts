@@ -9,7 +9,7 @@ import type { Duplex } from "node:stream";
 import type { IncomingMessage } from "node:http";
 import puppeteer, { type Browser, type Page, type Target, type CDPSession } from "puppeteer-core";
 import { WebSocket, WebSocketServer } from "ws";
-import { scrubObject, protectedDisplays } from "./vault.js";
+import { scrubObject, protectedDisplays, protect } from "./vault.js";
 import { identityVault } from "./login.js";
 import type { FastifyBaseLogger } from "fastify";
 import { env } from "../env.js";
@@ -92,6 +92,10 @@ export class BrowserSession extends EventEmitter {
   }
   private async restoreSessionCookies() {
     const cookies = await this.storedSessionCookies();
+    if (identityVault(this.options.identity))
+      cookies.forEach((c) => {
+        if (c.value.length >= 16) protect(c.value);
+      });
     if (!cookies.length || this.options.sessionContext) return;
     await this.prepareCommands();
     const client = await this.getBrowserInstance()!.target().createCDPSession();
@@ -455,7 +459,12 @@ export class BrowserSession extends EventEmitter {
     if (!browser) throw new Error("Browser is not running");
     const session = await browser.target().createCDPSession();
     try {
-      return (await session.send("Storage.getCookies")).cookies;
+      const cookies = (await session.send("Storage.getCookies")).cookies;
+      if (identityVault(this.options.identity))
+        cookies.forEach((c: any) => {
+          if (c.value.length >= 16) protect(c.value);
+        });
+      return cookies;
     } finally {
       await session.detach().catch(() => undefined);
     }
@@ -495,7 +504,7 @@ export class BrowserSession extends EventEmitter {
       const queued: string[] = [];
       const pending = new Map<number, string>();
       client.on("message", (data) => {
-        const raw = data.toString();
+        let raw = data.toString();
         let message: any;
         try {
           message = JSON.parse(raw);
@@ -504,8 +513,17 @@ export class BrowserSession extends EventEmitter {
           return;
         }
         if (identityVault(this.options.identity)) {
+          // An observing client must not pause newly opened login frames.
+          if (message.method === "Target.setAutoAttach") {
+            message.params.waitForDebuggerOnStart = false;
+            raw = JSON.stringify(message);
+          }
+          const setup =
+            /^(Target\.(setDiscoverTargets|getTargets|getTargetInfo|attachToTarget|detachFromTarget|setAutoAttach)|Page\.(enable|setLifecycleEventsEnabled|getFrameTree)|DOM.enable|Accessibility.enable|Runtime.runIfWaitingForDebugger|Browser.getVersion)$/.test(
+              message.method,
+            );
           if (
-            this.loginBusy ||
+            (this.loginBusy && !setup) ||
             ["Page.captureScreenshot", "Page.startScreencast", "Page.printToPDF"].includes(
               message.method,
             )
