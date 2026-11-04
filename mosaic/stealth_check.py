@@ -636,10 +636,10 @@ def quiet_routes(count=1, detectors=True):
 
 
 
-def direct_soak(output):
+def direct_soak(output, immediate=False, routes=('annas', 'udn', 'newspapers')):
     """Resume four direct batches over 24 hours and collector-sized volume reads.
 
-    State is raw measurement data in system temporary storage. No credentials,
+    State holds raw measurements in the supplied scratch directory. No credentials,
     account pages or corpus writes belong here. A pause file stops new sessions.
     """
     from datetime import datetime, timezone
@@ -650,6 +650,8 @@ def direct_soak(output):
     state_file = output / 'state.json'
     state = json.loads(state_file.read_text()) if state_file.exists() else {
         'began': None, 'batches': [], 'volumes': [], 'egress': [], 'failures': []}
+    if immediate:
+        state['timing'] = 'immediate; 24-hour requirement withdrawn'
     lock = (output / 'runner.lock').open('w')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
@@ -732,12 +734,14 @@ def direct_soak(output):
 
     for batch_number in range(4):
         if state['began'] is not None:
-            due = state['began'] + batch_number * 8 * 3600
+            due = state['began'] + batch_number * (0 if immediate else 8 * 3600)
             while time.time() < due:
                 if (output / 'stop').exists():
                     raise RuntimeError('Direct soak stopped by control file')
                 time.sleep(min(30, due - time.time()))
-        for route in ('annas', 'udn', 'newspapers'):
+        for route in routes:
+            if immediate and batch_number and any(f['route'] == route for f in state['failures']):
+                continue
             key = (batch_number + 1, route)
             batch = next((b for b in state['batches'] if (b['batch'], b['route']) == key), None)
             if batch is None:
@@ -765,8 +769,15 @@ def direct_soak(output):
             if (output / 'pause-after-batch').exists():
                 (output / 'pause').touch()
                 (output / 'pause-after-batch').unlink()
-            for route in ('annas', 'udn', 'newspapers'):
+            for route in routes:
                 volume = next((v for v in state['volumes'] if v['route'] == route), None)
+                if immediate and any(f['route'] == route for f in state['failures']):
+                    if volume is not None:
+                        volume['passed'] = sum(r['pass'] for r in volume['rows'])
+                        volume['stopped'] = now()
+                        volume['stopReason'] = 'Route already failed acceptance'
+                        save()
+                    continue
                 if volume is None:
                     volume = {'route': route, 'rows': [], 'started': now()}
                     state['volumes'].append(volume)
@@ -798,14 +809,23 @@ def direct_soak(output):
                 print(f"Direct volume {route}: {volume['passed']}/200; state: {state_file}", flush=True)
     state['completed'] = now()
     save()
-    print(f"Direct soak finished: 12 batches and three volume checks; observations: {state_file}", flush=True)
+    print(f"Direct acceptance finished: {len(state['batches'])} batches and "
+          f"{sum('completed' in v for v in state['volumes'])} completed volume checks; "
+          f"observations: {state_file}", flush=True)
 
 
 def main(argv):
     if len(argv) < 2 or argv[1] not in ('probe', 'routes', 'fingerprints', 'quiet-probe', 'quiet-routes', 'direct-soak'):
         sys.exit(__doc__)
     if argv[1] == 'direct-soak':
-        direct_soak(argv[2])
+        import argparse
+        parser = argparse.ArgumentParser(description='Measure direct routes with bounded egress.')
+        parser.add_argument('state')
+        parser.add_argument('--immediate', action='store_true')
+        parser.add_argument('--route', action='append', choices=('annas', 'udn', 'newspapers'))
+        args = parser.parse_args(argv[2:])
+        direct_soak(args.state, immediate=args.immediate,
+                    routes=args.route or ('annas', 'udn', 'newspapers'))
         return
     if argv[1] == 'quiet-routes':
         quiet_routes(int(argv[2]) if len(argv) > 2 else 1, detectors='--routes-only' not in argv)
