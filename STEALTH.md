@@ -867,3 +867,41 @@ Bizapedia ended at 11/13 confirmed first-attempt passes on twelve observed exits
 After two corrections, those failures already prevent 19/20, so the batch was not restarted. Its known bytes average at least 2,653,034 per attempted page; the lost response has unknown route bytes.
 
 This exceeds the half-baseline target of 1,496,712.65. Seven intended requests remain unmeasured.
+
+
+## Bizapedia continuation measurements
+
+### Persistent Bizapedia pilot, 4 November 2026
+
+The interrupted five-page pilot recorded three payload passes on exit `99.129.196.41`. Cold page traffic was 3,542,524 bytes; pages two and three used 2,684,301 and 2,600,297 bytes. No fifth-page result was recorded.
+
+The session ended at its residential budget after 305.841 seconds. Its settled total was 30,206,436 bytes, including traffic after the last completed observation. That total counts toward the 500 MB run ceiling.
+
+| Host | Cold page bytes | Third page bytes |
+| --- | ---: | ---: |
+| challenges.cloudflare.com | 1,892,579 | 1,800,002 |
+| ads.adthrive.com | 812,061 | 763,101 |
+| www.bizapedia.com | 73,249 | 34,284 |
+| launchpad-wrapper.privacymanager.io | 73,112 | 0 |
+| g2.gumgum.com | 56,878 | 0 |
+| btloader.com | 55,495 | 363 |
+| prebid.production.adthrive.com | 52,940 | 0 |
+| launchpad.privacymanager.io | 50,806 | 0 |
+
+Persistent caching reduced several asset transfers, but Cloudflare traffic remained about 1.8 MB per page. This pilot does not meet the 1.50 MB target. The interrupted client produced no final traceback, so its interruption cause remains unresolved.
+
+### Bizapedia same-browser HTML attempt
+
+The second attempt loaded one browser page, then used `fetch` inside that same browser and proxy allocation for the next HTML document. It changed no host policy or image settings. Exit `24.166.88.211` returned 51 links on the first page; the next document returned HTTP 200 with a security-check interstitial and zero record links.
+
+| Page | Method | Payloads | Measured bytes | Seconds |
+| --- | --- | ---: | ---: | ---: |
+| 1 | Browser | 51 | 2,919,305 | 35.358 |
+| 2 | Same-browser fetch | 0 | 3,806,451 | 9.63 |
+
+The settled total was 9,367,715 bytes. The ledger initially used the wrong key for the earlier pilot and raised `KeyError` after remote release; the key was corrected and the released session’s total was recovered from the API. This bookkeeping error did not leave the session open.
+
+The two bandwidth approaches failed, so further optimization stopped under the owner’s limit. No new host refusals, direct hosts or image blocking were enabled. The fifth-page observation and twenty-session acceptance set remain uncompleted. Total settled residential traffic for these two pilots was 39,574,151 bytes.
+
+The challenge handler deliberately stops when its isolated read classifies a visual puzzle; its supported actions cover checkboxes and the labelled drag fixture. A new-exit retry can therefore receive another puzzle without solving it. The surviving 645.023-second reset measurement records a client transport failure, but lacks the socket trace needed to identify the peer that closed it. The former client’s 300-second retry intervals explain much of the elapsed time; they do not establish the underlying network cause.
+
