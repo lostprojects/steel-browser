@@ -119,18 +119,21 @@ PROBE = r"""async () => {
 }"""
 
 
-def call(method, path, payload=None):
+def call(method, path, payload=None, *, keyed=True):
     """Retry reads, releases and keyed mutations after a dropped connection."""
     base = urllib.parse.urlsplit(BASE)
     body = json.dumps(payload).encode() if payload is not None else None
     retryable = method == 'GET' or path.endswith('/release') or path.endswith('/commands') or path.endswith('/challenge') or path in ('/v1/sessions', '/v1/fetch')
     request_key = str(uuid.uuid4())
+    headers = {'Content-Type': 'application/json', 'Connection': 'close', 'steel-api-key': KEY}
+    if keyed:
+        headers['idempotency-key'] = request_key
     for attempt in range(3):
         connection = http.client.HTTPSConnection if base.scheme == 'https' else http.client.HTTPConnection
         conn = connection(base.hostname, base.port, timeout=300 if path == '/v1/fetch' else 120)
         try:
             conn.request(method, base.path + path, body=body,
-                         headers={'Content-Type': 'application/json', 'Connection': 'close', 'steel-api-key': KEY, 'idempotency-key': request_key})
+                         headers=headers)
             response = conn.getresponse()
             data = response.read()
         except (OSError, http.client.HTTPException):
@@ -716,7 +719,9 @@ def direct_soak(output, immediate=False, routes=('annas', 'udn', 'newspapers')):
 
     def http_page(route, url):
         began = time.monotonic()
-        result = call('POST', '/v1/fetch', {'url': url, 'route': route, 'startRung': 1, 'maxRung': 1, 'retry': False})
+        # This is a read-only HTTP GET with no browser allocation or residential
+        # fallback. Keeping every HTML response in the mutation cache is unnecessary.
+        result = call('POST', '/v1/fetch', {'url': url, 'route': route, 'startRung': 1, 'maxRung': 1, 'retry': False}, keyed=False)
         attempts = result.get('attempts', [])
         return {'at': now(), 'route': route, 'url': url, 'pass': result.get('status') == 'ok',
                 'rung': result.get('rung'), 'attempts': attempts,
@@ -747,18 +752,19 @@ def direct_soak(output, immediate=False, routes=('annas', 'udn', 'newspapers')):
             if batch is None:
                 batch = {'batch': key[0], 'route': route, 'rows': [], 'started': now()}
                 state['batches'].append(batch)
-            while len(batch['rows']) < 20:
+            if len(batch['rows']) < 20:
                 wait_ready()
                 if state['began'] is None:
                     state['began'] = time.time()
                     save()
                 with Session('none', {'mode': 'agent'}) as session:
                     address = ip(session)
-                    row = http_page(route, ROUTES[route][0]) if route == 'newspapers' else read_page(session, route, ROUTES[route][0])
-                    row['ip'] = address
-                    batch['rows'].append(row)
-                    save()
-                time.sleep(2)
+                    while len(batch['rows']) < 20:
+                        row = http_page(route, ROUTES[route][0]) if route == 'newspapers' else read_page(session, route, ROUTES[route][0])
+                        row['ip'] = address
+                        batch['rows'].append(row)
+                        save()
+                        time.sleep(2)
             batch['passed'] = sum(r['pass'] for r in batch['rows'])
             batch.setdefault('completed', now())
             if batch['passed'] < 19:
