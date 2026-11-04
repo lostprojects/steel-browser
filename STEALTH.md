@@ -887,6 +887,7 @@ The session ended at its residential budget after 305.841 seconds. Its settled t
 | btloader.com | 55,495 | 363 |
 | prebid.production.adthrive.com | 52,940 | 0 |
 | launchpad.privacymanager.io | 50,806 | 0 |
+| Remaining measured traffic, hostname detail unavailable | 475,404 | 2,547 |
 
 Persistent caching reduced several asset transfers, but Cloudflare traffic remained about 1.8 MB per page. This pilot does not meet the 1.50 MB target. The interrupted client produced no final traceback, so its interruption cause remains unresolved.
 
@@ -1015,3 +1016,96 @@ Anna’s post-fix escalation passed in one request: the injected rung 2 failure 
 The canonical Bizapedia caller opened and released its new persistent identity successfully, settling 28,583 bytes. This check loaded no Bizapedia page and adds no bandwidth-acceptance pass.
 
 The Mary Ferrell post-deploy logout/relogin session settled 141,663 bytes. Two service-only observations also failed after 121.960 and 121.824 seconds, settling 83,210 and 84,097 bytes. A form inspection settled 69,100 bytes and confirmed visible username/password fields and an enabled SIGN IN button. The second fix activates Mary Ferrell’s primary tab before native input; its acceptance remains pending.
+
+Railway’s static outbound setting was read through the CLI on 4 November: disabled, with no assigned static addresses. The recorded direct observations have used `35.171.92.125`; this establishes the observed address, not a permanent assignment. Railway documents permanent outbound addresses as an optional service setting and says its current static offering balances traffic over multiple addresses ([Static Outbound IPs](https://docs.railway.com/networking/static-outbound-ips)). No networking setting was changed.
+
+The same-egress HTTP helper check returned HTTP 200 and matched the browser’s `98.159.24.143` exit, settling 80,917 bytes. Newspapers and Fold3 now use that helper for authenticated JSON requests. An initial local decoding check found a missing `base64` import; after correction, decoding, Python parsing and the affected CLI help checks passed.
+
+A repeated known-prefix scan covered two metadata responses and two deployment log sets and reported no credential-prefix leak. The most recent typecheck and focused secret-handling file passed seven tests.
+
+### Interrupted Anna volume attempt
+
+The first 13 pages all returned payloads from `35.171.92.125` on build `279f404`; page 1 showed a challenge. That fails the volume criterion, so Anna remains at rung 3. The run was interrupted to roll back a login adapter error; its observations remain below and in the resumable state. A full 200-page observation will still run.
+
+| Page | Passed | Payloads | Seconds | Initial HTTP status | Challenge |
+| --- | --- | ---: | ---: | ---: | --- |
+| 1 | yes | 100 | 16.476 | 403 | yes |
+| 2 | yes | 116 | 13.472 | 200 | no |
+| 3 | yes | 116 | 3.015 | 200 | no |
+| 4 | yes | 116 | 1.827 | 200 | no |
+| 5 | yes | 116 | 11.175 | 200 | no |
+| 6 | yes | 116 | 4.001 | 200 | no |
+| 7 | yes | 116 | 2.336 | 200 | no |
+| 8 | yes | 116 | 3.259 | 200 | no |
+| 9 | yes | 116 | 4.351 | 200 | no |
+| 10 | yes | 116 | 8.062 | 200 | no |
+| 11 | yes | 116 | 6.494 | 200 | no |
+| 12 | yes | 116 | 3.534 | 200 | no |
+| 13 | yes | 116 | 2.22 | 200 | no |
+
+Mary Ferrell’s native-tab attempt initially returned HTTP 500 because the quiet-browser adapter lacked `bringToFront`. Production was rolled back to the verified `447c2b4` build after all sessions closed; health and a fresh quiet-session read passed. The missing adapter method was implemented, and the device-check flag was restricted to actual verification classifications. TypeScript and the two focused files passed 12 tests with two skipped. The completed second Mary Ferrell fix still needs its live result.
+
+The interrupted runner released its remote browser with zero residential bytes. Its local driver then stalled during disposal, so only that finite runner’s process group was ended after release. No collector session was terminated. The original batch start and all measurements remain preserved.
+
+The completed quiet-adapter correction deployed as `b2da0b3` and passed health, vault-open and fresh quiet-session page reads. The resume helper also preserves an earlier batch’s completion timestamp instead of rewriting it when a stopped process resumes.
+
+The completed second Mary Ferrell fix still returned `account_payload_missing` on `68.131.61.24`. Its session settled 94,270 bytes over 614.683 seconds from creation to release; that duration includes the client’s waits and reconnection. The preceding adapter-error session settled 71,105 bytes. Work on automatic re-login stopped after the two fixes. Earlier successful sign-in and release/reopen/deploy observations do not establish reliable recovery after logout.
+
+Settled residential use through these checks is **55,028,288 bytes**: 52,437,072 on the administrative test key and 2,591,216 in identified acceptance and daily-check sessions on the collector key. Concurrent collector traffic is excluded. Only `VAULT_KEY` was added to Railway; no volume, proxy tier, static-IP or networking setting changed.
+
+### Resumed Anna volume observations
+
+This is the continuing 200-page attempt on `b2da0b3`; the first challenge already makes its acceptance fail. Railway egress remains `35.171.92.125`. The runner retains every later observation in `.state/direct-soak/state.json` until it can be reconciled here.
+
+| Read | Query | Page | Passed | Payloads | Seconds | Initial HTTP status | Challenge |
+| --- | --- | ---: | --- | ---: | ---: | ---: | --- |
+| 1 | history | 1 | yes | 116 | 15.277 | 403 | yes |
+| 2 | history | 2 | yes | 116 | 2.797 | 200 | no |
+| 3 | history | 3 | yes | 116 | 2.405 | 200 | no |
+| 4 | history | 4 | yes | 116 | 7.794 | 200 | no |
+| 5 | history | 5 | yes | 116 | 6.369 | 200 | no |
+| 6 | history | 6 | yes | 116 | 6.081 | 200 | no |
+| 7 | history | 7 | yes | 116 | 1.737 | 200 | no |
+| 8 | history | 8 | yes | 116 | 3.035 | 200 | no |
+| 9 | history | 9 | yes | 116 | 1.841 | 200 | no |
+| 10 | history | 10 | yes | 116 | 8.11 | 200 | no |
+| 11 | history | 11 | no | 0 | 4.395 | — | no |
+| 12 | history | 12 | yes | 116 | 4.727 | 200 | no |
+| 13 | history | 13 | no | 0 | 3.467 | — | no |
+| 14 | history | 14 | yes | 116 | 2.011 | 200 | no |
+| 15 | history | 15 | yes | 116 | 2.718 | 200 | no |
+| 16 | history | 16 | no | 0 | 1.489 | — | no |
+| 17 | history | 17 | yes | 116 | 5.286 | 200 | no |
+| 18 | history | 18 | yes | 116 | 7.646 | 200 | no |
+| 19 | history | 19 | yes | 116 | 6.274 | 200 | no |
+| 20 | history | 20 | yes | 116 | 9.778 | 200 | no |
+| 21 | science | 1 | yes | 116 | 7.863 | 200 | no |
+| 22 | science | 2 | yes | 116 | 2.609 | 200 | no |
+| 23 | science | 3 | yes | 116 | 3.524 | 200 | no |
+| 24 | science | 4 | yes | 116 | 2.2 | 200 | no |
+| 25 | science | 5 | yes | 116 | 2.238 | 200 | no |
+| 26 | science | 6 | yes | 116 | 7.455 | 200 | no |
+| 27 | science | 7 | yes | 116 | 3.289 | 200 | no |
+| 28 | science | 8 | yes | 116 | 2.172 | 200 | no |
+| 29 | science | 9 | yes | 116 | 2.826 | 200 | no |
+| 30 | science | 10 | yes | 116 | 2.44 | 200 | no |
+| 31 | science | 11 | yes | 116 | 5.563 | 200 | no |
+| 32 | science | 12 | yes | 116 | 2.14 | 200 | no |
+| 33 | science | 13 | yes | 116 | 5.382 | 200 | no |
+| 34 | science | 14 | yes | 116 | 3.6 | 200 | no |
+| 35 | science | 15 | yes | 116 | 5.145 | 200 | no |
+| 36 | science | 16 | yes | 116 | 5.619 | 200 | no |
+| 37 | science | 17 | yes | 116 | 4.422 | 200 | no |
+| 38 | science | 18 | yes | 116 | 2.843 | 200 | no |
+| 39 | science | 19 | yes | 116 | 5.577 | 200 | no |
+| 40 | science | 20 | yes | 116 | 4.528 | 200 | no |
+| 41 | war | 1 | yes | 116 | 3.051 | 200 | no |
+| 42 | war | 2 | yes | 116 | 4.325 | 200 | no |
+| 43 | war | 3 | yes | 116 | 4.175 | 200 | no |
+| 44 | war | 4 | yes | 116 | 4.078 | 200 | no |
+| 45 | war | 5 | yes | 116 | 2.061 | 200 | no |
+| 46 | war | 6 | yes | 116 | 1.957 | 200 | no |
+| 47 | war | 7 | yes | 116 | 2.042 | 200 | no |
+| 48 | war | 8 | yes | 116 | 2.039 | 200 | no |
+| 49 | war | 9 | yes | 116 | 1.875 | 200 | no |
+| 50 | war | 10 | yes | 116 | 2.046 | 200 | no |

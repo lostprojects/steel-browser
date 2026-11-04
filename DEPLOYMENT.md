@@ -108,4 +108,8 @@ Those persisted policy writes changed no Railway variables or volumes.
 
 The login timer checks previously authenticated identities once per UTC day when the pool is idle. `/data/login-daily.json` prevents repeats across deployments; `/data/login-checks.jsonl` records the outcome, device-check classification and exit IP. `/data/logins.json` preserves each site's last successful login. The timer ends with the API process.
 
-The first vault deployment passed health and fresh quiet-session creation. Subsequent login fixes wait for an empty session list and an idle HTTP log window. The last verified service build is `447c2b4`; vault login acceptance remains incomplete. No volume was added.
+The first vault deployment passed health and fresh quiet-session creation. Subsequent login fixes wait for an empty session list and an idle HTTP log window. The last verified service build is `b2da0b3`; vault login acceptance remains incomplete. No volume was added.
+
+Static outbound IPs remain disabled; no static addresses are assigned. The direct-route acceptance records the actual egress address through deployments. The fixed-address setting was inspected without changing it.
+
+The native-tab login candidate was rolled back after a missing quiet-adapter method produced a login HTTP 500. The restored `447c2b4` image passed health and fresh-session creation. Rollback used the shown `rw rollback` dry run followed by `--commit`; the completed adapter correction in `b2da0b3` subsequently passed health and fresh quiet-session creation. Automatic Mary Ferrell re-login still failed, as recorded in STEALTH.md.
