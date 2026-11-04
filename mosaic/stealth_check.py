@@ -756,7 +756,7 @@ def direct_soak(output):
                     save()
                 time.sleep(2)
             batch['passed'] = sum(r['pass'] for r in batch['rows'])
-            batch['completed'] = now()
+            batch.setdefault('completed', now())
             if batch['passed'] < 19:
                 require_residential(route, 'batch_below_19_of_20')
             save()
