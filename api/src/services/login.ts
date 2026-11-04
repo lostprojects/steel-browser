@@ -49,8 +49,10 @@ export const loginSites = {
   },
 } as const;
 export type LoginSite = keyof typeof loginSites;
+// Ancestry's sign-in codes for this account arrive from info.ancestry.co.uk
+// (observed 4 November 2026).
 const codeSources: Record<string, { senderDomains: string[]; brands: string[] }> = {
-  "www.ancestry.com": { senderDomains: ["ancestry.com"], brands: ["Ancestry"] },
+  "www.ancestry.com": { senderDomains: ["ancestry.com", "ancestry.co.uk"], brands: ["Ancestry"] },
   "www.newspapers.com": { senderDomains: ["newspapers.com"], brands: ["Newspapers.com"] },
   "www.fold3.com": { senderDomains: ["fold3.com"], brands: ["Fold3"] },
   "www.maryferrell.org": { senderDomains: ["maryferrell.org"], brands: ["Mary Ferrell"] },
