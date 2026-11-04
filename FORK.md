@@ -85,3 +85,5 @@ Automatic re-login acceptance remains failed after the allowed fixes for both An
 The direct acceptance runner also supports `--immediate` for checks without scheduled gaps. It preserves prior observations and stops routes that have already failed.
 
 Read-only HTTP checks omit idempotency keys; session mutations keep them. Repeated batch reads share one browser allocation.
+
+Email and SMS verification can pause a login with a short-lived code request. The local Mosaic helper searches Apple Mail or Messages under the owner’s code-only permission and submits one code directly to its waiting session. The service binds the request to its owner and login URL, consumes it once and checks the resulting account content.

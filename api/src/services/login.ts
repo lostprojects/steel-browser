@@ -3,9 +3,10 @@ import type { SessionPool } from "./session-pool.js";
 // client to type credentials. Authentication needs a positive account payload.
 import { readFile, writeFile, rename, mkdir, appendFile } from "node:fs/promises";
 import path from "node:path";
+import { createHash, randomUUID } from "node:crypto";
 import type { BrowserSession } from "./browser-session.js";
 import type { Agent } from "./proxy-manager.js";
-import { vault, totp } from "./vault.js";
+import { vault, totp, protect } from "./vault.js";
 import { QuietInput } from "./quiet-input.js";
 import { clearChallenge } from "./challenge-service.js";
 
@@ -37,12 +38,21 @@ export const loginSites = {
   },
 } as const;
 export type LoginSite = keyof typeof loginSites;
+const codeSources: Record<string, { senderDomains: string[]; brands: string[] }> = {
+  "www.ancestry.com": { senderDomains: ["ancestry.com"], brands: ["Ancestry"] },
+  "www.newspapers.com": { senderDomains: ["newspapers.com"], brands: ["Newspapers.com"] },
+  "www.fold3.com": { senderDomains: ["fold3.com"], brands: ["Fold3"] },
+  "www.maryferrell.org": { senderDomains: ["maryferrell.org"], brands: ["Mary Ferrell"] },
+  "accounts.google.com": { senderDomains: ["google.com"], brands: ["Google"] },
+};
 export function identityVault(identity?: string) {
   return ["ancestry", "mary-ferrell", "hathitrust-google"].find(
     (n) => identity === n || identity?.startsWith(n + "-"),
   );
 }
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const codeInputs =
+  'input[autocomplete="one-time-code"],input[name*="code" i],input[id*="code" i],input[name*="otp" i],input[id*="otp" i]';
 type LoginRecord = {
   last_login_ok?: string;
   last_exit_ip?: string;
@@ -51,9 +61,28 @@ type LoginRecord = {
   check: string;
   at: string;
 };
+type CodeRequest = {
+  id: string;
+  site: LoginSite;
+  channel: "email" | "sms";
+  after: string;
+  expires: string;
+  senderDomains: string[];
+  brands: string[];
+  recipientHash?: string;
+  phoneSuffix?: string;
+};
+type PendingCode = {
+  request: CodeRequest;
+  agent: string;
+  identity: string;
+  url: string;
+  back?: string;
+};
 export class LoginService {
   private records: Record<string, LoginRecord> = {};
   private active = new Map<string, Promise<unknown>>();
+  private pendingCodes = new Map<string, PendingCode>();
   private writes: Promise<unknown> = Promise.resolve();
   private ready: Promise<void>;
   constructor(private root = "/data") {
@@ -114,9 +143,14 @@ export class LoginService {
             JSON.stringify({
               at: new Date().toISOString(),
               ...outcome,
-              deviceCheck: ["email_mailbox_missing", "sms", "totp", "device", "google"].includes(
-                outcome.check,
-              ),
+              deviceCheck: [
+                "email_mailbox_missing",
+                "email",
+                "sms",
+                "totp",
+                "device",
+                "google",
+              ].includes(outcome.check),
             }) + "\n",
             { mode: 0o600 },
           );
@@ -184,7 +218,56 @@ export class LoginService {
       exitIp: session.exit?.ip,
     };
   }
-  async login(session: BrowserSession, site: LoginSite, agent: Agent, current = false) {
+  async codeRequest(session: BrowserSession, agent: Agent) {
+    const pending = this.pendingCodes.get(session.id);
+    if (!pending) return null;
+    if (Date.parse(pending.request.expires) <= Date.now()) {
+      this.pendingCodes.delete(session.id);
+      return null;
+    }
+    if (pending.agent !== agent.name || pending.identity !== session.options.identity)
+      throw Object.assign(new Error("Login code request belongs to another agent"), {
+        statusCode: 403,
+      });
+    const allowed = await vault.list(agent, loginSites[pending.request.site].vault);
+    if (!allowed.length)
+      throw Object.assign(new Error("Vault entry unavailable for this agent"), { statusCode: 403 });
+    const page = await session.getPrimaryPage();
+    const waiting =
+      page.url() === pending.url &&
+      (await page.evaluate(
+        (selector) =>
+          [...document.querySelectorAll(selector)].some((e) => {
+            const r = e.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== "hidden";
+          }),
+        codeInputs,
+      ));
+    if (!waiting) {
+      this.pendingCodes.delete(session.id);
+      return null;
+    }
+    return pending.request;
+  }
+  async submitCode(session: BrowserSession, agent: Agent, requestId: string, code: string) {
+    protect(code);
+    const request = await this.codeRequest(session, agent);
+    if (!request || request.id !== requestId)
+      throw Object.assign(new Error("Login code request expired or unavailable"), {
+        statusCode: 409,
+      });
+    const pending = this.pendingCodes.get(session.id);
+    if (!pending || pending.request.id !== requestId)
+      throw Object.assign(new Error("Login code request already consumed"), { statusCode: 409 });
+    return this.login(session, request.site, agent, false, { ...pending, code });
+  }
+  async login(
+    session: BrowserSession,
+    site: LoginSite,
+    agent: Agent,
+    current = false,
+    resume?: PendingCode & { code: string },
+  ) {
     await this.ready;
     const spec = loginSites[site];
     if (identityVault(session.options.identity) !== spec.vault)
@@ -195,10 +278,14 @@ export class LoginService {
       throw Object.assign(new Error("Vault logins require quiet mode"), { statusCode: 409 });
     if (this.active.has(session.id))
       throw Object.assign(new Error("Login already running"), { statusCode: 409 });
+    // A submission consumes its request before any input. A fresh login replaces it.
+    this.pendingCodes.delete(session.id);
+    for (const [id, pending] of this.pendingCodes)
+      if (Date.parse(pending.request.expires) <= Date.now()) this.pendingCodes.delete(id);
     const job = vault.use(spec.vault, agent, async (fields) => {
       session.loginBusy = true;
       try {
-        return await this.run(session, site, fields, agent, current);
+        return await this.run(session, site, fields, agent, current, resume);
       } finally {
         session.loginBusy = false;
       }
@@ -216,14 +303,16 @@ export class LoginService {
     fields: Readonly<Record<string, string>>,
     agent: Agent,
     current: boolean,
+    resume?: PendingCode & { code: string },
   ) {
     const spec = loginSites[site];
     const page = await session.getPrimaryPage();
     const { width, height } = session.getDimensions();
     const input = new QuietInput(session.display.name!, width, height);
-    const back = current ? page.url() : undefined;
+    const back = resume?.back ?? (current ? page.url() : undefined);
+    const started = Date.now();
     const state = () =>
-      page.evaluate(() => {
+      page.evaluate((otpSelector) => {
         const visible = (e: Element) => {
           const b = e.getBoundingClientRect();
           return b.width > 0 && b.height > 0 && getComputedStyle(e).visibility !== "hidden";
@@ -253,11 +342,10 @@ export class LoginService {
             .filter(visible)
             .some((e) => e.disabled || e.getAttribute("aria-disabled") === "true"),
           username: inputs.some((e) => /email|username|userId/i.test(e.name + e.id + e.type)),
-          otp: inputs.some(
-            (e) =>
-              e.autocomplete === "one-time-code" ||
-              /verificationCode|otp|securityCode|authCode/i.test(e.name + e.id),
-          ),
+          otp: inputs.some((e) => e.matches(otpSelector)),
+          phoneSuffix: text.match(
+            /(?:[\*•●x]{2,}[\s-]*|(?:phone|number)[\s\S]{0,35}ending (?:in )?)(\d{2,4})(?!\d)/i,
+          )?.[1],
           check: /text message|sms|phone number.*code|code.*phone number/i.test(text)
             ? "sms"
             : /authenticator|authentication app/i.test(text)
@@ -274,6 +362,9 @@ export class LoginService {
             /incorrect password|invalid password|password is incorrect|invalid username|couldn.t sign you in|wrong password/i.test(
               lower,
             ),
+          codeRejected: /incorrect code|invalid code|code (?:has )?expired|code is incorrect/i.test(
+            text,
+          ),
           consent: [...document.querySelectorAll("button,a")].some(
             (e) => visible(e) && /^Accept (?:All )?Cookies$/i.test(e.textContent?.trim() ?? ""),
           ),
@@ -281,7 +372,7 @@ export class LoginService {
             (e) => visible(e) && /(?:sign in|continue).*ancestry/i.test(e.textContent ?? ""),
           ),
         };
-      });
+      }, codeInputs);
     const point = async (selector: string, label?: string) =>
       page.evaluate(
         ({ selector, label }) => {
@@ -310,7 +401,7 @@ export class LoginService {
     const click = async (selector: string, label?: string) => {
       // Native X11 input goes to the visible tab. A restored profile can have
       // another tab active even when CDP reads the primary page successfully.
-      if (site === "mary-ferrell") await page.bringToFront();
+      if (site === "mary-ferrell" || resume) await page.bringToFront();
       const p = await point(selector, label);
       if (!p) return false;
       await input.mouse({ type: "mousePressed", x: p.x, y: p.y, button: "left" }, p.offset);
@@ -343,11 +434,14 @@ export class LoginService {
     }
     if (site === "hathitrust-google")
       return this.record(session, site, "not_attempted", "google_flow_unimplemented", agent);
-    await go(spec.url);
+    if (resume) {
+      if (page.url() !== resume.url || Date.parse(resume.request.expires) <= Date.now())
+        return this.record(session, site, "failed", "code_request_changed", agent);
+    } else await go(spec.url);
     let submissions = 0,
       otpUsed = false,
       check = "none";
-    let submittedPassword = false;
+    let submittedPassword = Boolean(resume);
     let formFilled = false;
     let formChallenges = 0;
     const deadline = Date.now() + 120000;
@@ -368,6 +462,17 @@ export class LoginService {
         return this.record(session, site, "ok", check, agent);
       }
       if (s.rejected) return this.record(session, site, "failed", "credentials_rejected", agent);
+      if (otpUsed && s.codeRejected)
+        return this.record(session, site, "failed", "code_rejected", agent);
+      if (
+        resume &&
+        !otpUsed &&
+        (!s.otp ||
+          s.check !== resume.request.channel ||
+          page.url() !== resume.url ||
+          Date.parse(resume.request.expires) <= Date.now())
+      )
+        return this.record(session, site, "failed", "code_request_changed", agent);
       if (s.consent) {
         await click("button,a", "^Accept (?:All )?Cookies$");
         await pause(1000);
@@ -375,11 +480,23 @@ export class LoginService {
       }
       if (s.check !== "none" && !s.password) {
         check = s.check;
-        if (s.check === "totp" && fields.totpSeed && s.otp && !otpUsed) {
-          await type(
-            'input[autocomplete="one-time-code"],input[name*="code" i],input[id*="code" i]',
-            totp(fields.totpSeed),
+        if (resume && !otpUsed) {
+          if (!(await type(codeInputs, resume.code)))
+            return this.record(session, site, "failed", "code_field_missing", agent);
+          await click(
+            'button[type="submit"],input[type="submit"],button',
+            "verify|continue|submit|confirm|sign in|log in|next",
           );
+          otpUsed = true;
+          await pause(2000);
+          continue;
+        }
+        if (resume && otpUsed && s.check === resume.request.channel) {
+          await pause(2000);
+          continue;
+        }
+        if (s.check === "totp" && fields.totpSeed && s.otp && !otpUsed) {
+          await type(codeInputs, totp(fields.totpSeed));
           await click(
             'button[type="submit"],input[type="submit"],button',
             "verify|continue|submit|confirm",
@@ -388,13 +505,38 @@ export class LoginService {
           await pause(2000);
           continue;
         }
-        return this.record(
-          session,
-          site,
-          "check_required",
-          s.check === "email" ? "email_mailbox_missing" : s.check,
-          agent,
-        );
+        if (!resume && s.otp && (s.check === "email" || s.check === "sms")) {
+          const source = codeSources[s.host];
+          if (!source) return this.record(session, site, "check_required", s.check, agent);
+          const request: CodeRequest = {
+            id: randomUUID(),
+            site,
+            channel: s.check,
+            after: new Date(started).toISOString(),
+            expires: new Date(Math.min(started + 600000, Date.now() + 300000)).toISOString(),
+            ...source,
+            ...(s.check === "email" && fields.email
+              ? {
+                  recipientHash: createHash("sha256")
+                    .update(fields.email.trim().toLowerCase())
+                    .digest("hex"),
+                }
+              : {}),
+            ...(s.check === "sms" && s.phoneSuffix ? { phoneSuffix: s.phoneSuffix } : {}),
+          };
+          this.pendingCodes.set(session.id, {
+            request,
+            agent: agent.name,
+            identity: session.options.identity!,
+            url: page.url(),
+            back,
+          });
+          return {
+            ...(await this.record(session, site, "check_required", s.check, agent)),
+            codeRequest: request,
+          };
+        }
+        return this.record(session, site, "check_required", s.check, agent);
       }
       if ((site === "newspapers" || site === "fold3") && s.host === targetHost && s.oauth) {
         await click("button,a", "(?:sign in|continue).*ancestry");

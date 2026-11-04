@@ -22,7 +22,7 @@ Anna’s Archive failed its volume check and starts on residential routing. The 
 
 The encrypted vault and service-owned login flows are deployed. Mary Ferrell passed initial sign-in and persistence checks, but automatic re-login failed after logout. Ancestry-family login also remains incomplete.
 
-Consult STEALTH.md for measurements and USAGE.md for protected-identity restrictions.
+Consult STEALTH.md for measurements and USAGE.md for protected-identity restrictions. Local email and SMS codes can now pass from the Mac’s code-only helper to an active service login; unrelated mail and messages remain outside the permission.
 
 ## Documents
 

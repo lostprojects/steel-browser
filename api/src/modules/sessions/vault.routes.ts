@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import path from "node:path";
-import { vault } from "../../services/vault.js";
+import { vault, protect } from "../../services/vault.js";
 import { LoginService } from "../../services/login.js";
 import { agentFor } from "../../utils/api-key.js";
 import { selectedSession } from "./sessions.controller.js";
@@ -36,6 +36,24 @@ export default async function routes(server: FastifyInstance) {
       .parse(req.body);
     return idempotent(req, () =>
       login.login(selectedSession(server, req), site, agentFor(req.raw)!, current),
+    );
+  });
+  server.get("/sessions/:sessionId/login/code", async (req) => ({
+    codeRequest: await login.codeRequest(selectedSession(server, req), agentFor(req.raw)!),
+  }));
+  server.post("/sessions/:sessionId/login/code", async (req) => {
+    // Mask before validation; no message content or code goes into a response.
+    const raw = req.body as { code?: unknown } | null;
+    if (typeof raw?.code === "string") protect(raw.code);
+    const { requestId, code } = z
+      .object({
+        requestId: z.string().uuid(),
+        code: z.string().regex(/^[A-Za-z0-9]{4,10}$/),
+      })
+      .strict()
+      .parse(req.body);
+    return idempotent(req, () =>
+      login.submitCode(selectedSession(server, req), agentFor(req.raw)!, requestId, code),
     );
   });
 }

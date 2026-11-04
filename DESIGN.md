@@ -105,7 +105,7 @@ The vault holds site logins, two-factor seeds and the proxy providers' credentia
 
 - **Storage:** one AES-256-GCM encrypted file on the volume, using Node's own `crypto`. The key is a Railway variable, `VAULT_KEY`, kept in `global.env` and Mosaic's `.env` like the other credentials. There is no external dependency.
 - **API:** write values with `PUT /v1/vault/{name}`. `GET` returns names, fields and last-use times, never values.
-- **Use:** `login {identity}` runs a stored login flow for that site. The engine finds the fields in the isolated world, focuses them, and types the values through X11 in quiet mode or CDP in agent mode. A TOTP code is generated at the moment of use. Emailed codes require mailbox credentials stored in the vault. SMS and Google checks stop with a classified result; the owner must agree before a person becomes involved.
+- **Use:** `login {identity}` runs a stored login flow for that site. The engine finds the fields in the isolated world, focuses them, and types the values through X11 in quiet mode or CDP in agent mode. A TOTP code is generated at the moment of use. Email and SMS code fields can issue a short-lived request to a local agent. Under the owner’s standing permission, that agent uses the code-only Apple Mail or Messages helper for the current site and account; the service consumes the code on the same login URL. Other device and Google checks retain their classified result; human involvement requires the owner’s agreement.
 - **Leaks:** the engine's existing masking hides password fields in snapshots. Vault values are also scrubbed from every response and log line.
 - **Audit:** every use is logged with the session, the agent's key and the site.
 

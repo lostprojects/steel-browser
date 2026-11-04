@@ -114,7 +114,7 @@ Create a quiet session with identity `ancestry` or `mary-ferrell`, then call `PO
 
 Protected identities require access to their vault entry and use a fixed sticky residential allocation throughout. `/request` sends authenticated GET or POST requests over that same exit. Signed CDN downloads can try direct egress. Protected profile exports and image capture are refused because they can expose login details; text responses and CDP replies are scrubbed.
 
-Two-step outcomes remain explicit. Stored authenticator seeds generate TOTP codes at use. Email checks report missing mailbox access; SMS or device checks stop with their classification. HathiTrust Google values are stored, but its flow returns `not_attempted` / `google_flow_unimplemented`. No Google challenge has been observed. The service does not request a manual login.
+Two-step outcomes remain explicit. Stored authenticator seeds generate TOTP codes at use. Email and SMS code fields issue a local code request; other device checks retain their classification. HathiTrust Google values are stored, but its flow returns `not_attempted` / `google_flow_unimplemented`. No Google challenge has been observed. The service does not request a manual login.
 
 Mosaic’s Mary Ferrell caller uses this API. The three Ancestry-family `login` commands also use the vault, but collection sessions retain their earlier profile until automatic login passes. That migration remains incomplete; keep the original context file and credential env entries.
 
@@ -123,3 +123,15 @@ Direct acceptance can bound `/fetch` with `maxRung:2` (or `1` for HTTP). An admi
 `mosaic/stealth_check.py direct-soak STATE_DIR --immediate` removes the eight-hour gaps and stops routes that have already failed acceptance. Use repeatable `--route annas`, `--route udn` or `--route newspapers` options to select routes; omitting them checks all three.
 
 Its output establishes immediate performance; it does not establish 24-hour stability. Read-only HTTP probes omit idempotency keys, while session mutations retain them.
+
+## Local email and SMS codes
+
+The owner permits local Apple Mail or Messages access solely for a code needed by a current authorized login, including future sites. Mosaic’s `Browser.ensure_login()` invokes its code-only helper automatically when the service exposes a compatible code field.
+
+`GET /v1/sessions/{id}/login/code` returns an active request or null. `POST` to the same path accepts `{"requestId":"…","code":"…"}` in the body; use an idempotency key for transport retries. Do not put codes in URLs, shell arguments, logs or agent output.
+
+The request belongs to the same agent, identity and session and expires after at most five minutes. Submission consumes it, verifies the unchanged login URL and code channel, types through X11 and checks authenticated content. A fresh login replaces an older request.
+
+Mosaic’s `scripts/browser/login_codes.py --session ID` reads only messages since that login attempt, within ten minutes, matching the configured service and account. It sends a unique code directly and reports status; no message or code is stored. See [Mosaic tooling](../Mosaic/.claude/tooling.md#local-login-codes) for local availability and future adapter requirements.
+
+This adds no mailbox watcher and gives Railway no access to local message history. The daily service check records an unanswered challenge when no local caller is present. Google’s login flow remains unimplemented; a code bridge does not complete that flow.

@@ -1891,3 +1891,15 @@ A prior Newspapers volume attempt returned 108 payloads before Steel rejected th
 | 18 | 2026-11-04T19:24:45.459868+00:00 | 2 | 0.721 | — | 1 | 613283 | no | pass |
 | 19 | 2026-11-04T19:24:48.165541+00:00 | 2 | 0.697 | — | 1 | 613282 | no | pass |
 | 20 | 2026-11-04T19:24:50.844902+00:00 | 2 | 0.668 | — | 1 | 613282 | no | pass |
+
+## Local login-code bridge, 4 November 2026
+
+The owner authorized local Apple Mail and Messages solely for a code needed by a current authorized login, including future sites. Global Claude instructions record that permission, with Codex linked to the same file; Mosaic’s tooling documents the on-demand helper.
+
+Mail automation and both local databases passed access checks without reading message content. An initial broad Apple-event search exceeded its twenty-second timeout, so the helper now narrows candidates through Mail’s read-only index before reading a matching message. The JavaScript native archive fixture could not invoke its initializer; the native Swift archive reader passed the synthetic round trip.
+
+Synthetic Mail checks accepted the intended account and sender while excluding a different recipient, a spoofed sender domain and a stale message. Password-reset messages were excluded, multiple codes were rejected as ambiguous, and an expired request was refused. Synthetic Messages checks matched the requested service and phone suffix and excluded a different phone, a different service, an old code and a password reset.
+
+TypeScript passed and the existing secret-handling file passed all seven tests. No real message content was read, no login code was printed or stored, and these local checks used zero residential bytes. Successful completion of an actual site’s email or SMS challenge remains unverified until such a challenge occurs.
+
+The service endpoint waits for a collector-free deployment window. The preceding verified application remains `b2da0b3`.

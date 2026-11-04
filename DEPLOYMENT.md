@@ -113,3 +113,5 @@ The first vault deployment passed health and fresh quiet-session creation. Subse
 Static outbound IPs remain disabled; no static addresses are assigned. The direct-route acceptance records the actual egress address through deployments. The fixed-address setting was inspected without changing it.
 
 The native-tab login candidate was rolled back after a missing quiet-adapter method produced a login HTTP 500. The restored `447c2b4` image passed health and fresh-session creation. Rollback used the shown `rw rollback` dry run followed by `--commit`; the completed adapter correction in `b2da0b3` subsequently passed health and fresh quiet-session creation. Automatic Mary Ferrell re-login still failed, as recorded in STEALTH.md.
+
+The local login-code bridge uses the Mac’s existing Mail and Messages access. It adds no Railway variables, volume or background process. Pending code requests are held only in API memory and expire; a deployment invalidates them, so a local caller must start a fresh login afterward.
