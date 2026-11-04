@@ -344,6 +344,7 @@ export class LoginService {
       check = "none";
     let submittedPassword = false;
     let formFilled = false;
+    let formChallenges = 0;
     const deadline = Date.now() + 120000;
     for (let step = 0; step < 60 && Date.now() < deadline; step++) {
       session.touch();
@@ -416,6 +417,11 @@ export class LoginService {
           formFilled = true;
         }
         if ((await state()).submitDisabled) {
+          if (formChallenges++ < 2) {
+            const result = await clearChallenge(session, undefined, 30000);
+            if (result.status !== "cleared")
+              return this.record(session, site, "check_required", "browser_challenge", agent);
+          }
           await pause(2000);
           continue;
         }
