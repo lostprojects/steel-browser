@@ -18,14 +18,14 @@ Checks run against the deployed instance through the Evomi proxy:
       Run all six routes per exit. --routes-only uses a separately completed
       quiet-probe; otherwise each route group also repeats the bot checks.
 
-  stealth_check.py routes core|premium|none [ROUTE ...]
+  stealth_check.py routes core|none [ROUTE ...]
       Load each Mosaic collector route that needs a residential IP and report
       pass/fail, seconds and bytes received. Failed pages are saved as a
       screenshot and text file in ./stealth-failures/.
 
 Settings come from the environment, then from the env file named by
 STEEL_ENV_FILE (default ~/nosync.nosync/-env/global.env): STEEL_URL,
-STEEL_API_KEY, EVOMI_RESIDENTIAL_PROXY_URL, EVOMI_PREMIUM_PROXY_URL.
+STEEL_API_KEY. The service owns Evomi Core credentials and sticky exits.
 Credentials are never printed.
 STEEL_CDP_BASE optionally selects a local WebSocket origin when running the
 same checks beside the deployed service.
@@ -44,10 +44,8 @@ import http.client
 import io
 import os
 import re
-import secrets
 import sys
 import time
-import threading
 import uuid
 import urllib.parse
 import urllib.error
@@ -58,7 +56,7 @@ if os.environ.get('STEEL_CLIENT', 'patchright') == 'patchright':
 else:
     from playwright.sync_api import sync_playwright, TimeoutError as NavigationTimeout
 
-NAMES = ('STEEL_URL', 'STEEL_API_KEY', 'EVOMI_RESIDENTIAL_PROXY_URL', 'EVOMI_PREMIUM_PROXY_URL')
+NAMES = ('STEEL_URL', 'STEEL_API_KEY')
 
 
 def load_settings():
@@ -77,7 +75,6 @@ def load_settings():
 
 S = load_settings()
 BASE, KEY = S['STEEL_URL'].rstrip('/'), S['STEEL_API_KEY']
-PROXY = {'core': S['EVOMI_RESIDENTIAL_PROXY_URL'], 'premium': S['EVOMI_PREMIUM_PROXY_URL'], 'none': None}
 
 CHALLENGE = ('ddos-guard', 'just a moment', 'checking your browser', 'access denied',
              'verify you are human', 'attention required', 'unusual traffic', 'are you a robot',
@@ -118,9 +115,6 @@ PROBE = r"""async () => {
 }"""
 
 
-_http = threading.local()
-
-
 def call(method, path, payload=None):
     """Retry reads, releases and keyed mutations after a dropped connection."""
     base = urllib.parse.urlsplit(BASE)
@@ -145,30 +139,6 @@ def call(method, path, payload=None):
             raise urllib.error.HTTPError(BASE + path, response.status, response.reason,
                                          response.headers, io.BytesIO(data))
         return json.loads(data or b'{}')
-
-
-def sticky(proxy_url):
-    """US exit that keeps one IP for as long as Evomi can (hardsession)."""
-    u = urllib.parse.urlsplit(proxy_url)
-    pw = f'{u.password}_country-US_hardsession-{secrets.token_hex(4)}'
-    return f'{u.scheme}://{u.username}:{pw}@{u.hostname}:{u.port}'
-
-
-def exit_timezone(proxy_url):
-    """Timezone of the proxy's exit IP, looked up through that proxy.
-
-    Steel's own lookup sometimes returns the server's timezone instead, so the
-    client passes the timezone explicitly.
-    """
-    # A short metered session keeps the preflight within the same byte ledger.
-    with Session('none', {'proxyUrl': proxy_url, 'timezone': 'UTC'}) as session:
-        navigate(session.page, 'https://ipwho.is/', timeout=45000)
-        data = json.loads(session.page.inner_text('body'))
-    zone = (data.get('timezone') or {}).get('id')
-    if not zone:
-        raise RuntimeError('Exit geolocation returned no timezone')
-    return zone
-
 
 
 class Session:
@@ -221,9 +191,9 @@ class Session:
                     raise RuntimeError('The original page no longer exists')
                 self.page.set_default_timeout(60000)
                 return self.page
-            except Exception:
+            except Exception as error:
                 if attempt == 2:
-                    raise
+                    raise RuntimeError(str(error).replace(KEY, '[redacted]')) from None
                 time.sleep(attempt + 1)
 
     def __exit__(self, *exc):
@@ -674,8 +644,8 @@ def main(argv):
         probe(json.loads(argv[2]) if len(argv) > 2 else {})
         return
     mode = argv[2] if len(argv) > 2 else 'core'
-    if mode not in PROXY:
-        sys.exit(f'mode must be one of {", ".join(PROXY)}')
+    if mode not in ('core', 'none'):
+        sys.exit('mode must be core or none')
     names = argv[3:] or list(ROUTES)
     results = [route(mode, n, Path('stealth-failures')) for n in names]
     print(f'\n{mode}: {results.count("PASS")}/{len(results)} passed')
