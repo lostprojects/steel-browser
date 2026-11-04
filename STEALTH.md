@@ -905,3 +905,113 @@ The two bandwidth approaches failed, so further optimization stopped under the o
 
 The challenge handler deliberately stops when its isolated read classifies a visual puzzle; its supported actions cover checkboxes and the labelled drag fixture. A new-exit retry can therefore receive another puzzle without solving it. The surviving 645.023-second reset measurement records a client transport failure, but lacks the socket trace needed to identify the peer that closed it. The former client’s 300-second retry intervals explain much of the elapsed time; they do not establish the underlying network cause.
 
+## Phase 4 completion and phase 5 measurements
+
+The continuation has a separate 500,000,000-byte residential ceiling. Its initial admin ledger is 164,452,862 bytes; concurrent collectors use the separate `mosaic` key. The accepted phase 3 route table remains the bandwidth baseline.
+
+The first local vault validation passed TypeScript and 30 tests, with two skipped, across six existing test files. The vault checks covered ciphertext, agent restrictions, reopen, tamper rejection and the RFC 6238 TOTP vector. A first typecheck used the repository root and printed compiler help; the next found an incorrect logger method name. The corrected code passed from `api/`. These checks establish no live site-login result.
+
+The first timed direct set began at 17:08 UTC on 4 November. Four Anna attempts passed from Railway address `35.171.92.125`, with an interstitial observed. Its temporary state and process were absent at 17:37 UTC, so those four attempts remain pilot observations. The acceptance set restarted with state under `.state/direct-soak`, which is removed after measurements are recorded here.
+
+### First direct batches, 4 November 2026
+
+The declared set began at 17:38 UTC. Railway egress was `35.171.92.125`. The first batches completed with Anna 19/20, Utah 20/20 and Newspapers 20/20; all used zero residential bytes. Anna sample 12 returned HTTP 502 and no payload. The runner pauses between batches for a production deploy, then continues the volume tests and remaining timed batches.
+
+| Route | Sample | Passed | Payloads | Seconds | Initial HTTP status | Interstitial observed |
+| --- | ---: | --- | ---: | ---: | ---: | --- |
+| annas | 1 | yes | 116 | 13.865 | 403 | yes |
+| annas | 2 | yes | 116 | 22.171 | 403 | yes |
+| annas | 3 | yes | 116 | 14.167 | 403 | yes |
+| annas | 4 | yes | 116 | 21.59 | 403 | yes |
+| annas | 5 | yes | 116 | 18.204 | 403 | yes |
+| annas | 6 | yes | 100 | 17.419 | 403 | yes |
+| annas | 7 | yes | 116 | 15.682 | 403 | yes |
+| annas | 8 | yes | 116 | 16.23 | 403 | yes |
+| annas | 9 | yes | 116 | 17.331 | 403 | yes |
+| annas | 10 | yes | 116 | 12.198 | 403 | yes |
+| annas | 11 | yes | 116 | 20.682 | 403 | yes |
+| annas | 12 | no | 0 | 60.691 | 502 | no |
+| annas | 13 | yes | 116 | 16.814 | 403 | yes |
+| annas | 14 | yes | 116 | 19.344 | 403 | yes |
+| annas | 15 | yes | 116 | 11.991 | 403 | yes |
+| annas | 16 | yes | 116 | 16.691 | 403 | yes |
+| annas | 17 | yes | 116 | 13.13 | 403 | yes |
+| annas | 18 | yes | 116 | 20.641 | 403 | yes |
+| annas | 19 | yes | 116 | 17.296 | 403 | yes |
+| annas | 20 | yes | 116 | 25.63 | 403 | yes |
+| udn | 1 | yes | 50 | 0.719 | 418 | no |
+| udn | 2 | yes | 50 | 0.711 | 418 | no |
+| udn | 3 | yes | 50 | 0.764 | 418 | no |
+| udn | 4 | yes | 50 | 0.77 | 418 | no |
+| udn | 5 | yes | 50 | 0.81 | 418 | no |
+| udn | 6 | yes | 50 | 0.794 | 418 | no |
+| udn | 7 | yes | 50 | 0.811 | 418 | no |
+| udn | 8 | yes | 50 | 0.713 | 418 | no |
+| udn | 9 | yes | 50 | 0.774 | 418 | no |
+| udn | 10 | yes | 50 | 0.751 | 418 | no |
+| udn | 11 | yes | 50 | 0.716 | 418 | no |
+| udn | 12 | yes | 50 | 0.747 | 418 | no |
+| udn | 13 | yes | 50 | 0.796 | 418 | no |
+| udn | 14 | yes | 50 | 0.77 | 418 | no |
+| udn | 15 | yes | 50 | 0.786 | 418 | no |
+| udn | 16 | yes | 50 | 0.765 | 418 | no |
+| udn | 17 | yes | 50 | 0.81 | 418 | no |
+| udn | 18 | yes | 50 | 0.774 | 418 | no |
+| udn | 19 | yes | 50 | 0.729 | 418 | no |
+| udn | 20 | yes | 50 | 0.74 | 418 | no |
+| newspapers | 1 | yes | 2 | 0.669 | — | no |
+| newspapers | 2 | yes | 2 | 0.635 | — | no |
+| newspapers | 3 | yes | 2 | 0.643 | — | no |
+| newspapers | 4 | yes | 2 | 0.74 | — | no |
+| newspapers | 5 | yes | 2 | 0.607 | — | no |
+| newspapers | 6 | yes | 2 | 0.593 | — | no |
+| newspapers | 7 | yes | 2 | 0.625 | — | no |
+| newspapers | 8 | yes | 2 | 0.611 | — | no |
+| newspapers | 9 | yes | 2 | 0.642 | — | no |
+| newspapers | 10 | yes | 2 | 0.62 | — | no |
+| newspapers | 11 | yes | 2 | 0.649 | — | no |
+| newspapers | 12 | yes | 2 | 0.592 | — | no |
+| newspapers | 13 | yes | 2 | 0.58 | — | no |
+| newspapers | 14 | yes | 2 | 0.636 | — | no |
+| newspapers | 15 | yes | 2 | 0.762 | — | no |
+| newspapers | 16 | yes | 2 | 0.744 | — | no |
+| newspapers | 17 | yes | 2 | 0.63 | — | no |
+| newspapers | 18 | yes | 2 | 0.638 | — | no |
+| newspapers | 19 | yes | 2 | 0.799 | — | no |
+| newspapers | 20 | yes | 2 | 0.921 | — | no |
+
+### Vault and login acceptance to this point
+
+The vault opened after deployment and imported three entries: Ancestry, Mary Ferrell and HathiTrust Google. A named collector key received metadata for all three and was denied a vault write. Two metadata responses and the inspected runtime log set contained zero known eight-character credential prefixes. Local vault checks cover encryption, authorization, reopening and tamper rejection. TypeScript passed; the latest focused files passed 22 tests with two skipped.
+
+The first Ancestry call with an attached CDP client timed out at 120 seconds and settled 114,470 bytes. Service-only attempts then reached a filled form but returned `form_did_not_advance`; one settled 868,829 bytes and the repeated observation settled 873,067 bytes. A form-inspection session settled 425,147 bytes; an external CDP inspection timed out and settled 65,795 bytes.
+
+After the first fix, Ancestry waited 122.435 seconds and returned `account_payload_missing`, with a disabled button and a retry control. That attempt settled 2,749,073 bytes. The second fix invokes the existing native challenge handler for verification inside the form; live verification remains pending. The fixed sticky identity used `172.56.26.250` initially and `98.121.197.204` later, showing that the provider can replace an exit while retaining its sticky identifier.
+
+Mary Ferrell signed in from the vault on a fresh identity without a device check. Its authenticated page showed My Membership and Sign Out; the session settled 1,860,995 bytes on `174.161.210.9`. A new canonical identity on `68.131.61.24` initially failed while the Python client remained attached (113,747 bytes). Detaching that client during service login and reattaching afterward passed, using 1,834,974 bytes. The migrated caller reads no Mary Ferrell credential fields and uses the same residential allocation for authenticated PDFs.
+
+The daily checker has recorded successful Mary Ferrell checks on both identities. The canonical identity’s first scheduled check settled 69,043 bytes. The seven-day observation remains pending. No Ancestry-family email, SMS or authenticator check has yet been reached, and no TOTP seed has been enrolled. Mailbox access was absent from the supplied environment.
+
+The canonical Mary Ferrell caller also passed release/reopen and an authenticated page read on `68.131.61.24`, settling 87,598 bytes. The first scheduled check on the earlier Mary Ferrell identity settled 69,316 bytes.
+
+### Forced direct failures and expiry
+
+| Route | Same-request escalation | Rung 3 result | Settled residential bytes | After expiry |
+| --- | --- | --- | ---: | --- |
+| Anna | Injected rung 2 failure, then rung 3 allocation failed | No session after 20.016 seconds | 1,818 | Rung 2 passed with 100 payloads in 13.051 seconds |
+| Utah | Injected rung 2 failure, then rung 3 passed | 50 payloads in 7.093 seconds, exit 98.238.208.246 | 201,356 | Rung 2 passed with 50 payloads in 5.595 seconds |
+| Newspapers | Injected rungs 1 and 2, then rung 3 passed | 2 form controls in 1.795 seconds, exit 76.171.18.175 | 907,358 | Rung 1 passed with 2 form controls in 0.396 seconds |
+
+Each table entry moved to rung 3 and was checked 17 seconds later under a 15-second test TTL. Utah and Newspapers returned to their configured direct rungs. Anna’s failed allocation made its escalation check fail, so its production start was returned to rung 3. A retry after the allocation-loop correction remains pending.
+
+The imported env service names without supplied passwords were `E_YEARBOOK_EMAIL`, `ACADEMIA_EMAIL`, `DPIA_EMAIL` and `INKITT_USERNAME`; no vault entries were invented for them. All original login env fields remain because Ancestry-family and HathiTrust callers have not completed migration. HathiTrust Google login is unimplemented; a Google check has not been observed.
+
+The second Ancestry fix returned `account_payload_missing` after 122.304 seconds on `98.121.197.204`, settling 2,233,799 bytes. The form still showed a disabled control and a retry label. Work on that failing item stopped after the two fixes. Newspapers and Fold3 new-device demands remain unobserved because the root login has not passed. Their CLI login commands now call the vault; their collection-session migration remains incomplete.
+
+Mary Ferrell survived the `447c2b4` production deployment on the same `68.131.61.24` exit. An intentional sign-out was confirmed, but automatic re-login then returned `account_payload_missing`; the authenticated request check consequently failed despite HTTP 200. This failed check is separate from the earlier successful fresh login and reopen.
+
+Anna’s post-fix escalation passed in one request: the injected rung 2 failure was followed by 116 payloads at rung 3 in 20.102 seconds on `71.117.146.211`. The transfer reported 2,227,454 bytes; the settled session total was 2,324,807. After the test TTL, rung 2 passed with 116 payloads in 14.517 seconds. Production remains configured at rung 3 while volume acceptance is pending.
+
+The canonical Bizapedia caller opened and released its new persistent identity successfully, settling 28,583 bytes. This check loaded no Bizapedia page and adds no bandwidth-acceptance pass.
+
+The Mary Ferrell post-deploy logout/relogin session settled 141,663 bytes. Two service-only observations also failed after 121.960 and 121.824 seconds, settling 83,210 and 84,097 bytes. A form inspection settled 69,100 bytes and confirmed visible username/password fields and an enabled SIGN IN button. The second fix activates Mary Ferrell’s primary tab before native input; its acceptance remains pending.

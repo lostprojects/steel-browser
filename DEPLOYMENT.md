@@ -104,6 +104,8 @@ Those persisted policy writes changed no Railway variables or volumes.
 
 ## Vault and automatic login
 
-`VAULT_KEY` is a 32-byte random key encoded as 64 hexadecimal characters. It is staged in Railway with `--skip-deploy` and stored in both local env files. Values are never printed. The existing `/data` volume holds the AES-256-GCM file `/data/vault`; no new volume is required. A missing or invalid key, or failed authentication of the encrypted file, leaves the vault locked.
+`VAULT_KEY` is a 32-byte random key encoded as 64 hexadecimal characters. It was staged with `--skip-deploy`, activated with the 4 November deployment, and stored in both local env files. Values are never printed. The existing `/data` volume holds the AES-256-GCM file `/data/vault`; no new volume is required. A missing or invalid key, or failed authentication of the encrypted file, leaves the vault locked.
 
 The login timer checks previously authenticated identities once per UTC day when the pool is idle. `/data/login-daily.json` prevents repeats across deployments; `/data/login-checks.jsonl` records the outcome, device-check classification and exit IP. `/data/logins.json` preserves each site's last successful login. The timer ends with the API process.
+
+The first vault deployment passed health and fresh quiet-session creation. Subsequent login fixes wait for an empty session list and an idle HTTP log window. The last verified service build is `447c2b4`; vault login acceptance remains incomplete. No volume was added.

@@ -50,4 +50,4 @@ The [commands example](repl/README.md) creates and releases its own session. Bui
 
 Apache 2.0, as upstream. See [LICENSE](LICENSE).
 
-The phase 5 candidate adds an encrypted vault, service-owned login flows and a daily authentication check. Live login and persistence acceptance remain pending; the vault's local checks passed. Consult USAGE.md for protected-identity restrictions.
+The encrypted vault and service-owned login flows are deployed. Mary Ferrell passed automatic login, release/reopen and authenticated page reading. Ancestry-family login acceptance remains incomplete. The direct-route tests run across 24 hours; Bizapedia remains above its bandwidth target. Consult STEALTH.md for measurements and USAGE.md for protected-identity restrictions.

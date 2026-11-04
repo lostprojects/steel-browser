@@ -75,3 +75,5 @@ Credentials use Node's AES-256-GCM in one encrypted volume file. Vault entries r
 Authenticated API requests remain on the profile's egress. A daily timer checks previously authenticated identities when the pool is free and records device checks and exit addresses across deployments. Live acceptance is recorded in STEALTH.md.
 
 Route expiry returns to the configured starting rung. Direct acceptance requests can set a maximum rung, and administrator failure injection exercises same-request escalation without changing another client’s network. The resumable `direct-soak` measurement command records four batches eight hours apart and 200 sequential reads per route.
+
+Mosaic’s Mary Ferrell caller now detaches its observing CDP client while the service signs in, then reattaches to the original page. This resolved the observed interference during login. Bizapedia’s caller has its own persistent identity; its bandwidth target remains unmet after two approaches.
