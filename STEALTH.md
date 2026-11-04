@@ -916,7 +916,7 @@ The first timed direct set began at 17:08 UTC on 4 November. Four Anna attempts 
 
 ### First direct batches, 4 November 2026
 
-The declared set began at 17:38 UTC. Railway egress was `35.171.92.125`. The first batches completed with Anna 19/20, Utah 20/20 and Newspapers 20/20; all used zero residential bytes. Anna sample 12 returned HTTP 502 and no payload. The runner pauses between batches for a production deploy, then continues the volume tests and remaining timed batches.
+The declared set began at 17:38 UTC. Railway egress was `35.171.92.125`. The first batches completed with Anna 19/20, Utah 20/20 and Newspapers 20/20; all used zero residential bytes. Anna sample 12 returned HTTP 502 and no payload. A production deploy followed this first set. The owner later removed the timed waiting requirement.
 
 | Route | Sample | Passed | Payloads | Seconds | Initial HTTP status | Interstitial observed |
 | --- | ---: | --- | ---: | ---: | ---: | --- |
@@ -987,7 +987,7 @@ The vault opened after deployment and imported three entries: Ancestry, Mary Fer
 
 The first Ancestry call with an attached CDP client timed out at 120 seconds and settled 114,470 bytes. Service-only attempts then reached a filled form but returned `form_did_not_advance`; one settled 868,829 bytes and the repeated observation settled 873,067 bytes. A form-inspection session settled 425,147 bytes; an external CDP inspection timed out and settled 65,795 bytes.
 
-After the first fix, Ancestry waited 122.435 seconds and returned `account_payload_missing`, with a disabled button and a retry control. That attempt settled 2,749,073 bytes. The second fix invokes the existing native challenge handler for verification inside the form; live verification remains pending. The fixed sticky identity used `172.56.26.250` initially and `98.121.197.204` later, showing that the provider can replace an exit while retaining its sticky identifier.
+After the first fix, Ancestry waited 122.435 seconds and returned `account_payload_missing`, with a disabled button and a retry control. That attempt settled 2,749,073 bytes. The second fix invokes the existing native challenge handler for verification inside the form; its failed live result is recorded below. The fixed sticky identity used `172.56.26.250` initially and `98.121.197.204` later, showing that the provider can replace an exit while retaining its sticky identifier.
 
 Mary Ferrell signed in from the vault on a fresh identity without a device check. Its authenticated page showed My Membership and Sign Out; the session settled 1,860,995 bytes on `174.161.210.9`. A new canonical identity on `68.131.61.24` initially failed while the Python client remained attached (113,747 bytes). Detaching that client during service login and reattaching afterward passed, using 1,834,974 bytes. The migrated caller reads no Mary Ferrell credential fields and uses the same residential allocation for authenticated PDFs.
 
@@ -1003,7 +1003,7 @@ The canonical Mary Ferrell caller also passed release/reopen and an authenticate
 | Utah | Injected rung 2 failure, then rung 3 passed | 50 payloads in 7.093 seconds, exit 98.238.208.246 | 201,356 | Rung 2 passed with 50 payloads in 5.595 seconds |
 | Newspapers | Injected rungs 1 and 2, then rung 3 passed | 2 form controls in 1.795 seconds, exit 76.171.18.175 | 907,358 | Rung 1 passed with 2 form controls in 0.396 seconds |
 
-Each table entry moved to rung 3 and was checked 17 seconds later under a 15-second test TTL. Utah and Newspapers returned to their configured direct rungs. Anna’s failed allocation made its escalation check fail, so its production start was returned to rung 3. A retry after the allocation-loop correction remains pending.
+Each table entry moved to rung 3 and was checked 17 seconds later under a 15-second test TTL. Utah and Newspapers returned to their configured direct rungs. Anna’s failed allocation made its escalation check fail, so its production start was returned to rung 3. The successful retry after the allocation-loop correction is recorded below.
 
 The imported env service names without supplied passwords were `E_YEARBOOK_EMAIL`, `ACADEMIA_EMAIL`, `DPIA_EMAIL` and `INKITT_USERNAME`; no vault entries were invented for them. All original login env fields remain because Ancestry-family and HathiTrust callers have not completed migration. HathiTrust Google login is unimplemented; a Google check has not been observed.
 
@@ -1015,7 +1015,7 @@ Anna’s post-fix escalation passed in one request: the injected rung 2 failure 
 
 The canonical Bizapedia caller opened and released its new persistent identity successfully, settling 28,583 bytes. This check loaded no Bizapedia page and adds no bandwidth-acceptance pass.
 
-The Mary Ferrell post-deploy logout/relogin session settled 141,663 bytes. Two service-only observations also failed after 121.960 and 121.824 seconds, settling 83,210 and 84,097 bytes. A form inspection settled 69,100 bytes and confirmed visible username/password fields and an enabled SIGN IN button. The second fix activates Mary Ferrell’s primary tab before native input; its acceptance remains pending.
+The Mary Ferrell post-deploy logout/relogin session settled 141,663 bytes. Two service-only observations also failed after 121.960 and 121.824 seconds, settling 83,210 and 84,097 bytes. A form inspection settled 69,100 bytes and confirmed visible username/password fields and an enabled SIGN IN button. The second fix activates Mary Ferrell’s primary tab before native input; its failed acceptance result is recorded below.
 
 Railway’s static outbound setting was read through the CLI on 4 November: disabled, with no assigned static addresses. The recorded direct observations have used `35.171.92.125`; this establishes the observed address, not a permanent assignment. Railway documents permanent outbound addresses as an optional service setting and says its current static offering balances traffic over multiple addresses ([Static Outbound IPs](https://docs.railway.com/networking/static-outbound-ips)). No networking setting was changed.
 
@@ -1025,7 +1025,7 @@ A repeated known-prefix scan covered two metadata responses and two deployment l
 
 ### Interrupted Anna volume attempt
 
-The first 13 pages all returned payloads from `35.171.92.125` on build `279f404`; page 1 showed a challenge. That fails the volume criterion, so Anna remains at rung 3. The run was interrupted to roll back a login adapter error; its observations remain below and in the resumable state. A full 200-page observation will still run.
+The first 13 pages all returned payloads from `35.171.92.125` on build `279f404`; page 1 showed a challenge. That fails the volume criterion, so Anna remains at rung 3. The run was interrupted to roll back a login adapter error. Its observations remain below; the later attempt stopped after 114 reads because the route had failed.
 
 | Page | Passed | Payloads | Seconds | Initial HTTP status | Challenge |
 | --- | --- | ---: | ---: | ---: | --- |
@@ -1043,19 +1043,19 @@ The first 13 pages all returned payloads from `35.171.92.125` on build `279f404`
 | 12 | yes | 116 | 3.534 | 200 | no |
 | 13 | yes | 116 | 2.22 | 200 | no |
 
-Mary Ferrell’s native-tab attempt initially returned HTTP 500 because the quiet-browser adapter lacked `bringToFront`. Production was rolled back to the verified `447c2b4` build after all sessions closed; health and a fresh quiet-session read passed. The missing adapter method was implemented, and the device-check flag was restricted to actual verification classifications. TypeScript and the two focused files passed 12 tests with two skipped. The completed second Mary Ferrell fix still needs its live result.
+Mary Ferrell’s native-tab attempt initially returned HTTP 500 because the quiet-browser adapter lacked `bringToFront`. Production was rolled back to the verified `447c2b4` build after all sessions closed; health and a fresh quiet-session read passed. The missing adapter method was implemented, and the device-check flag was restricted to actual verification classifications. TypeScript and the two focused files passed 12 tests with two skipped. Its failed live result is recorded below.
 
-The interrupted runner released its remote browser with zero residential bytes. Its local driver then stalled during disposal, so only that finite runner’s process group was ended after release. No collector session was terminated. The original batch start and all measurements remain preserved.
+The interrupted runner released its remote browser with zero residential bytes. Its local driver then stalled during disposal, so only that finite runner’s process group was ended after release. Only the acceptance runner’s local process group was explicitly ended. The original batch start and all measurements remain preserved.
 
 The completed quiet-adapter correction deployed as `b2da0b3` and passed health, vault-open and fresh quiet-session page reads. The resume helper also preserves an earlier batch’s completion timestamp instead of rewriting it when a stopped process resumes.
 
 The completed second Mary Ferrell fix still returned `account_payload_missing` on `68.131.61.24`. Its session settled 94,270 bytes over 614.683 seconds from creation to release; that duration includes the client’s waits and reconnection. The preceding adapter-error session settled 71,105 bytes. Work on automatic re-login stopped after the two fixes. Earlier successful sign-in and release/reopen/deploy observations do not establish reliable recovery after logout.
 
-Settled residential use through these checks is **55,028,288 bytes**: 52,437,072 on the administrative test key and 2,591,216 in identified acceptance and daily-check sessions on the collector key. Concurrent collector traffic is excluded. Only `VAULT_KEY` was added to Railway; no volume, proxy tier, static-IP or networking setting changed.
+Settled residential use through these checks is 55,028,288 bytes: 52,437,072 on the administrative test key and 2,591,216 in identified acceptance and daily-check sessions on the collector key. Concurrent collector traffic is excluded. Only `VAULT_KEY` was added to Railway; no volume, proxy tier, static-IP or networking setting changed.
 
 ### Resumed Anna volume observations
 
-This is the continuing 200-page attempt on `b2da0b3`; the first challenge already makes its acceptance fail. Railway egress remains `35.171.92.125`. The runner retains every later observation in `.state/direct-soak/state.json` until it can be reconciled here.
+This attempt on `b2da0b3` stopped at 114 reads after failing the challenge criterion. Railway egress was `35.171.92.125`. The remaining observations are reconciled below.
 
 | Read | Query | Page | Passed | Payloads | Seconds | Initial HTTP status | Challenge |
 | --- | --- | ---: | --- | ---: | ---: | ---: | --- |
@@ -1109,3 +1109,785 @@ This is the continuing 200-page attempt on `b2da0b3`; the first challenge alread
 | 48 | war | 8 | yes | 116 | 2.039 | 200 | no |
 | 49 | war | 9 | yes | 116 | 1.875 | 200 | no |
 | 50 | war | 10 | yes | 116 | 2.046 | 200 | no |
+
+### Immediate completion of the direct checks
+
+On 4 November the owner withdrew the 24-hour waiting requirement. The timed runner was stopped after releasing its browser with zero residential bytes. Anna had already failed, so it remains at rung 3. The remaining Utah and Newspapers checks ran back-to-back with collector pacing. Their completed results are recorded below.
+
+## Immediate direct-route result
+
+The 24-hour requirement was withdrawn by the owner. Remaining checks ran immediately, with Utah and Newspapers measured concurrently on separate browser sessions. These results establish the measured short-run behavior; long-term stability remains unverified.
+
+| Route | Batch passes, out of 20 each | Volume payload passes | Challenges observed | First 20 median, s | Last 20 median, s | P95, s |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| annas | 19 | 111/114 | 2 | 4.561 | 2.173 | 7.794 |
+| udn | 20, 20, 20, 20 | 200/200 | 0 | 1.289 | 1.627 | 1.716 |
+| newspapers | 20, 20, 19, 20 | 200/200 | 0 | 0.619 | 0.655 | 0.795 |
+
+All forced-escalation and expiry checks passed. Anna remains configured at rung 3 after its volume failure. The direct measurements used zero residential bytes. Observed Railway egress addresses: `35.171.92.125`.
+
+Newspapers batch 3 had one unavailable-page response with no form payload; its 19/20 result meets the batch threshold. The completed volume check had no failed payloads.
+
+Utah remains at starting rung 2 and the Newspapers sign-in page at rung 1. The initial batches used a fresh browser per read; after the API cache interruption, the remaining batches reused one browser per batch.
+
+The volume checks used one browser allocation per route and two seconds of parsing time between reads. Utah read search pages 1–200 for `war`, requesting 50 results per page; Newspapers repeated its sign-in form.
+
+| Route and batch | Started, UTC | Completed, UTC |
+| --- | --- | --- |
+| annas 1 | 2026-11-04T17:38:45.355584+00:00 | 2026-11-04T17:47:05.175234+00:00 |
+| newspapers 1 | 2026-11-04T17:48:55.818401+00:00 | 2026-11-04T17:50:29.060627+00:00 |
+| newspapers 2 | 2026-11-04T19:22:02.206548+00:00 | 2026-11-04T19:23:02.052732+00:00 |
+| newspapers 3 | 2026-11-04T19:23:02.053835+00:00 | 2026-11-04T19:23:57.135320+00:00 |
+| newspapers 4 | 2026-11-04T19:23:57.136108+00:00 | 2026-11-04T19:24:53.086534+00:00 |
+| udn 1 | 2026-11-04T17:47:05.175743+00:00 | 2026-11-04T17:48:55.817893+00:00 |
+| udn 2 | 2026-11-04T19:08:55.609168+00:00 | 2026-11-04T19:13:46.014678+00:00 |
+| udn 3 | 2026-11-04T19:13:46.015482+00:00 | 2026-11-04T19:14:40.005005+00:00 |
+| udn 4 | 2026-11-04T19:14:40.006555+00:00 | 2026-11-04T19:15:35.529399+00:00 |
+
+The first batches ran on `f019e09`; remaining completed batches ran on `b2da0b3`, satisfying the redeploy-between-batches check.
+
+The earlier 13-read interrupted Anna attempt also observed a challenge and remains recorded above. No further Anna batches were run after its failure. For HTTP probes, the challenge flag means a failed payload check; it includes unavailable-page responses and does not by itself identify a bot challenge.
+
+### Remaining Anna volume observations
+
+| Read | Time, UTC | Payloads | Seconds | HTTP status | Rung | Direct bytes reported | Challenge | Result |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| 51 | 2026-11-04T18:50:09.423960+00:00 | 116 | 4.564 | 200 | 2 | — | no | pass |
+| 52 | 2026-11-04T18:50:15.994160+00:00 | 116 | 1.899 | 200 | 2 | — | no | pass |
+| 53 | 2026-11-04T18:50:19.899232+00:00 | 116 | 2.004 | 200 | 2 | — | no | pass |
+| 54 | 2026-11-04T18:50:23.911056+00:00 | 116 | 1.889 | 200 | 2 | — | no | pass |
+| 55 | 2026-11-04T18:50:27.805569+00:00 | 116 | 1.947 | 200 | 2 | — | no | pass |
+| 56 | 2026-11-04T18:50:31.753990+00:00 | 116 | 1.863 | 200 | 2 | — | no | pass |
+| 57 | 2026-11-04T18:50:35.622072+00:00 | 116 | 1.892 | 200 | 2 | — | no | pass |
+| 58 | 2026-11-04T18:50:39.518624+00:00 | 116 | 1.863 | 200 | 2 | — | no | pass |
+| 59 | 2026-11-04T18:50:43.387545+00:00 | 116 | 2.09 | 200 | 2 | — | no | pass |
+| 60 | 2026-11-04T18:50:47.482737+00:00 | 116 | 4.716 | 200 | 2 | — | no | pass |
+| 61 | 2026-11-04T18:50:54.202267+00:00 | 116 | 1.754 | 200 | 2 | — | no | pass |
+| 62 | 2026-11-04T18:50:57.957791+00:00 | 116 | 1.866 | 200 | 2 | — | no | pass |
+| 63 | 2026-11-04T18:51:01.829130+00:00 | 116 | 1.838 | 200 | 2 | — | no | pass |
+| 64 | 2026-11-04T18:51:05.669620+00:00 | 116 | 1.98 | 200 | 2 | — | no | pass |
+| 65 | 2026-11-04T18:51:09.652850+00:00 | 116 | 4.424 | 200 | 2 | — | no | pass |
+| 66 | 2026-11-04T18:51:16.082821+00:00 | 116 | 1.997 | 200 | 2 | — | no | pass |
+| 67 | 2026-11-04T18:51:20.085204+00:00 | 116 | 2.142 | 200 | 2 | — | no | pass |
+| 68 | 2026-11-04T18:51:24.233382+00:00 | 116 | 2.116 | 200 | 2 | — | no | pass |
+| 69 | 2026-11-04T18:51:28.350937+00:00 | 116 | 3.746 | 200 | 2 | — | no | pass |
+| 70 | 2026-11-04T18:51:34.101847+00:00 | 116 | 3.253 | 200 | 2 | — | no | pass |
+| 71 | 2026-11-04T18:51:39.360548+00:00 | 116 | 1.893 | 200 | 2 | — | no | pass |
+| 72 | 2026-11-04T18:51:43.258773+00:00 | 116 | 3.614 | 200 | 2 | — | no | pass |
+| 73 | 2026-11-04T18:51:48.878317+00:00 | 116 | 2.032 | 200 | 2 | — | no | pass |
+| 74 | 2026-11-04T18:51:52.914954+00:00 | 116 | 1.73 | 200 | 2 | — | no | pass |
+| 75 | 2026-11-04T18:51:56.654673+00:00 | 116 | 1.992 | 200 | 2 | — | no | pass |
+| 76 | 2026-11-04T18:52:00.651045+00:00 | 116 | 1.664 | 200 | 2 | — | no | pass |
+| 77 | 2026-11-04T18:52:04.321277+00:00 | 116 | 4.434 | 200 | 2 | — | no | pass |
+| 78 | 2026-11-04T18:52:10.759946+00:00 | 116 | 2.1 | 200 | 2 | — | no | pass |
+| 79 | 2026-11-04T18:52:14.865219+00:00 | 116 | 1.784 | 200 | 2 | — | no | pass |
+| 80 | 2026-11-04T18:52:18.652717+00:00 | 116 | 3.56 | 200 | 2 | — | no | pass |
+| 81 | 2026-11-04T18:52:24.216515+00:00 | 116 | 2.496 | 200 | 2 | — | no | pass |
+| 82 | 2026-11-04T18:52:28.718030+00:00 | 116 | 5.035 | 200 | 2 | — | no | pass |
+| 83 | 2026-11-04T18:52:35.755876+00:00 | 116 | 2.109 | 200 | 2 | — | no | pass |
+| 84 | 2026-11-04T18:52:39.870121+00:00 | 116 | 2.638 | 200 | 2 | — | no | pass |
+| 85 | 2026-11-04T18:52:44.510670+00:00 | 116 | 2.031 | 200 | 2 | — | no | pass |
+| 86 | 2026-11-04T18:52:48.547703+00:00 | 116 | 1.9 | 200 | 2 | — | no | pass |
+| 87 | 2026-11-04T18:52:52.453360+00:00 | 116 | 3.786 | 200 | 2 | — | no | pass |
+| 88 | 2026-11-04T18:52:58.255466+00:00 | 116 | 2.407 | 200 | 2 | — | no | pass |
+| 89 | 2026-11-04T18:53:02.667323+00:00 | 116 | 9.821 | 403 | 2 | — | yes | pass |
+| 90 | 2026-11-04T18:53:14.492431+00:00 | 116 | 3.749 | 200 | 2 | — | no | pass |
+| 91 | 2026-11-04T18:53:20.246578+00:00 | 116 | 4.318 | 200 | 2 | — | no | pass |
+| 92 | 2026-11-04T18:53:26.568291+00:00 | 116 | 2.238 | 200 | 2 | — | no | pass |
+| 93 | 2026-11-04T18:53:30.810590+00:00 | 116 | 2.569 | 200 | 2 | — | no | pass |
+| 94 | 2026-11-04T18:53:35.384622+00:00 | 116 | 3.392 | 200 | 2 | — | no | pass |
+| 95 | 2026-11-04T18:53:40.782024+00:00 | 116 | 2.073 | 200 | 2 | — | no | pass |
+| 96 | 2026-11-04T18:53:44.856170+00:00 | 116 | 2.104 | 200 | 2 | — | no | pass |
+| 97 | 2026-11-04T18:53:48.966553+00:00 | 116 | 2.024 | 200 | 2 | — | no | pass |
+| 98 | 2026-11-04T18:53:52.996291+00:00 | 116 | 4.11 | 200 | 2 | — | no | pass |
+| 99 | 2026-11-04T18:53:59.112741+00:00 | 116 | 2.133 | 200 | 2 | — | no | pass |
+| 100 | 2026-11-04T18:54:03.248880+00:00 | 116 | 2.306 | 200 | 2 | — | no | pass |
+| 101 | 2026-11-04T18:54:07.559356+00:00 | 116 | 2.154 | 200 | 2 | — | no | pass |
+| 102 | 2026-11-04T18:54:11.719401+00:00 | 116 | 4.548 | 200 | 2 | — | no | pass |
+| 103 | 2026-11-04T18:54:18.272725+00:00 | 116 | 2.07 | 200 | 2 | — | no | pass |
+| 104 | 2026-11-04T18:54:22.346476+00:00 | 116 | 4.045 | 200 | 2 | — | no | pass |
+| 105 | 2026-11-04T18:54:28.396425+00:00 | 116 | 1.904 | 200 | 2 | — | no | pass |
+| 106 | 2026-11-04T18:54:32.302370+00:00 | 116 | 2.057 | 200 | 2 | — | no | pass |
+| 107 | 2026-11-04T18:54:36.364570+00:00 | 116 | 1.974 | 200 | 2 | — | no | pass |
+| 108 | 2026-11-04T18:54:40.344107+00:00 | 116 | 3.791 | 200 | 2 | — | no | pass |
+| 109 | 2026-11-04T18:54:46.137000+00:00 | 116 | 3.423 | 200 | 2 | — | no | pass |
+| 110 | 2026-11-04T18:54:51.564621+00:00 | 116 | 2.192 | 200 | 2 | — | no | pass |
+| 111 | 2026-11-04T18:54:55.761561+00:00 | 116 | 3.379 | 200 | 2 | — | no | pass |
+| 112 | 2026-11-04T18:55:01.143725+00:00 | 116 | 2.121 | 200 | 2 | — | no | pass |
+| 113 | 2026-11-04T18:55:05.267055+00:00 | 116 | 2.231 | 200 | 2 | — | no | pass |
+| 114 | 2026-11-04T18:55:09.499559+00:00 | 116 | 2.276 | 200 | 2 | — | no | pass |
+
+A prior Newspapers volume attempt returned 108 payloads before Steel rejected the next request with HTTP 429. The failure occurred at the API; its response body was not retained. The API’s 128-entry, ten-minute idempotency cache is the likely cause. A later diagnostic HTTP read passed. Read-only probes were changed to omit mutation-cache keys, and remaining batches reuse one browser session.
+
+### Interrupted Newspapers volume observations
+
+| Read | Time, UTC | Payloads | Seconds | HTTP status | Rung | Direct bytes reported | Challenge | Result |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| 1 | 2026-11-04T19:00:41.257783+00:00 | 2 | 0.637 | — | 1 | 613282 | no | pass |
+| 2 | 2026-11-04T19:00:43.940714+00:00 | 2 | 0.678 | — | 1 | 613282 | no | pass |
+| 3 | 2026-11-04T19:00:46.613678+00:00 | 2 | 0.668 | — | 1 | 613282 | no | pass |
+| 4 | 2026-11-04T19:00:49.299217+00:00 | 2 | 0.68 | — | 1 | 613285 | no | pass |
+| 5 | 2026-11-04T19:00:51.956326+00:00 | 2 | 0.654 | — | 1 | 613282 | no | pass |
+| 6 | 2026-11-04T19:00:54.579816+00:00 | 2 | 0.621 | — | 1 | 613282 | no | pass |
+| 7 | 2026-11-04T19:00:57.200887+00:00 | 2 | 0.617 | — | 1 | 613283 | no | pass |
+| 8 | 2026-11-04T19:00:59.886670+00:00 | 2 | 0.682 | — | 1 | 613282 | no | pass |
+| 9 | 2026-11-04T19:01:02.566212+00:00 | 2 | 0.678 | — | 1 | 613283 | no | pass |
+| 10 | 2026-11-04T19:01:05.189683+00:00 | 2 | 0.618 | — | 1 | 613284 | no | pass |
+| 11 | 2026-11-04T19:01:07.883790+00:00 | 2 | 0.693 | — | 1 | 613283 | no | pass |
+| 12 | 2026-11-04T19:01:10.550102+00:00 | 2 | 0.665 | — | 1 | 613283 | no | pass |
+| 13 | 2026-11-04T19:01:13.439668+00:00 | 2 | 0.886 | — | 1 | 613282 | no | pass |
+| 14 | 2026-11-04T19:01:16.058320+00:00 | 2 | 0.613 | — | 1 | 613283 | no | pass |
+| 15 | 2026-11-04T19:01:18.756169+00:00 | 2 | 0.693 | — | 1 | 613283 | no | pass |
+| 16 | 2026-11-04T19:01:21.364926+00:00 | 2 | 0.608 | — | 1 | 613282 | no | pass |
+| 17 | 2026-11-04T19:01:24.038944+00:00 | 2 | 0.669 | — | 1 | 613284 | no | pass |
+| 18 | 2026-11-04T19:01:26.639650+00:00 | 2 | 0.598 | — | 1 | 613283 | no | pass |
+| 19 | 2026-11-04T19:01:29.255208+00:00 | 2 | 0.611 | — | 1 | 613282 | no | pass |
+| 20 | 2026-11-04T19:01:31.915425+00:00 | 2 | 0.657 | — | 1 | 613284 | no | pass |
+| 21 | 2026-11-04T19:01:34.665805+00:00 | 2 | 0.745 | — | 1 | 613282 | no | pass |
+| 22 | 2026-11-04T19:01:37.296317+00:00 | 2 | 0.63 | — | 1 | 613283 | no | pass |
+| 23 | 2026-11-04T19:01:39.940443+00:00 | 2 | 0.643 | — | 1 | 613284 | no | pass |
+| 24 | 2026-11-04T19:01:42.548921+00:00 | 2 | 0.603 | — | 1 | 613283 | no | pass |
+| 25 | 2026-11-04T19:01:45.121873+00:00 | 2 | 0.572 | — | 1 | 613283 | no | pass |
+| 26 | 2026-11-04T19:01:47.813435+00:00 | 2 | 0.689 | — | 1 | 613282 | no | pass |
+| 27 | 2026-11-04T19:01:50.394242+00:00 | 2 | 0.575 | — | 1 | 613285 | no | pass |
+| 28 | 2026-11-04T19:01:53.002166+00:00 | 2 | 0.603 | — | 1 | 613285 | no | pass |
+| 29 | 2026-11-04T19:01:55.609513+00:00 | 2 | 0.602 | — | 1 | 613284 | no | pass |
+| 30 | 2026-11-04T19:01:58.197376+00:00 | 2 | 0.587 | — | 1 | 613283 | no | pass |
+| 31 | 2026-11-04T19:02:00.836188+00:00 | 2 | 0.633 | — | 1 | 613284 | no | pass |
+| 32 | 2026-11-04T19:02:03.442390+00:00 | 2 | 0.601 | — | 1 | 613282 | no | pass |
+| 33 | 2026-11-04T19:02:06.047637+00:00 | 2 | 0.6 | — | 1 | 613283 | no | pass |
+| 34 | 2026-11-04T19:02:08.640062+00:00 | 2 | 0.587 | — | 1 | 613282 | no | pass |
+| 35 | 2026-11-04T19:02:11.314501+00:00 | 2 | 0.669 | — | 1 | 613285 | no | pass |
+| 36 | 2026-11-04T19:02:13.900993+00:00 | 2 | 0.581 | — | 1 | 613282 | no | pass |
+| 37 | 2026-11-04T19:02:16.500144+00:00 | 2 | 0.594 | — | 1 | 613283 | no | pass |
+| 38 | 2026-11-04T19:02:19.146184+00:00 | 2 | 0.646 | — | 1 | 613284 | no | pass |
+| 39 | 2026-11-04T19:02:21.798713+00:00 | 2 | 0.651 | — | 1 | 613282 | no | pass |
+| 40 | 2026-11-04T19:02:24.382158+00:00 | 2 | 0.582 | — | 1 | 613284 | no | pass |
+| 41 | 2026-11-04T19:02:27.074528+00:00 | 2 | 0.687 | — | 1 | 613285 | no | pass |
+| 42 | 2026-11-04T19:02:29.678199+00:00 | 2 | 0.603 | — | 1 | 613285 | no | pass |
+| 43 | 2026-11-04T19:02:32.361968+00:00 | 2 | 0.679 | — | 1 | 613282 | no | pass |
+| 44 | 2026-11-04T19:02:34.974330+00:00 | 2 | 0.608 | — | 1 | 613284 | no | pass |
+| 45 | 2026-11-04T19:02:37.614738+00:00 | 2 | 0.639 | — | 1 | 613285 | no | pass |
+| 46 | 2026-11-04T19:02:40.179925+00:00 | 2 | 0.565 | — | 1 | 613283 | no | pass |
+| 47 | 2026-11-04T19:02:42.747540+00:00 | 2 | 0.564 | — | 1 | 613284 | no | pass |
+| 48 | 2026-11-04T19:02:45.356525+00:00 | 2 | 0.604 | — | 1 | 613283 | no | pass |
+| 49 | 2026-11-04T19:02:48.013042+00:00 | 2 | 0.653 | — | 1 | 613283 | no | pass |
+| 50 | 2026-11-04T19:02:50.626937+00:00 | 2 | 0.608 | — | 1 | 613283 | no | pass |
+| 51 | 2026-11-04T19:02:53.285146+00:00 | 2 | 0.655 | — | 1 | 613282 | no | pass |
+| 52 | 2026-11-04T19:02:55.930438+00:00 | 2 | 0.641 | — | 1 | 613284 | no | pass |
+| 53 | 2026-11-04T19:02:58.628140+00:00 | 2 | 0.692 | — | 1 | 613284 | no | pass |
+| 54 | 2026-11-04T19:03:01.265970+00:00 | 2 | 0.632 | — | 1 | 613285 | no | pass |
+| 55 | 2026-11-04T19:03:03.851992+00:00 | 2 | 0.585 | — | 1 | 613282 | no | pass |
+| 56 | 2026-11-04T19:03:06.678130+00:00 | 2 | 0.82 | — | 1 | 613284 | no | pass |
+| 57 | 2026-11-04T19:03:09.364073+00:00 | 2 | 0.68 | — | 1 | 613283 | no | pass |
+| 58 | 2026-11-04T19:03:11.980733+00:00 | 2 | 0.612 | — | 1 | 613282 | no | pass |
+| 59 | 2026-11-04T19:03:14.613294+00:00 | 2 | 0.631 | — | 1 | 613282 | no | pass |
+| 60 | 2026-11-04T19:03:17.272673+00:00 | 2 | 0.653 | — | 1 | 613283 | no | pass |
+| 61 | 2026-11-04T19:03:19.907660+00:00 | 2 | 0.634 | — | 1 | 613282 | no | pass |
+| 62 | 2026-11-04T19:03:22.612392+00:00 | 2 | 0.699 | — | 1 | 613282 | no | pass |
+| 63 | 2026-11-04T19:03:25.218335+00:00 | 2 | 0.6 | — | 1 | 613282 | no | pass |
+| 64 | 2026-11-04T19:03:27.861787+00:00 | 2 | 0.639 | — | 1 | 613283 | no | pass |
+| 65 | 2026-11-04T19:03:30.659538+00:00 | 2 | 0.796 | — | 1 | 613282 | no | pass |
+| 66 | 2026-11-04T19:03:33.293491+00:00 | 2 | 0.631 | — | 1 | 613284 | no | pass |
+| 67 | 2026-11-04T19:03:35.948594+00:00 | 2 | 0.649 | — | 1 | 613282 | no | pass |
+| 68 | 2026-11-04T19:03:38.724758+00:00 | 2 | 0.77 | — | 1 | 613283 | no | pass |
+| 69 | 2026-11-04T19:03:41.479120+00:00 | 2 | 0.748 | — | 1 | 613282 | no | pass |
+| 70 | 2026-11-04T19:03:44.123593+00:00 | 2 | 0.641 | — | 1 | 613282 | no | pass |
+| 71 | 2026-11-04T19:03:46.735763+00:00 | 2 | 0.61 | — | 1 | 613285 | no | pass |
+| 72 | 2026-11-04T19:03:49.359279+00:00 | 2 | 0.62 | — | 1 | 613282 | no | pass |
+| 73 | 2026-11-04T19:03:51.981446+00:00 | 2 | 0.617 | — | 1 | 613282 | no | pass |
+| 74 | 2026-11-04T19:03:54.635546+00:00 | 2 | 0.648 | — | 1 | 613283 | no | pass |
+| 75 | 2026-11-04T19:03:57.273171+00:00 | 2 | 0.636 | — | 1 | 613283 | no | pass |
+| 76 | 2026-11-04T19:04:00.047502+00:00 | 2 | 0.772 | — | 1 | 613283 | no | pass |
+| 77 | 2026-11-04T19:04:02.763511+00:00 | 2 | 0.71 | — | 1 | 613282 | no | pass |
+| 78 | 2026-11-04T19:04:05.397716+00:00 | 2 | 0.628 | — | 1 | 613284 | no | pass |
+| 79 | 2026-11-04T19:04:08.063296+00:00 | 2 | 0.663 | — | 1 | 613283 | no | pass |
+| 80 | 2026-11-04T19:04:10.679892+00:00 | 2 | 0.61 | — | 1 | 613284 | no | pass |
+| 81 | 2026-11-04T19:04:13.297434+00:00 | 2 | 0.615 | — | 1 | 613283 | no | pass |
+| 82 | 2026-11-04T19:04:15.917441+00:00 | 2 | 0.615 | — | 1 | 613282 | no | pass |
+| 83 | 2026-11-04T19:04:18.561190+00:00 | 2 | 0.638 | — | 1 | 613282 | no | pass |
+| 84 | 2026-11-04T19:04:21.212996+00:00 | 2 | 0.647 | — | 1 | 613284 | no | pass |
+| 85 | 2026-11-04T19:04:24.127377+00:00 | 2 | 0.911 | — | 1 | 613282 | no | pass |
+| 86 | 2026-11-04T19:04:26.778488+00:00 | 2 | 0.648 | — | 1 | 613283 | no | pass |
+| 87 | 2026-11-04T19:04:29.395481+00:00 | 2 | 0.615 | — | 1 | 613282 | no | pass |
+| 88 | 2026-11-04T19:04:32.043702+00:00 | 2 | 0.642 | — | 1 | 613282 | no | pass |
+| 89 | 2026-11-04T19:04:34.673961+00:00 | 2 | 0.624 | — | 1 | 613285 | no | pass |
+| 90 | 2026-11-04T19:04:37.280514+00:00 | 2 | 0.601 | — | 1 | 613282 | no | pass |
+| 91 | 2026-11-04T19:04:39.918506+00:00 | 2 | 0.632 | — | 1 | 613284 | no | pass |
+| 92 | 2026-11-04T19:04:42.558151+00:00 | 2 | 0.638 | — | 1 | 613283 | no | pass |
+| 93 | 2026-11-04T19:04:45.147429+00:00 | 2 | 0.585 | — | 1 | 613283 | no | pass |
+| 94 | 2026-11-04T19:04:47.808596+00:00 | 2 | 0.656 | — | 1 | 613282 | no | pass |
+| 95 | 2026-11-04T19:04:50.387233+00:00 | 2 | 0.573 | — | 1 | 613285 | no | pass |
+| 96 | 2026-11-04T19:04:53.001141+00:00 | 2 | 0.609 | — | 1 | 613285 | no | pass |
+| 97 | 2026-11-04T19:04:55.659013+00:00 | 2 | 0.652 | — | 1 | 613282 | no | pass |
+| 98 | 2026-11-04T19:04:58.451217+00:00 | 2 | 0.791 | — | 1 | 613284 | no | pass |
+| 99 | 2026-11-04T19:05:01.095054+00:00 | 2 | 0.639 | — | 1 | 613285 | no | pass |
+| 100 | 2026-11-04T19:05:03.710120+00:00 | 2 | 0.61 | — | 1 | 613283 | no | pass |
+| 101 | 2026-11-04T19:05:06.355224+00:00 | 2 | 0.64 | — | 1 | 613284 | no | pass |
+| 102 | 2026-11-04T19:05:09.014123+00:00 | 2 | 0.653 | — | 1 | 613282 | no | pass |
+| 103 | 2026-11-04T19:05:11.837146+00:00 | 2 | 0.821 | — | 1 | 613282 | no | pass |
+| 104 | 2026-11-04T19:05:14.513243+00:00 | 2 | 0.671 | — | 1 | 613284 | no | pass |
+| 105 | 2026-11-04T19:05:17.117704+00:00 | 2 | 0.601 | — | 1 | 613285 | no | pass |
+| 106 | 2026-11-04T19:05:19.725928+00:00 | 2 | 0.603 | — | 1 | 613283 | no | pass |
+| 107 | 2026-11-04T19:05:22.419360+00:00 | 2 | 0.687 | — | 1 | 613284 | no | pass |
+| 108 | 2026-11-04T19:05:25.073347+00:00 | 2 | 0.652 | — | 1 | 613283 | no | pass |
+
+### udn volume observations
+
+| Read | Time, UTC | Payloads | Seconds | HTTP status | Rung | Direct bytes reported | Challenge | Result |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| 1 | 2026-11-04T18:57:15.997523+00:00 | 100 | 4.767 | 418 | 2 | — | no | pass |
+| 2 | 2026-11-04T18:57:22.768622+00:00 | 100 | 1.38 | 200 | 2 | — | no | pass |
+| 3 | 2026-11-04T18:57:26.154840+00:00 | 100 | 1.364 | 200 | 2 | — | no | pass |
+| 4 | 2026-11-04T18:57:29.520465+00:00 | 100 | 1.23 | 200 | 2 | — | no | pass |
+| 5 | 2026-11-04T18:57:32.751609+00:00 | 100 | 1.27 | 200 | 2 | — | no | pass |
+| 6 | 2026-11-04T18:57:36.025358+00:00 | 100 | 1.269 | 200 | 2 | — | no | pass |
+| 7 | 2026-11-04T18:57:39.301306+00:00 | 100 | 1.465 | 200 | 2 | — | no | pass |
+| 8 | 2026-11-04T18:57:42.772997+00:00 | 100 | 1.308 | 200 | 2 | — | no | pass |
+| 9 | 2026-11-04T18:57:46.083841+00:00 | 100 | 1.416 | 200 | 2 | — | no | pass |
+| 10 | 2026-11-04T18:57:49.505512+00:00 | 100 | 1.234 | 200 | 2 | — | no | pass |
+| 11 | 2026-11-04T18:57:52.741777+00:00 | 100 | 1.363 | 200 | 2 | — | no | pass |
+| 12 | 2026-11-04T18:57:56.109989+00:00 | 100 | 1.231 | 200 | 2 | — | no | pass |
+| 13 | 2026-11-04T18:57:59.347769+00:00 | 100 | 1.211 | 200 | 2 | — | no | pass |
+| 14 | 2026-11-04T18:58:02.563417+00:00 | 100 | 1.245 | 200 | 2 | — | no | pass |
+| 15 | 2026-11-04T18:58:05.812914+00:00 | 100 | 1.27 | 200 | 2 | — | no | pass |
+| 16 | 2026-11-04T18:58:09.088850+00:00 | 100 | 1.368 | 200 | 2 | — | no | pass |
+| 17 | 2026-11-04T18:58:12.457504+00:00 | 100 | 1.412 | 200 | 2 | — | no | pass |
+| 18 | 2026-11-04T18:58:15.872546+00:00 | 100 | 1.211 | 200 | 2 | — | no | pass |
+| 19 | 2026-11-04T18:58:19.088104+00:00 | 100 | 1.247 | 200 | 2 | — | no | pass |
+| 20 | 2026-11-04T18:58:22.336889+00:00 | 100 | 1.465 | 200 | 2 | — | no | pass |
+| 21 | 2026-11-04T18:58:25.807410+00:00 | 100 | 1.206 | 200 | 2 | — | no | pass |
+| 22 | 2026-11-04T18:58:29.016875+00:00 | 100 | 1.235 | 200 | 2 | — | no | pass |
+| 23 | 2026-11-04T18:58:32.255327+00:00 | 100 | 1.269 | 200 | 2 | — | no | pass |
+| 24 | 2026-11-04T18:58:35.529635+00:00 | 100 | 1.249 | 200 | 2 | — | no | pass |
+| 25 | 2026-11-04T18:58:38.783776+00:00 | 100 | 1.303 | 200 | 2 | — | no | pass |
+| 26 | 2026-11-04T18:58:42.089014+00:00 | 100 | 1.294 | 200 | 2 | — | no | pass |
+| 27 | 2026-11-04T18:58:45.384458+00:00 | 100 | 1.219 | 200 | 2 | — | no | pass |
+| 28 | 2026-11-04T18:58:48.609340+00:00 | 100 | 1.352 | 200 | 2 | — | no | pass |
+| 29 | 2026-11-04T18:58:51.964112+00:00 | 100 | 1.224 | 200 | 2 | — | no | pass |
+| 30 | 2026-11-04T18:58:55.189063+00:00 | 100 | 1.3 | 200 | 2 | — | no | pass |
+| 31 | 2026-11-04T18:58:58.492766+00:00 | 100 | 1.207 | 200 | 2 | — | no | pass |
+| 32 | 2026-11-04T18:59:01.701081+00:00 | 100 | 1.246 | 200 | 2 | — | no | pass |
+| 33 | 2026-11-04T18:59:04.951115+00:00 | 100 | 1.304 | 200 | 2 | — | no | pass |
+| 34 | 2026-11-04T18:59:08.260826+00:00 | 100 | 1.255 | 200 | 2 | — | no | pass |
+| 35 | 2026-11-04T18:59:11.521872+00:00 | 100 | 1.265 | 200 | 2 | — | no | pass |
+| 36 | 2026-11-04T18:59:14.789820+00:00 | 100 | 1.233 | 200 | 2 | — | no | pass |
+| 37 | 2026-11-04T18:59:18.026050+00:00 | 100 | 1.362 | 200 | 2 | — | no | pass |
+| 38 | 2026-11-04T18:59:21.393581+00:00 | 100 | 1.37 | 200 | 2 | — | no | pass |
+| 39 | 2026-11-04T18:59:24.767652+00:00 | 100 | 1.42 | 200 | 2 | — | no | pass |
+| 40 | 2026-11-04T18:59:28.189052+00:00 | 100 | 1.434 | 200 | 2 | — | no | pass |
+| 41 | 2026-11-04T18:59:31.626010+00:00 | 100 | 1.379 | 200 | 2 | — | no | pass |
+| 42 | 2026-11-04T18:59:35.010638+00:00 | 100 | 1.65 | 200 | 2 | — | no | pass |
+| 43 | 2026-11-04T18:59:38.663708+00:00 | 100 | 1.444 | 200 | 2 | — | no | pass |
+| 44 | 2026-11-04T18:59:42.113492+00:00 | 100 | 1.336 | 200 | 2 | — | no | pass |
+| 45 | 2026-11-04T18:59:45.453839+00:00 | 100 | 1.317 | 200 | 2 | — | no | pass |
+| 46 | 2026-11-04T18:59:48.776104+00:00 | 100 | 1.344 | 200 | 2 | — | no | pass |
+| 47 | 2026-11-04T18:59:52.125888+00:00 | 100 | 1.287 | 200 | 2 | — | no | pass |
+| 48 | 2026-11-04T18:59:55.413864+00:00 | 100 | 1.351 | 200 | 2 | — | no | pass |
+| 49 | 2026-11-04T18:59:58.770787+00:00 | 100 | 1.371 | 200 | 2 | — | no | pass |
+| 50 | 2026-11-04T19:00:02.147365+00:00 | 100 | 1.522 | 200 | 2 | — | no | pass |
+| 51 | 2026-11-04T19:00:05.674728+00:00 | 100 | 1.286 | 200 | 2 | — | no | pass |
+| 52 | 2026-11-04T19:00:08.966031+00:00 | 100 | 1.41 | 200 | 2 | — | no | pass |
+| 53 | 2026-11-04T19:00:12.381283+00:00 | 100 | 2.761 | 200 | 2 | — | no | pass |
+| 54 | 2026-11-04T19:00:17.144686+00:00 | 100 | 1.98 | 200 | 2 | — | no | pass |
+| 55 | 2026-11-04T19:00:21.125854+00:00 | 100 | 1.251 | 200 | 2 | — | no | pass |
+| 56 | 2026-11-04T19:00:24.382672+00:00 | 100 | 1.337 | 200 | 2 | — | no | pass |
+| 57 | 2026-11-04T19:00:27.720807+00:00 | 100 | 1.255 | 200 | 2 | — | no | pass |
+| 58 | 2026-11-04T19:00:30.980058+00:00 | 100 | 1.316 | 200 | 2 | — | no | pass |
+| 59 | 2026-11-04T19:00:34.301810+00:00 | 100 | 1.561 | 200 | 2 | — | no | pass |
+| 60 | 2026-11-04T19:00:37.867133+00:00 | 100 | 1.311 | 200 | 2 | — | no | pass |
+| 61 | 2026-11-04T19:00:41.179277+00:00 | 100 | 1.468 | 200 | 2 | — | no | pass |
+| 62 | 2026-11-04T19:00:44.653183+00:00 | 100 | 1.457 | 200 | 2 | — | no | pass |
+| 63 | 2026-11-04T19:00:48.115097+00:00 | 100 | 1.449 | 200 | 2 | — | no | pass |
+| 64 | 2026-11-04T19:00:51.567442+00:00 | 100 | 1.336 | 200 | 2 | — | no | pass |
+| 65 | 2026-11-04T19:00:54.908573+00:00 | 100 | 1.257 | 200 | 2 | — | no | pass |
+| 66 | 2026-11-04T19:00:58.171435+00:00 | 100 | 1.365 | 200 | 2 | — | no | pass |
+| 67 | 2026-11-04T19:01:01.542177+00:00 | 100 | 1.406 | 200 | 2 | — | no | pass |
+| 68 | 2026-11-04T19:01:04.954022+00:00 | 100 | 1.338 | 200 | 2 | — | no | pass |
+| 69 | 2026-11-04T19:01:08.297767+00:00 | 100 | 1.325 | 200 | 2 | — | no | pass |
+| 70 | 2026-11-04T19:01:11.627340+00:00 | 100 | 1.289 | 200 | 2 | — | no | pass |
+| 71 | 2026-11-04T19:01:14.922287+00:00 | 100 | 1.633 | 200 | 2 | — | no | pass |
+| 72 | 2026-11-04T19:01:18.560596+00:00 | 100 | 1.271 | 200 | 2 | — | no | pass |
+| 73 | 2026-11-04T19:01:21.832756+00:00 | 100 | 1.329 | 200 | 2 | — | no | pass |
+| 74 | 2026-11-04T19:01:25.167560+00:00 | 100 | 1.648 | 200 | 2 | — | no | pass |
+| 75 | 2026-11-04T19:01:28.820133+00:00 | 100 | 1.561 | 200 | 2 | — | no | pass |
+| 76 | 2026-11-04T19:01:32.386271+00:00 | 100 | 1.352 | 200 | 2 | — | no | pass |
+| 77 | 2026-11-04T19:01:35.742095+00:00 | 100 | 1.412 | 200 | 2 | — | no | pass |
+| 78 | 2026-11-04T19:01:39.159907+00:00 | 100 | 1.471 | 200 | 2 | — | no | pass |
+| 79 | 2026-11-04T19:01:42.636148+00:00 | 100 | 1.307 | 200 | 2 | — | no | pass |
+| 80 | 2026-11-04T19:01:45.949011+00:00 | 100 | 1.355 | 200 | 2 | — | no | pass |
+| 81 | 2026-11-04T19:01:49.309432+00:00 | 100 | 1.345 | 200 | 2 | — | no | pass |
+| 82 | 2026-11-04T19:01:52.659386+00:00 | 100 | 1.279 | 200 | 2 | — | no | pass |
+| 83 | 2026-11-04T19:01:55.944550+00:00 | 100 | 1.34 | 200 | 2 | — | no | pass |
+| 84 | 2026-11-04T19:01:59.289206+00:00 | 100 | 1.496 | 200 | 2 | — | no | pass |
+| 85 | 2026-11-04T19:02:02.790982+00:00 | 100 | 1.362 | 200 | 2 | — | no | pass |
+| 86 | 2026-11-04T19:02:06.155541+00:00 | 100 | 1.332 | 200 | 2 | — | no | pass |
+| 87 | 2026-11-04T19:02:09.492286+00:00 | 100 | 1.426 | 200 | 2 | — | no | pass |
+| 88 | 2026-11-04T19:02:12.924421+00:00 | 100 | 1.385 | 200 | 2 | — | no | pass |
+| 89 | 2026-11-04T19:02:16.311612+00:00 | 100 | 1.454 | 200 | 2 | — | no | pass |
+| 90 | 2026-11-04T19:02:19.771471+00:00 | 100 | 1.335 | 200 | 2 | — | no | pass |
+| 91 | 2026-11-04T19:02:23.112469+00:00 | 100 | 1.514 | 200 | 2 | — | no | pass |
+| 92 | 2026-11-04T19:02:26.631733+00:00 | 100 | 1.361 | 200 | 2 | — | no | pass |
+| 93 | 2026-11-04T19:02:29.995995+00:00 | 100 | 1.394 | 200 | 2 | — | no | pass |
+| 94 | 2026-11-04T19:02:33.395858+00:00 | 100 | 1.298 | 200 | 2 | — | no | pass |
+| 95 | 2026-11-04T19:02:36.699115+00:00 | 100 | 1.349 | 200 | 2 | — | no | pass |
+| 96 | 2026-11-04T19:02:40.050594+00:00 | 100 | 1.38 | 200 | 2 | — | no | pass |
+| 97 | 2026-11-04T19:02:43.436827+00:00 | 100 | 1.407 | 200 | 2 | — | no | pass |
+| 98 | 2026-11-04T19:02:46.849972+00:00 | 100 | 1.443 | 200 | 2 | — | no | pass |
+| 99 | 2026-11-04T19:02:50.298069+00:00 | 100 | 1.573 | 200 | 2 | — | no | pass |
+| 100 | 2026-11-04T19:02:53.877089+00:00 | 100 | 1.358 | 200 | 2 | — | no | pass |
+| 101 | 2026-11-04T19:02:57.240861+00:00 | 100 | 1.471 | 200 | 2 | — | no | pass |
+| 102 | 2026-11-04T19:03:00.719217+00:00 | 100 | 1.371 | 200 | 2 | — | no | pass |
+| 103 | 2026-11-04T19:03:04.093048+00:00 | 100 | 1.561 | 200 | 2 | — | no | pass |
+| 104 | 2026-11-04T19:03:07.659313+00:00 | 100 | 1.397 | 200 | 2 | — | no | pass |
+| 105 | 2026-11-04T19:03:11.060886+00:00 | 100 | 1.481 | 200 | 2 | — | no | pass |
+| 106 | 2026-11-04T19:03:14.548240+00:00 | 100 | 1.418 | 200 | 2 | — | no | pass |
+| 107 | 2026-11-04T19:03:17.969036+00:00 | 100 | 1.377 | 200 | 2 | — | no | pass |
+| 108 | 2026-11-04T19:03:21.349507+00:00 | 100 | 1.473 | 200 | 2 | — | no | pass |
+| 109 | 2026-11-04T19:03:24.825506+00:00 | 100 | 1.689 | 200 | 2 | — | no | pass |
+| 110 | 2026-11-04T19:03:28.521299+00:00 | 100 | 1.383 | 200 | 2 | — | no | pass |
+| 111 | 2026-11-04T19:03:31.905142+00:00 | 100 | 1.698 | 200 | 2 | — | no | pass |
+| 112 | 2026-11-04T19:03:35.610198+00:00 | 100 | 1.347 | 200 | 2 | — | no | pass |
+| 113 | 2026-11-04T19:03:38.963712+00:00 | 100 | 1.416 | 200 | 2 | — | no | pass |
+| 114 | 2026-11-04T19:03:42.385908+00:00 | 100 | 1.4 | 200 | 2 | — | no | pass |
+| 115 | 2026-11-04T19:03:45.792947+00:00 | 100 | 1.329 | 200 | 2 | — | no | pass |
+| 116 | 2026-11-04T19:03:49.126030+00:00 | 100 | 1.392 | 200 | 2 | — | no | pass |
+| 117 | 2026-11-04T19:03:52.520976+00:00 | 100 | 1.338 | 200 | 2 | — | no | pass |
+| 118 | 2026-11-04T19:03:55.862611+00:00 | 100 | 1.571 | 200 | 2 | — | no | pass |
+| 119 | 2026-11-04T19:03:59.440405+00:00 | 100 | 1.434 | 200 | 2 | — | no | pass |
+| 120 | 2026-11-04T19:04:02.879923+00:00 | 100 | 1.413 | 200 | 2 | — | no | pass |
+| 121 | 2026-11-04T19:04:06.298718+00:00 | 100 | 1.409 | 200 | 2 | — | no | pass |
+| 122 | 2026-11-04T19:04:09.715466+00:00 | 100 | 1.37 | 200 | 2 | — | no | pass |
+| 123 | 2026-11-04T19:04:13.089439+00:00 | 100 | 1.467 | 200 | 2 | — | no | pass |
+| 124 | 2026-11-04T19:04:16.558213+00:00 | 100 | 1.504 | 200 | 2 | — | no | pass |
+| 125 | 2026-11-04T19:04:20.064350+00:00 | 100 | 1.483 | 200 | 2 | — | no | pass |
+| 126 | 2026-11-04T19:04:23.550487+00:00 | 100 | 1.341 | 200 | 2 | — | no | pass |
+| 127 | 2026-11-04T19:04:26.897766+00:00 | 100 | 1.427 | 200 | 2 | — | no | pass |
+| 128 | 2026-11-04T19:04:30.331799+00:00 | 100 | 1.575 | 200 | 2 | — | no | pass |
+| 129 | 2026-11-04T19:04:33.911440+00:00 | 100 | 1.414 | 200 | 2 | — | no | pass |
+| 130 | 2026-11-04T19:04:37.331153+00:00 | 100 | 1.471 | 200 | 2 | — | no | pass |
+| 131 | 2026-11-04T19:04:40.806920+00:00 | 100 | 1.455 | 200 | 2 | — | no | pass |
+| 132 | 2026-11-04T19:04:44.268110+00:00 | 100 | 1.481 | 200 | 2 | — | no | pass |
+| 133 | 2026-11-04T19:04:47.755186+00:00 | 100 | 1.642 | 200 | 2 | — | no | pass |
+| 134 | 2026-11-04T19:04:51.404670+00:00 | 100 | 1.718 | 200 | 2 | — | no | pass |
+| 135 | 2026-11-04T19:04:55.125328+00:00 | 100 | 1.515 | 200 | 2 | — | no | pass |
+| 136 | 2026-11-04T19:04:58.645713+00:00 | 100 | 1.486 | 200 | 2 | — | no | pass |
+| 137 | 2026-11-04T19:05:02.137864+00:00 | 100 | 1.677 | 200 | 2 | — | no | pass |
+| 138 | 2026-11-04T19:05:05.821796+00:00 | 100 | 1.543 | 200 | 2 | — | no | pass |
+| 139 | 2026-11-04T19:05:09.369902+00:00 | 100 | 1.613 | 200 | 2 | — | no | pass |
+| 140 | 2026-11-04T19:05:12.984562+00:00 | 100 | 1.594 | 200 | 2 | — | no | pass |
+| 141 | 2026-11-04T19:05:16.583866+00:00 | 100 | 1.611 | 200 | 2 | — | no | pass |
+| 142 | 2026-11-04T19:05:20.201307+00:00 | 100 | 1.602 | 200 | 2 | — | no | pass |
+| 143 | 2026-11-04T19:05:23.810756+00:00 | 100 | 1.664 | 200 | 2 | — | no | pass |
+| 144 | 2026-11-04T19:05:27.476723+00:00 | 100 | 1.623 | 200 | 2 | — | no | pass |
+| 145 | 2026-11-04T19:05:31.105694+00:00 | 100 | 1.576 | 200 | 2 | — | no | pass |
+| 146 | 2026-11-04T19:05:34.688675+00:00 | 100 | 1.526 | 200 | 2 | — | no | pass |
+| 147 | 2026-11-04T19:05:38.220763+00:00 | 100 | 1.659 | 200 | 2 | — | no | pass |
+| 148 | 2026-11-04T19:05:41.886088+00:00 | 100 | 1.571 | 200 | 2 | — | no | pass |
+| 149 | 2026-11-04T19:05:45.462643+00:00 | 100 | 1.542 | 200 | 2 | — | no | pass |
+| 150 | 2026-11-04T19:05:49.007735+00:00 | 100 | 1.523 | 200 | 2 | — | no | pass |
+| 151 | 2026-11-04T19:05:52.536811+00:00 | 100 | 1.556 | 200 | 2 | — | no | pass |
+| 152 | 2026-11-04T19:05:56.098517+00:00 | 100 | 1.515 | 200 | 2 | — | no | pass |
+| 153 | 2026-11-04T19:05:59.620146+00:00 | 100 | 1.595 | 200 | 2 | — | no | pass |
+| 154 | 2026-11-04T19:06:03.220884+00:00 | 100 | 1.984 | 200 | 2 | — | no | pass |
+| 155 | 2026-11-04T19:06:07.208631+00:00 | 100 | 1.588 | 200 | 2 | — | no | pass |
+| 156 | 2026-11-04T19:06:10.800723+00:00 | 100 | 1.488 | 200 | 2 | — | no | pass |
+| 157 | 2026-11-04T19:06:14.291781+00:00 | 100 | 1.506 | 200 | 2 | — | no | pass |
+| 158 | 2026-11-04T19:06:17.801116+00:00 | 100 | 1.583 | 200 | 2 | — | no | pass |
+| 159 | 2026-11-04T19:06:21.390319+00:00 | 100 | 1.462 | 200 | 2 | — | no | pass |
+| 160 | 2026-11-04T19:06:24.858455+00:00 | 100 | 1.524 | 200 | 2 | — | no | pass |
+| 161 | 2026-11-04T19:06:28.385507+00:00 | 100 | 1.534 | 200 | 2 | — | no | pass |
+| 162 | 2026-11-04T19:06:31.922201+00:00 | 100 | 1.652 | 200 | 2 | — | no | pass |
+| 163 | 2026-11-04T19:06:35.580107+00:00 | 100 | 1.519 | 200 | 2 | — | no | pass |
+| 164 | 2026-11-04T19:06:39.103415+00:00 | 100 | 1.589 | 200 | 2 | — | no | pass |
+| 165 | 2026-11-04T19:06:42.698217+00:00 | 100 | 1.558 | 200 | 2 | — | no | pass |
+| 166 | 2026-11-04T19:06:46.258642+00:00 | 100 | 1.863 | 200 | 2 | — | no | pass |
+| 167 | 2026-11-04T19:06:50.126785+00:00 | 100 | 1.814 | 200 | 2 | — | no | pass |
+| 168 | 2026-11-04T19:06:53.946689+00:00 | 100 | 1.698 | 200 | 2 | — | no | pass |
+| 169 | 2026-11-04T19:06:57.652216+00:00 | 100 | 1.765 | 200 | 2 | — | no | pass |
+| 170 | 2026-11-04T19:07:01.421698+00:00 | 100 | 1.583 | 200 | 2 | — | no | pass |
+| 171 | 2026-11-04T19:07:05.010067+00:00 | 100 | 1.649 | 200 | 2 | — | no | pass |
+| 172 | 2026-11-04T19:07:08.666913+00:00 | 100 | 1.499 | 200 | 2 | — | no | pass |
+| 173 | 2026-11-04T19:07:12.171667+00:00 | 100 | 1.564 | 200 | 2 | — | no | pass |
+| 174 | 2026-11-04T19:07:15.740532+00:00 | 100 | 1.619 | 200 | 2 | — | no | pass |
+| 175 | 2026-11-04T19:07:19.360925+00:00 | 100 | 1.617 | 200 | 2 | — | no | pass |
+| 176 | 2026-11-04T19:07:22.984618+00:00 | 100 | 1.716 | 200 | 2 | — | no | pass |
+| 177 | 2026-11-04T19:07:26.706741+00:00 | 100 | 1.607 | 200 | 2 | — | no | pass |
+| 178 | 2026-11-04T19:07:30.320321+00:00 | 100 | 1.591 | 200 | 2 | — | no | pass |
+| 179 | 2026-11-04T19:07:33.917185+00:00 | 100 | 1.547 | 200 | 2 | — | no | pass |
+| 180 | 2026-11-04T19:07:37.470220+00:00 | 100 | 1.546 | 200 | 2 | — | no | pass |
+| 181 | 2026-11-04T19:07:41.018705+00:00 | 100 | 1.618 | 200 | 2 | — | no | pass |
+| 182 | 2026-11-04T19:07:44.641763+00:00 | 100 | 1.685 | 200 | 2 | — | no | pass |
+| 183 | 2026-11-04T19:07:48.332837+00:00 | 100 | 1.528 | 200 | 2 | — | no | pass |
+| 184 | 2026-11-04T19:07:51.867796+00:00 | 100 | 1.503 | 200 | 2 | — | no | pass |
+| 185 | 2026-11-04T19:07:55.377844+00:00 | 100 | 1.589 | 200 | 2 | — | no | pass |
+| 186 | 2026-11-04T19:07:58.970176+00:00 | 100 | 1.529 | 200 | 2 | — | no | pass |
+| 187 | 2026-11-04T19:08:02.501506+00:00 | 100 | 1.776 | 200 | 2 | — | no | pass |
+| 188 | 2026-11-04T19:08:06.283405+00:00 | 100 | 1.649 | 200 | 2 | — | no | pass |
+| 189 | 2026-11-04T19:08:09.939033+00:00 | 100 | 1.751 | 200 | 2 | — | no | pass |
+| 190 | 2026-11-04T19:08:13.697470+00:00 | 100 | 1.716 | 200 | 2 | — | no | pass |
+| 191 | 2026-11-04T19:08:17.418043+00:00 | 100 | 1.636 | 200 | 2 | — | no | pass |
+| 192 | 2026-11-04T19:08:21.060076+00:00 | 100 | 1.54 | 200 | 2 | — | no | pass |
+| 193 | 2026-11-04T19:08:24.605455+00:00 | 100 | 1.698 | 200 | 2 | — | no | pass |
+| 194 | 2026-11-04T19:08:28.310331+00:00 | 100 | 1.604 | 200 | 2 | — | no | pass |
+| 195 | 2026-11-04T19:08:31.917224+00:00 | 100 | 1.675 | 200 | 2 | — | no | pass |
+| 196 | 2026-11-04T19:08:35.599154+00:00 | 100 | 1.708 | 200 | 2 | — | no | pass |
+| 197 | 2026-11-04T19:08:39.312709+00:00 | 100 | 1.716 | 200 | 2 | — | no | pass |
+| 198 | 2026-11-04T19:08:43.033471+00:00 | 100 | 1.567 | 200 | 2 | — | no | pass |
+| 199 | 2026-11-04T19:08:46.605150+00:00 | 100 | 1.521 | 200 | 2 | — | no | pass |
+| 200 | 2026-11-04T19:08:50.129799+00:00 | 100 | 1.607 | 200 | 2 | — | no | pass |
+
+### udn batch 2
+
+| Read | Time, UTC | Payloads | Seconds | HTTP status | Rung | Direct bytes reported | Challenge | Result |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| 1 | 2026-11-04T19:08:57.388171+00:00 | 50 | 0.761 | 418 | 2 | — | no | pass |
+| 2 | 2026-11-04T19:09:02.122986+00:00 | 50 | 0.837 | 418 | 2 | — | no | pass |
+| 3 | 2026-11-04T19:09:06.985654+00:00 | 50 | 0.783 | 418 | 2 | — | no | pass |
+| 4 | 2026-11-04T19:09:11.838113+00:00 | 50 | 0.77 | 418 | 2 | — | no | pass |
+| 5 | 2026-11-04T19:09:16.618944+00:00 | 50 | 0.833 | 418 | 2 | — | no | pass |
+| 6 | 2026-11-04T19:09:21.460812+00:00 | 50 | 0.919 | 418 | 2 | — | no | pass |
+| 7 | 2026-11-04T19:13:09.480357+00:00 | 50 | 0.824 | 418 | 2 | — | no | pass |
+| 8 | 2026-11-04T19:13:12.311992+00:00 | 50 | 0.548 | 200 | 2 | — | no | pass |
+| 9 | 2026-11-04T19:13:14.866316+00:00 | 50 | 0.541 | 200 | 2 | — | no | pass |
+| 10 | 2026-11-04T19:13:17.410770+00:00 | 50 | 0.56 | 200 | 2 | — | no | pass |
+| 11 | 2026-11-04T19:13:19.977559+00:00 | 50 | 0.561 | 200 | 2 | — | no | pass |
+| 12 | 2026-11-04T19:13:22.545384+00:00 | 50 | 0.563 | 200 | 2 | — | no | pass |
+| 13 | 2026-11-04T19:13:25.114736+00:00 | 50 | 0.589 | 200 | 2 | — | no | pass |
+| 14 | 2026-11-04T19:13:27.711066+00:00 | 50 | 0.577 | 200 | 2 | — | no | pass |
+| 15 | 2026-11-04T19:13:30.294245+00:00 | 50 | 0.573 | 200 | 2 | — | no | pass |
+| 16 | 2026-11-04T19:13:32.874927+00:00 | 50 | 0.579 | 200 | 2 | — | no | pass |
+| 17 | 2026-11-04T19:13:35.462292+00:00 | 50 | 0.573 | 200 | 2 | — | no | pass |
+| 18 | 2026-11-04T19:13:38.041342+00:00 | 50 | 0.553 | 200 | 2 | — | no | pass |
+| 19 | 2026-11-04T19:13:40.602289+00:00 | 50 | 0.589 | 200 | 2 | — | no | pass |
+| 20 | 2026-11-04T19:13:43.197648+00:00 | 50 | 0.582 | 200 | 2 | — | no | pass |
+
+### udn batch 3
+
+| Read | Time, UTC | Payloads | Seconds | HTTP status | Rung | Direct bytes reported | Challenge | Result |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| 1 | 2026-11-04T19:13:47.889817+00:00 | 50 | 0.761 | 418 | 2 | — | no | pass |
+| 2 | 2026-11-04T19:13:50.658235+00:00 | 50 | 0.554 | 200 | 2 | — | no | pass |
+| 3 | 2026-11-04T19:13:53.217650+00:00 | 50 | 0.552 | 200 | 2 | — | no | pass |
+| 4 | 2026-11-04T19:13:55.776929+00:00 | 50 | 0.538 | 200 | 2 | — | no | pass |
+| 5 | 2026-11-04T19:13:58.321185+00:00 | 50 | 0.722 | 200 | 2 | — | no | pass |
+| 6 | 2026-11-04T19:14:01.051761+00:00 | 50 | 0.553 | 200 | 2 | — | no | pass |
+| 7 | 2026-11-04T19:14:03.612343+00:00 | 50 | 0.595 | 200 | 2 | — | no | pass |
+| 8 | 2026-11-04T19:14:06.215102+00:00 | 50 | 0.537 | 200 | 2 | — | no | pass |
+| 9 | 2026-11-04T19:14:08.753770+00:00 | 50 | 0.546 | 200 | 2 | — | no | pass |
+| 10 | 2026-11-04T19:14:11.303952+00:00 | 50 | 0.555 | 200 | 2 | — | no | pass |
+| 11 | 2026-11-04T19:14:13.863551+00:00 | 50 | 0.555 | 200 | 2 | — | no | pass |
+| 12 | 2026-11-04T19:14:16.426147+00:00 | 50 | 0.561 | 200 | 2 | — | no | pass |
+| 13 | 2026-11-04T19:14:18.993844+00:00 | 50 | 0.542 | 200 | 2 | — | no | pass |
+| 14 | 2026-11-04T19:14:21.543027+00:00 | 50 | 0.649 | 200 | 2 | — | no | pass |
+| 15 | 2026-11-04T19:14:24.197821+00:00 | 50 | 0.588 | 200 | 2 | — | no | pass |
+| 16 | 2026-11-04T19:14:26.790953+00:00 | 50 | 0.585 | 200 | 2 | — | no | pass |
+| 17 | 2026-11-04T19:14:29.383440+00:00 | 50 | 0.613 | 200 | 2 | — | no | pass |
+| 18 | 2026-11-04T19:14:32.002895+00:00 | 50 | 0.562 | 200 | 2 | — | no | pass |
+| 19 | 2026-11-04T19:14:34.571711+00:00 | 50 | 0.557 | 200 | 2 | — | no | pass |
+| 20 | 2026-11-04T19:14:37.132410+00:00 | 50 | 0.602 | 200 | 2 | — | no | pass |
+
+### udn batch 4
+
+| Read | Time, UTC | Payloads | Seconds | HTTP status | Rung | Direct bytes reported | Challenge | Result |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| 1 | 2026-11-04T19:14:41.874401+00:00 | 50 | 0.859 | 418 | 2 | — | no | pass |
+| 2 | 2026-11-04T19:14:44.736433+00:00 | 50 | 0.628 | 200 | 2 | — | no | pass |
+| 3 | 2026-11-04T19:14:47.368749+00:00 | 50 | 0.62 | 200 | 2 | — | no | pass |
+| 4 | 2026-11-04T19:14:49.994790+00:00 | 50 | 0.638 | 200 | 2 | — | no | pass |
+| 5 | 2026-11-04T19:14:52.637053+00:00 | 50 | 0.641 | 200 | 2 | — | no | pass |
+| 6 | 2026-11-04T19:14:55.282660+00:00 | 50 | 0.608 | 200 | 2 | — | no | pass |
+| 7 | 2026-11-04T19:14:57.898255+00:00 | 50 | 0.659 | 200 | 2 | — | no | pass |
+| 8 | 2026-11-04T19:15:00.562141+00:00 | 50 | 0.638 | 200 | 2 | — | no | pass |
+| 9 | 2026-11-04T19:15:03.205294+00:00 | 50 | 0.714 | 200 | 2 | — | no | pass |
+| 10 | 2026-11-04T19:15:05.925677+00:00 | 50 | 0.693 | 200 | 2 | — | no | pass |
+| 11 | 2026-11-04T19:15:08.626416+00:00 | 50 | 0.612 | 200 | 2 | — | no | pass |
+| 12 | 2026-11-04T19:15:11.245291+00:00 | 50 | 0.632 | 200 | 2 | — | no | pass |
+| 13 | 2026-11-04T19:15:13.884808+00:00 | 50 | 0.613 | 200 | 2 | — | no | pass |
+| 14 | 2026-11-04T19:15:16.504761+00:00 | 50 | 0.719 | 200 | 2 | — | no | pass |
+| 15 | 2026-11-04T19:15:19.227313+00:00 | 50 | 0.623 | 200 | 2 | — | no | pass |
+| 16 | 2026-11-04T19:15:21.856983+00:00 | 50 | 0.652 | 200 | 2 | — | no | pass |
+| 17 | 2026-11-04T19:15:24.512134+00:00 | 50 | 0.71 | 200 | 2 | — | no | pass |
+| 18 | 2026-11-04T19:15:27.227928+00:00 | 50 | 0.66 | 200 | 2 | — | no | pass |
+| 19 | 2026-11-04T19:15:29.893972+00:00 | 50 | 0.697 | 200 | 2 | — | no | pass |
+| 20 | 2026-11-04T19:15:32.599106+00:00 | 50 | 0.68 | 200 | 2 | — | no | pass |
+
+### newspapers volume observations
+
+| Read | Time, UTC | Payloads | Seconds | HTTP status | Rung | Direct bytes reported | Challenge | Result |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| 1 | 2026-11-04T19:13:10.081123+00:00 | 2 | 0.661 | — | 1 | 613283 | no | pass |
+| 2 | 2026-11-04T19:13:13.245530+00:00 | 2 | 1.159 | — | 1 | 613283 | no | pass |
+| 3 | 2026-11-04T19:13:15.840753+00:00 | 2 | 0.589 | — | 1 | 613283 | no | pass |
+| 4 | 2026-11-04T19:13:18.450540+00:00 | 2 | 0.606 | — | 1 | 613285 | no | pass |
+| 5 | 2026-11-04T19:13:21.096820+00:00 | 2 | 0.64 | — | 1 | 613283 | no | pass |
+| 6 | 2026-11-04T19:13:23.752517+00:00 | 2 | 0.651 | — | 1 | 613284 | no | pass |
+| 7 | 2026-11-04T19:13:26.389580+00:00 | 2 | 0.631 | — | 1 | 613282 | no | pass |
+| 8 | 2026-11-04T19:13:29.093430+00:00 | 2 | 0.699 | — | 1 | 613282 | no | pass |
+| 9 | 2026-11-04T19:13:31.810476+00:00 | 2 | 0.711 | — | 1 | 613282 | no | pass |
+| 10 | 2026-11-04T19:13:34.419257+00:00 | 2 | 0.604 | — | 1 | 613283 | no | pass |
+| 11 | 2026-11-04T19:13:37.010356+00:00 | 2 | 0.585 | — | 1 | 613283 | no | pass |
+| 12 | 2026-11-04T19:13:39.622755+00:00 | 2 | 0.606 | — | 1 | 613284 | no | pass |
+| 13 | 2026-11-04T19:13:42.216513+00:00 | 2 | 0.587 | — | 1 | 613284 | no | pass |
+| 14 | 2026-11-04T19:13:44.810158+00:00 | 2 | 0.591 | — | 1 | 613285 | no | pass |
+| 15 | 2026-11-04T19:13:47.475003+00:00 | 2 | 0.659 | — | 1 | 613282 | no | pass |
+| 16 | 2026-11-04T19:13:50.064213+00:00 | 2 | 0.587 | — | 1 | 613283 | no | pass |
+| 17 | 2026-11-04T19:13:52.667633+00:00 | 2 | 0.598 | — | 1 | 613285 | no | pass |
+| 18 | 2026-11-04T19:13:55.348509+00:00 | 2 | 0.674 | — | 1 | 613284 | no | pass |
+| 19 | 2026-11-04T19:13:57.953885+00:00 | 2 | 0.602 | — | 1 | 613285 | no | pass |
+| 20 | 2026-11-04T19:14:00.637175+00:00 | 2 | 0.679 | — | 1 | 613282 | no | pass |
+| 21 | 2026-11-04T19:14:03.312873+00:00 | 2 | 0.673 | — | 1 | 613282 | no | pass |
+| 22 | 2026-11-04T19:14:05.910148+00:00 | 2 | 0.595 | — | 1 | 613283 | no | pass |
+| 23 | 2026-11-04T19:14:08.601675+00:00 | 2 | 0.688 | — | 1 | 613282 | no | pass |
+| 24 | 2026-11-04T19:14:11.189152+00:00 | 2 | 0.583 | — | 1 | 613285 | no | pass |
+| 25 | 2026-11-04T19:14:13.881506+00:00 | 2 | 0.687 | — | 1 | 613282 | no | pass |
+| 26 | 2026-11-04T19:14:16.552269+00:00 | 2 | 0.664 | — | 1 | 613283 | no | pass |
+| 27 | 2026-11-04T19:14:19.200344+00:00 | 2 | 0.643 | — | 1 | 613284 | no | pass |
+| 28 | 2026-11-04T19:14:21.821512+00:00 | 2 | 0.615 | — | 1 | 613285 | no | pass |
+| 29 | 2026-11-04T19:14:24.452472+00:00 | 2 | 0.625 | — | 1 | 613285 | no | pass |
+| 30 | 2026-11-04T19:14:27.047718+00:00 | 2 | 0.591 | — | 1 | 613282 | no | pass |
+| 31 | 2026-11-04T19:14:29.642775+00:00 | 2 | 0.589 | — | 1 | 613283 | no | pass |
+| 32 | 2026-11-04T19:14:32.255736+00:00 | 2 | 0.61 | — | 1 | 613285 | no | pass |
+| 33 | 2026-11-04T19:14:34.852526+00:00 | 2 | 0.591 | — | 1 | 613282 | no | pass |
+| 34 | 2026-11-04T19:14:37.505790+00:00 | 2 | 0.648 | — | 1 | 613285 | no | pass |
+| 35 | 2026-11-04T19:14:40.095864+00:00 | 2 | 0.579 | — | 1 | 613283 | no | pass |
+| 36 | 2026-11-04T19:14:42.703411+00:00 | 2 | 0.601 | — | 1 | 613285 | no | pass |
+| 37 | 2026-11-04T19:14:45.326388+00:00 | 2 | 0.619 | — | 1 | 613283 | no | pass |
+| 38 | 2026-11-04T19:14:47.945233+00:00 | 2 | 0.612 | — | 1 | 613283 | no | pass |
+| 39 | 2026-11-04T19:14:50.557921+00:00 | 2 | 0.607 | — | 1 | 613283 | no | pass |
+| 40 | 2026-11-04T19:14:53.157403+00:00 | 2 | 0.594 | — | 1 | 613282 | no | pass |
+| 41 | 2026-11-04T19:14:55.791703+00:00 | 2 | 0.628 | — | 1 | 613284 | no | pass |
+| 42 | 2026-11-04T19:14:58.472861+00:00 | 2 | 0.677 | — | 1 | 613284 | no | pass |
+| 43 | 2026-11-04T19:15:01.092624+00:00 | 2 | 0.615 | — | 1 | 613283 | no | pass |
+| 44 | 2026-11-04T19:15:03.745451+00:00 | 2 | 0.646 | — | 1 | 613282 | no | pass |
+| 45 | 2026-11-04T19:15:06.378398+00:00 | 2 | 0.63 | — | 1 | 613284 | no | pass |
+| 46 | 2026-11-04T19:15:09.028463+00:00 | 2 | 0.646 | — | 1 | 613283 | no | pass |
+| 47 | 2026-11-04T19:15:11.652149+00:00 | 2 | 0.62 | — | 1 | 613282 | no | pass |
+| 48 | 2026-11-04T19:15:14.319318+00:00 | 2 | 0.663 | — | 1 | 613282 | no | pass |
+| 49 | 2026-11-04T19:15:16.964820+00:00 | 2 | 0.641 | — | 1 | 613283 | no | pass |
+| 50 | 2026-11-04T19:15:19.577271+00:00 | 2 | 0.606 | — | 1 | 613283 | no | pass |
+| 51 | 2026-11-04T19:15:22.263247+00:00 | 2 | 0.679 | — | 1 | 613282 | no | pass |
+| 52 | 2026-11-04T19:15:24.999343+00:00 | 2 | 0.734 | — | 1 | 613282 | no | pass |
+| 53 | 2026-11-04T19:15:27.629313+00:00 | 2 | 0.627 | — | 1 | 613282 | no | pass |
+| 54 | 2026-11-04T19:15:30.656269+00:00 | 2 | 1.02 | — | 1 | 613283 | no | pass |
+| 55 | 2026-11-04T19:15:33.320220+00:00 | 2 | 0.662 | — | 1 | 613282 | no | pass |
+| 56 | 2026-11-04T19:15:35.901472+00:00 | 2 | 0.578 | — | 1 | 613284 | no | pass |
+| 57 | 2026-11-04T19:15:38.514430+00:00 | 2 | 0.61 | — | 1 | 613285 | no | pass |
+| 58 | 2026-11-04T19:15:41.157094+00:00 | 2 | 0.637 | — | 1 | 613283 | no | pass |
+| 59 | 2026-11-04T19:15:43.807557+00:00 | 2 | 0.644 | — | 1 | 613283 | no | pass |
+| 60 | 2026-11-04T19:15:46.570858+00:00 | 2 | 0.757 | — | 1 | 613282 | no | pass |
+| 61 | 2026-11-04T19:15:49.219653+00:00 | 2 | 0.646 | — | 1 | 613284 | no | pass |
+| 62 | 2026-11-04T19:15:51.821294+00:00 | 2 | 0.598 | — | 1 | 613284 | no | pass |
+| 63 | 2026-11-04T19:15:54.470056+00:00 | 2 | 0.643 | — | 1 | 613283 | no | pass |
+| 64 | 2026-11-04T19:15:57.110282+00:00 | 2 | 0.637 | — | 1 | 613283 | no | pass |
+| 65 | 2026-11-04T19:15:59.785281+00:00 | 2 | 0.674 | — | 1 | 613283 | no | pass |
+| 66 | 2026-11-04T19:16:02.447608+00:00 | 2 | 0.659 | — | 1 | 613284 | no | pass |
+| 67 | 2026-11-04T19:16:05.066574+00:00 | 2 | 0.613 | — | 1 | 613285 | no | pass |
+| 68 | 2026-11-04T19:16:07.703347+00:00 | 2 | 0.633 | — | 1 | 613285 | no | pass |
+| 69 | 2026-11-04T19:16:10.380285+00:00 | 2 | 0.672 | — | 1 | 613283 | no | pass |
+| 70 | 2026-11-04T19:16:12.984403+00:00 | 2 | 0.6 | — | 1 | 613283 | no | pass |
+| 71 | 2026-11-04T19:16:15.567934+00:00 | 2 | 0.582 | — | 1 | 613284 | no | pass |
+| 72 | 2026-11-04T19:16:18.280702+00:00 | 2 | 0.707 | — | 1 | 613284 | no | pass |
+| 73 | 2026-11-04T19:16:20.920999+00:00 | 2 | 0.634 | — | 1 | 613283 | no | pass |
+| 74 | 2026-11-04T19:16:23.658754+00:00 | 2 | 0.731 | — | 1 | 613283 | no | pass |
+| 75 | 2026-11-04T19:16:26.309164+00:00 | 2 | 0.645 | — | 1 | 613282 | no | pass |
+| 76 | 2026-11-04T19:16:28.904903+00:00 | 2 | 0.59 | — | 1 | 613282 | no | pass |
+| 77 | 2026-11-04T19:16:31.609581+00:00 | 2 | 0.7 | — | 1 | 613282 | no | pass |
+| 78 | 2026-11-04T19:16:34.205803+00:00 | 2 | 0.588 | — | 1 | 613283 | no | pass |
+| 79 | 2026-11-04T19:16:37.018857+00:00 | 2 | 0.808 | — | 1 | 613282 | no | pass |
+| 80 | 2026-11-04T19:16:39.648217+00:00 | 2 | 0.623 | — | 1 | 613283 | no | pass |
+| 81 | 2026-11-04T19:16:42.262970+00:00 | 2 | 0.609 | — | 1 | 613282 | no | pass |
+| 82 | 2026-11-04T19:16:44.900257+00:00 | 2 | 0.631 | — | 1 | 613283 | no | pass |
+| 83 | 2026-11-04T19:16:47.517869+00:00 | 2 | 0.611 | — | 1 | 613284 | no | pass |
+| 84 | 2026-11-04T19:16:50.157895+00:00 | 2 | 0.637 | — | 1 | 613285 | no | pass |
+| 85 | 2026-11-04T19:16:52.836793+00:00 | 2 | 0.673 | — | 1 | 613283 | no | pass |
+| 86 | 2026-11-04T19:16:55.463919+00:00 | 2 | 0.624 | — | 1 | 613282 | no | pass |
+| 87 | 2026-11-04T19:16:58.078211+00:00 | 2 | 0.609 | — | 1 | 613283 | no | pass |
+| 88 | 2026-11-04T19:17:00.706404+00:00 | 2 | 0.625 | — | 1 | 613283 | no | pass |
+| 89 | 2026-11-04T19:17:03.407833+00:00 | 2 | 0.695 | — | 1 | 613283 | no | pass |
+| 90 | 2026-11-04T19:17:06.033381+00:00 | 2 | 0.62 | — | 1 | 613284 | no | pass |
+| 91 | 2026-11-04T19:17:08.641645+00:00 | 2 | 0.602 | — | 1 | 613284 | no | pass |
+| 92 | 2026-11-04T19:17:11.253568+00:00 | 2 | 0.607 | — | 1 | 613283 | no | pass |
+| 93 | 2026-11-04T19:17:13.873881+00:00 | 2 | 0.614 | — | 1 | 613282 | no | pass |
+| 94 | 2026-11-04T19:17:16.528241+00:00 | 2 | 0.648 | — | 1 | 613285 | no | pass |
+| 95 | 2026-11-04T19:17:19.231220+00:00 | 2 | 0.7 | — | 1 | 613283 | no | pass |
+| 96 | 2026-11-04T19:17:21.870379+00:00 | 2 | 0.632 | — | 1 | 613282 | no | pass |
+| 97 | 2026-11-04T19:17:24.630021+00:00 | 2 | 0.754 | — | 1 | 613284 | no | pass |
+| 98 | 2026-11-04T19:17:27.235325+00:00 | 2 | 0.599 | — | 1 | 613283 | no | pass |
+| 99 | 2026-11-04T19:17:29.896442+00:00 | 2 | 0.655 | — | 1 | 613282 | no | pass |
+| 100 | 2026-11-04T19:17:32.586702+00:00 | 2 | 0.684 | — | 1 | 613282 | no | pass |
+| 101 | 2026-11-04T19:17:35.417847+00:00 | 2 | 0.825 | — | 1 | 613282 | no | pass |
+| 102 | 2026-11-04T19:17:38.043276+00:00 | 2 | 0.62 | — | 1 | 613282 | no | pass |
+| 103 | 2026-11-04T19:17:40.652565+00:00 | 2 | 0.607 | — | 1 | 613282 | no | pass |
+| 104 | 2026-11-04T19:17:43.452747+00:00 | 2 | 0.795 | — | 1 | 613282 | no | pass |
+| 105 | 2026-11-04T19:17:46.075134+00:00 | 2 | 0.617 | — | 1 | 613284 | no | pass |
+| 106 | 2026-11-04T19:17:48.820373+00:00 | 2 | 0.739 | — | 1 | 613284 | no | pass |
+| 107 | 2026-11-04T19:17:51.410664+00:00 | 2 | 0.584 | — | 1 | 613285 | no | pass |
+| 108 | 2026-11-04T19:17:53.999921+00:00 | 2 | 0.588 | — | 1 | 613284 | no | pass |
+| 109 | 2026-11-04T19:17:56.612428+00:00 | 2 | 0.611 | — | 1 | 613283 | no | pass |
+| 110 | 2026-11-04T19:17:59.342280+00:00 | 2 | 0.727 | — | 1 | 613283 | no | pass |
+| 111 | 2026-11-04T19:18:01.956335+00:00 | 2 | 0.608 | — | 1 | 613284 | no | pass |
+| 112 | 2026-11-04T19:18:04.668171+00:00 | 2 | 0.705 | — | 1 | 613283 | no | pass |
+| 113 | 2026-11-04T19:18:07.390167+00:00 | 2 | 0.719 | — | 1 | 613282 | no | pass |
+| 114 | 2026-11-04T19:18:10.038892+00:00 | 2 | 0.646 | — | 1 | 613282 | no | pass |
+| 115 | 2026-11-04T19:18:12.882996+00:00 | 2 | 0.838 | — | 1 | 613285 | no | pass |
+| 116 | 2026-11-04T19:18:15.576919+00:00 | 2 | 0.687 | — | 1 | 613283 | no | pass |
+| 117 | 2026-11-04T19:18:18.182190+00:00 | 2 | 0.599 | — | 1 | 613283 | no | pass |
+| 118 | 2026-11-04T19:18:20.853043+00:00 | 2 | 0.664 | — | 1 | 613282 | no | pass |
+| 119 | 2026-11-04T19:18:23.484373+00:00 | 2 | 0.628 | — | 1 | 613282 | no | pass |
+| 120 | 2026-11-04T19:18:26.072442+00:00 | 2 | 0.581 | — | 1 | 613285 | no | pass |
+| 121 | 2026-11-04T19:18:28.788353+00:00 | 2 | 0.709 | — | 1 | 613282 | no | pass |
+| 122 | 2026-11-04T19:18:31.420156+00:00 | 2 | 0.626 | — | 1 | 613285 | no | pass |
+| 123 | 2026-11-04T19:18:34.120097+00:00 | 2 | 0.694 | — | 1 | 613284 | no | pass |
+| 124 | 2026-11-04T19:18:36.804745+00:00 | 2 | 0.678 | — | 1 | 613283 | no | pass |
+| 125 | 2026-11-04T19:18:39.722472+00:00 | 2 | 0.911 | — | 1 | 613282 | no | pass |
+| 126 | 2026-11-04T19:18:42.357471+00:00 | 2 | 0.629 | — | 1 | 613283 | no | pass |
+| 127 | 2026-11-04T19:18:45.091738+00:00 | 2 | 0.73 | — | 1 | 613282 | no | pass |
+| 128 | 2026-11-04T19:18:47.751171+00:00 | 2 | 0.653 | — | 1 | 613282 | no | pass |
+| 129 | 2026-11-04T19:18:50.363724+00:00 | 2 | 0.61 | — | 1 | 613285 | no | pass |
+| 130 | 2026-11-04T19:18:52.961562+00:00 | 2 | 0.592 | — | 1 | 613285 | no | pass |
+| 131 | 2026-11-04T19:18:55.654940+00:00 | 2 | 0.69 | — | 1 | 613283 | no | pass |
+| 132 | 2026-11-04T19:18:58.310976+00:00 | 2 | 0.651 | — | 1 | 613285 | no | pass |
+| 133 | 2026-11-04T19:19:00.989947+00:00 | 2 | 0.672 | — | 1 | 613283 | no | pass |
+| 134 | 2026-11-04T19:19:03.674420+00:00 | 2 | 0.678 | — | 1 | 613282 | no | pass |
+| 135 | 2026-11-04T19:19:06.291199+00:00 | 2 | 0.61 | — | 1 | 613283 | no | pass |
+| 136 | 2026-11-04T19:19:08.876836+00:00 | 2 | 0.579 | — | 1 | 613285 | no | pass |
+| 137 | 2026-11-04T19:19:11.469767+00:00 | 2 | 0.591 | — | 1 | 613285 | no | pass |
+| 138 | 2026-11-04T19:19:14.082618+00:00 | 2 | 0.608 | — | 1 | 613285 | no | pass |
+| 139 | 2026-11-04T19:19:16.773425+00:00 | 2 | 0.687 | — | 1 | 613285 | no | pass |
+| 140 | 2026-11-04T19:19:19.379015+00:00 | 2 | 0.602 | — | 1 | 613282 | no | pass |
+| 141 | 2026-11-04T19:19:22.008198+00:00 | 2 | 0.623 | — | 1 | 613283 | no | pass |
+| 142 | 2026-11-04T19:19:24.661545+00:00 | 2 | 0.647 | — | 1 | 613282 | no | pass |
+| 143 | 2026-11-04T19:19:27.388717+00:00 | 2 | 0.722 | — | 1 | 613282 | no | pass |
+| 144 | 2026-11-04T19:19:30.004191+00:00 | 2 | 0.609 | — | 1 | 613283 | no | pass |
+| 145 | 2026-11-04T19:19:32.640206+00:00 | 2 | 0.63 | — | 1 | 613284 | no | pass |
+| 146 | 2026-11-04T19:19:35.479677+00:00 | 2 | 0.838 | — | 1 | 613282 | no | pass |
+| 147 | 2026-11-04T19:19:38.095522+00:00 | 2 | 0.611 | — | 1 | 613282 | no | pass |
+| 148 | 2026-11-04T19:19:40.665091+00:00 | 2 | 0.563 | — | 1 | 613284 | no | pass |
+| 149 | 2026-11-04T19:19:43.432372+00:00 | 2 | 0.764 | — | 1 | 613284 | no | pass |
+| 150 | 2026-11-04T19:19:46.091449+00:00 | 2 | 0.656 | — | 1 | 613283 | no | pass |
+| 151 | 2026-11-04T19:19:48.723344+00:00 | 2 | 0.627 | — | 1 | 613283 | no | pass |
+| 152 | 2026-11-04T19:19:51.452532+00:00 | 2 | 0.723 | — | 1 | 613283 | no | pass |
+| 153 | 2026-11-04T19:19:54.022348+00:00 | 2 | 0.563 | — | 1 | 613283 | no | pass |
+| 154 | 2026-11-04T19:19:56.635431+00:00 | 2 | 0.61 | — | 1 | 613283 | no | pass |
+| 155 | 2026-11-04T19:19:59.275822+00:00 | 2 | 0.635 | — | 1 | 613284 | no | pass |
+| 156 | 2026-11-04T19:20:02.011153+00:00 | 2 | 0.733 | — | 1 | 613282 | no | pass |
+| 157 | 2026-11-04T19:20:04.633540+00:00 | 2 | 0.616 | — | 1 | 613283 | no | pass |
+| 158 | 2026-11-04T19:20:07.241830+00:00 | 2 | 0.605 | — | 1 | 613282 | no | pass |
+| 159 | 2026-11-04T19:20:09.879273+00:00 | 2 | 0.631 | — | 1 | 613282 | no | pass |
+| 160 | 2026-11-04T19:20:12.566591+00:00 | 2 | 0.685 | — | 1 | 613284 | no | pass |
+| 161 | 2026-11-04T19:20:15.189915+00:00 | 2 | 0.618 | — | 1 | 613285 | no | pass |
+| 162 | 2026-11-04T19:20:18.185025+00:00 | 2 | 0.988 | — | 1 | 613283 | no | pass |
+| 163 | 2026-11-04T19:20:21.299896+00:00 | 2 | 1.112 | — | 1 | 613282 | no | pass |
+| 164 | 2026-11-04T19:20:24.025371+00:00 | 2 | 0.719 | — | 1 | 613285 | no | pass |
+| 165 | 2026-11-04T19:20:26.711708+00:00 | 2 | 0.681 | — | 1 | 613283 | no | pass |
+| 166 | 2026-11-04T19:20:29.309931+00:00 | 2 | 0.594 | — | 1 | 613283 | no | pass |
+| 167 | 2026-11-04T19:20:31.914635+00:00 | 2 | 0.598 | — | 1 | 613282 | no | pass |
+| 168 | 2026-11-04T19:20:34.668205+00:00 | 2 | 0.749 | — | 1 | 613283 | no | pass |
+| 169 | 2026-11-04T19:20:37.334688+00:00 | 2 | 0.663 | — | 1 | 613283 | no | pass |
+| 170 | 2026-11-04T19:20:39.966591+00:00 | 2 | 0.628 | — | 1 | 613285 | no | pass |
+| 171 | 2026-11-04T19:20:42.568093+00:00 | 2 | 0.595 | — | 1 | 613283 | no | pass |
+| 172 | 2026-11-04T19:20:45.369598+00:00 | 2 | 0.799 | — | 1 | 613282 | no | pass |
+| 173 | 2026-11-04T19:20:47.992229+00:00 | 2 | 0.616 | — | 1 | 613285 | no | pass |
+| 174 | 2026-11-04T19:20:50.615165+00:00 | 2 | 0.621 | — | 1 | 613284 | no | pass |
+| 175 | 2026-11-04T19:20:53.279473+00:00 | 2 | 0.661 | — | 1 | 613284 | no | pass |
+| 176 | 2026-11-04T19:20:55.872843+00:00 | 2 | 0.586 | — | 1 | 613282 | no | pass |
+| 177 | 2026-11-04T19:20:58.506561+00:00 | 2 | 0.629 | — | 1 | 613283 | no | pass |
+| 178 | 2026-11-04T19:21:01.155256+00:00 | 2 | 0.644 | — | 1 | 613283 | no | pass |
+| 179 | 2026-11-04T19:21:03.954472+00:00 | 2 | 0.792 | — | 1 | 613283 | no | pass |
+| 180 | 2026-11-04T19:21:06.723565+00:00 | 2 | 0.763 | — | 1 | 613282 | no | pass |
+| 181 | 2026-11-04T19:21:09.369032+00:00 | 2 | 0.638 | — | 1 | 613283 | no | pass |
+| 182 | 2026-11-04T19:21:12.087514+00:00 | 2 | 0.712 | — | 1 | 613282 | no | pass |
+| 183 | 2026-11-04T19:21:14.824419+00:00 | 2 | 0.73 | — | 1 | 613284 | no | pass |
+| 184 | 2026-11-04T19:21:17.461733+00:00 | 2 | 0.63 | — | 1 | 613283 | no | pass |
+| 185 | 2026-11-04T19:21:20.060742+00:00 | 2 | 0.594 | — | 1 | 613283 | no | pass |
+| 186 | 2026-11-04T19:21:22.651009+00:00 | 2 | 0.587 | — | 1 | 613285 | no | pass |
+| 187 | 2026-11-04T19:21:25.369439+00:00 | 2 | 0.711 | — | 1 | 613282 | no | pass |
+| 188 | 2026-11-04T19:21:28.039588+00:00 | 2 | 0.668 | — | 1 | 613285 | no | pass |
+| 189 | 2026-11-04T19:21:30.712738+00:00 | 2 | 0.669 | — | 1 | 613283 | no | pass |
+| 190 | 2026-11-04T19:21:33.447535+00:00 | 2 | 0.73 | — | 1 | 613285 | no | pass |
+| 191 | 2026-11-04T19:21:36.098520+00:00 | 2 | 0.649 | — | 1 | 613283 | no | pass |
+| 192 | 2026-11-04T19:21:38.893895+00:00 | 2 | 0.788 | — | 1 | 613283 | no | pass |
+| 193 | 2026-11-04T19:21:41.470172+00:00 | 2 | 0.574 | — | 1 | 613282 | no | pass |
+| 194 | 2026-11-04T19:21:44.059468+00:00 | 2 | 0.583 | — | 1 | 613283 | no | pass |
+| 195 | 2026-11-04T19:21:46.683743+00:00 | 2 | 0.62 | — | 1 | 613282 | no | pass |
+| 196 | 2026-11-04T19:21:49.291810+00:00 | 2 | 0.601 | — | 1 | 613284 | no | pass |
+| 197 | 2026-11-04T19:21:51.964950+00:00 | 2 | 0.666 | — | 1 | 613285 | no | pass |
+| 198 | 2026-11-04T19:21:54.632102+00:00 | 2 | 0.66 | — | 1 | 613283 | no | pass |
+| 199 | 2026-11-04T19:21:57.230288+00:00 | 2 | 0.591 | — | 1 | 613282 | no | pass |
+| 200 | 2026-11-04T19:21:59.971386+00:00 | 2 | 0.739 | — | 1 | 613283 | no | pass |
+
+### newspapers batch 2
+
+| Read | Time, UTC | Payloads | Seconds | HTTP status | Rung | Direct bytes reported | Challenge | Result |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| 1 | 2026-11-04T19:22:04.516948+00:00 | 2 | 0.579 | — | 1 | 613284 | no | pass |
+| 2 | 2026-11-04T19:22:07.166545+00:00 | 2 | 0.647 | — | 1 | 613282 | no | pass |
+| 3 | 2026-11-04T19:22:10.106569+00:00 | 2 | 0.934 | — | 1 | 613285 | no | pass |
+| 4 | 2026-11-04T19:22:12.754504+00:00 | 2 | 0.641 | — | 1 | 613283 | no | pass |
+| 5 | 2026-11-04T19:22:15.373841+00:00 | 2 | 0.613 | — | 1 | 613285 | no | pass |
+| 6 | 2026-11-04T19:22:18.043013+00:00 | 2 | 0.667 | — | 1 | 613283 | no | pass |
+| 7 | 2026-11-04T19:22:21.739439+00:00 | 2 | 1.692 | — | 1 | 613284 | no | pass |
+| 8 | 2026-11-04T19:22:24.391284+00:00 | 2 | 0.645 | — | 1 | 613282 | no | pass |
+| 9 | 2026-11-04T19:22:27.001897+00:00 | 2 | 0.604 | — | 1 | 613283 | no | pass |
+| 10 | 2026-11-04T19:22:29.621557+00:00 | 2 | 0.616 | — | 1 | 613283 | no | pass |
+| 11 | 2026-11-04T19:22:34.549389+00:00 | 2 | 2.926 | — | 1 | 613285 | no | pass |
+| 12 | 2026-11-04T19:22:37.449670+00:00 | 2 | 0.893 | — | 1 | 613283 | no | pass |
+| 13 | 2026-11-04T19:22:40.048691+00:00 | 2 | 0.595 | — | 1 | 613283 | no | pass |
+| 14 | 2026-11-04T19:22:43.107861+00:00 | 2 | 1.052 | — | 1 | 613285 | no | pass |
+| 15 | 2026-11-04T19:22:45.758241+00:00 | 2 | 0.648 | — | 1 | 613283 | no | pass |
+| 16 | 2026-11-04T19:22:48.758954+00:00 | 2 | 0.995 | — | 1 | 613285 | no | pass |
+| 17 | 2026-11-04T19:22:51.520718+00:00 | 2 | 0.756 | — | 1 | 613283 | no | pass |
+| 18 | 2026-11-04T19:22:54.430003+00:00 | 2 | 0.906 | — | 1 | 613283 | no | pass |
+| 19 | 2026-11-04T19:22:57.130591+00:00 | 2 | 0.697 | — | 1 | 613282 | no | pass |
+| 20 | 2026-11-04T19:22:59.846836+00:00 | 2 | 0.71 | — | 1 | 613282 | no | pass |
+
+### newspapers batch 3
+
+| Read | Time, UTC | Payloads | Seconds | HTTP status | Rung | Direct bytes reported | Challenge | Result |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| 1 | 2026-11-04T19:23:05.026401+00:00 | 2 | 0.639 | — | 1 | 613282 | no | pass |
+| 2 | 2026-11-04T19:23:07.669414+00:00 | 2 | 0.636 | — | 1 | 613282 | no | pass |
+| 3 | 2026-11-04T19:23:10.258333+00:00 | 2 | 0.582 | — | 1 | 613283 | no | pass |
+| 4 | 2026-11-04T19:23:12.635399+00:00 | 0 | 0.37 | — | None | 689763 | yes | failed |
+| 5 | 2026-11-04T19:23:15.222307+00:00 | 2 | 0.584 | — | 1 | 613282 | no | pass |
+| 6 | 2026-11-04T19:23:17.862219+00:00 | 2 | 0.635 | — | 1 | 613285 | no | pass |
+| 7 | 2026-11-04T19:23:20.518366+00:00 | 2 | 0.65 | — | 1 | 613285 | no | pass |
+| 8 | 2026-11-04T19:23:23.144306+00:00 | 2 | 0.623 | — | 1 | 613285 | no | pass |
+| 9 | 2026-11-04T19:23:25.843164+00:00 | 2 | 0.695 | — | 1 | 613285 | no | pass |
+| 10 | 2026-11-04T19:23:28.462634+00:00 | 2 | 0.615 | — | 1 | 613282 | no | pass |
+| 11 | 2026-11-04T19:23:31.208888+00:00 | 2 | 0.741 | — | 1 | 613284 | no | pass |
+| 12 | 2026-11-04T19:23:33.836979+00:00 | 2 | 0.625 | — | 1 | 613284 | no | pass |
+| 13 | 2026-11-04T19:23:36.489837+00:00 | 2 | 0.651 | — | 1 | 613283 | no | pass |
+| 14 | 2026-11-04T19:23:39.137855+00:00 | 2 | 0.643 | — | 1 | 613282 | no | pass |
+| 15 | 2026-11-04T19:23:41.721104+00:00 | 2 | 0.58 | — | 1 | 613282 | no | pass |
+| 16 | 2026-11-04T19:23:44.389699+00:00 | 2 | 0.663 | — | 1 | 613284 | no | pass |
+| 17 | 2026-11-04T19:23:46.997625+00:00 | 2 | 0.606 | — | 1 | 613283 | no | pass |
+| 18 | 2026-11-04T19:23:49.679879+00:00 | 2 | 0.675 | — | 1 | 613284 | no | pass |
+| 19 | 2026-11-04T19:23:52.279596+00:00 | 2 | 0.594 | — | 1 | 613282 | no | pass |
+| 20 | 2026-11-04T19:23:54.913333+00:00 | 2 | 0.631 | — | 1 | 613285 | no | pass |
+
+### newspapers batch 4
+
+| Read | Time, UTC | Payloads | Seconds | HTTP status | Rung | Direct bytes reported | Challenge | Result |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| 1 | 2026-11-04T19:23:59.459002+00:00 | 2 | 0.588 | — | 1 | 613282 | no | pass |
+| 2 | 2026-11-04T19:24:02.172711+00:00 | 2 | 0.707 | — | 1 | 613284 | no | pass |
+| 3 | 2026-11-04T19:24:04.810327+00:00 | 2 | 0.633 | — | 1 | 613282 | no | pass |
+| 4 | 2026-11-04T19:24:07.440230+00:00 | 2 | 0.624 | — | 1 | 613285 | no | pass |
+| 5 | 2026-11-04T19:24:10.457458+00:00 | 2 | 1.013 | — | 1 | 613283 | no | pass |
+| 6 | 2026-11-04T19:24:13.192543+00:00 | 2 | 0.731 | — | 1 | 613282 | no | pass |
+| 7 | 2026-11-04T19:24:15.835417+00:00 | 2 | 0.636 | — | 1 | 613282 | no | pass |
+| 8 | 2026-11-04T19:24:18.633126+00:00 | 2 | 0.791 | — | 1 | 613285 | no | pass |
+| 9 | 2026-11-04T19:24:21.373726+00:00 | 2 | 0.734 | — | 1 | 613282 | no | pass |
+| 10 | 2026-11-04T19:24:24.044942+00:00 | 2 | 0.665 | — | 1 | 613285 | no | pass |
+| 11 | 2026-11-04T19:24:26.801554+00:00 | 2 | 0.753 | — | 1 | 613282 | no | pass |
+| 12 | 2026-11-04T19:24:29.401492+00:00 | 2 | 0.593 | — | 1 | 613282 | no | pass |
+| 13 | 2026-11-04T19:24:32.141054+00:00 | 2 | 0.734 | — | 1 | 613283 | no | pass |
+| 14 | 2026-11-04T19:24:34.814026+00:00 | 2 | 0.669 | — | 1 | 613282 | no | pass |
+| 15 | 2026-11-04T19:24:37.492422+00:00 | 2 | 0.672 | — | 1 | 613283 | no | pass |
+| 16 | 2026-11-04T19:24:40.068637+00:00 | 2 | 0.571 | — | 1 | 613285 | no | pass |
+| 17 | 2026-11-04T19:24:42.729172+00:00 | 2 | 0.655 | — | 1 | 613283 | no | pass |
+| 18 | 2026-11-04T19:24:45.459868+00:00 | 2 | 0.721 | — | 1 | 613283 | no | pass |
+| 19 | 2026-11-04T19:24:48.165541+00:00 | 2 | 0.697 | — | 1 | 613282 | no | pass |
+| 20 | 2026-11-04T19:24:50.844902+00:00 | 2 | 0.668 | — | 1 | 613282 | no | pass |

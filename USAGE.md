@@ -119,3 +119,7 @@ Two-step outcomes remain explicit. Stored authenticator seeds generate TOTP code
 Mosaic’s Mary Ferrell caller uses this API. The three Ancestry-family `login` commands also use the vault, but collection sessions retain their earlier profile until automatic login passes. That migration remains incomplete; keep the original context file and credential env entries.
 
 Direct acceptance can bound `/fetch` with `maxRung:2` (or `1` for HTTP). An administrator may set `forceDirectFailure:true` to exercise the remaining ladder in one request. `/routing/policies/{host}` accepts `startRung` and `ttlSeconds`; temporary learned escalation expires back to that configured starting rung. Failure injection is an explicit test condition.
+
+`mosaic/stealth_check.py direct-soak STATE_DIR --immediate` removes the eight-hour gaps and stops routes that have already failed acceptance. Use repeatable `--route annas`, `--route udn` or `--route newspapers` options to select routes; omitting them checks all three.
+
+Its output establishes immediate performance; it does not establish 24-hour stability. Read-only HTTP probes omit idempotency keys, while session mutations retain them.

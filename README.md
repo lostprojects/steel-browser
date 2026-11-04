@@ -16,6 +16,14 @@ All six final route sets met their pass marks. [STEALTH.md](STEALTH.md#phase-3-a
 
 Phase 4 adds managed Core exits, daily 1 GB budgets per agent key, payload validation and service challenge clearing. Its live measurements and remaining acceptance gaps are recorded in [STEALTH.md](STEALTH.md#phase-4-implementation-checks).
 
+The immediate direct-route checks are complete. Utah passed four 20-read batches and 200/200 volume reads; Newspapers passed 20/20, 20/20, 19/20 and 20/20 plus 200/200 volume reads. Both retain direct routing.
+
+Anna’s Archive failed its volume check and starts on residential routing. The owner removed the 24-hour waiting requirement. Bizapedia remains above its bandwidth target.
+
+The encrypted vault and service-owned login flows are deployed. Mary Ferrell passed initial sign-in and persistence checks, but automatic re-login failed after logout. Ancestry-family login also remains incomplete.
+
+Consult STEALTH.md for measurements and USAGE.md for protected-identity restrictions.
+
 ## Documents
 
 | Read | For |
@@ -49,5 +57,3 @@ The [commands example](repl/README.md) creates and releases its own session. Bui
 ## Licence
 
 Apache 2.0, as upstream. See [LICENSE](LICENSE).
-
-The encrypted vault and service-owned login flows are deployed. Mary Ferrell passed initial sign-in and persistence checks, but automatic re-login failed after logout. Ancestry-family login also remains incomplete. The direct-route tests run across 24 hours; Bizapedia remains above its bandwidth target. Consult STEALTH.md for measurements and USAGE.md for protected-identity restrictions.

@@ -81,3 +81,7 @@ Mosaic’s Mary Ferrell caller now detaches its observing CDP client while the s
 Mosaic’s HTTP helper now sends authenticated JSON reads and posts through the existing Steel allocation. Its live IP check matched the browser’s residential exit. The family collection profile still awaits successful automatic-login acceptance.
 
 Automatic re-login acceptance remains failed after the allowed fixes for both Ancestry and Mary Ferrell. The daily checker records its explicit outcome and actual device-check classification; Google login remains unimplemented.
+
+The direct acceptance runner also supports `--immediate` for checks without scheduled gaps. It preserves prior observations and stops routes that have already failed.
+
+Read-only HTTP checks omit idempotency keys; session mutations keep them. Repeated batch reads share one browser allocation.

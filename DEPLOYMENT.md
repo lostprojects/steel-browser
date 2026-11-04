@@ -74,7 +74,7 @@ The `rw rollback` wrapper now uses the scalar rollback result. Its dry run was
 checked against the accepted phase 3 deployment; repeat with `--commit` only when
 a rollback is needed.
 
-Current application commit `c364bd5` is deployment `83f16f3c-d9a8-443a-8eb1-e017d6afe797`. Health and direct quiet-session creation/release passed with zero residential bytes.
+The pre-vault application commit `c364bd5` was deployment `83f16f3c-d9a8-443a-8eb1-e017d6afe797`. Health and direct quiet-session creation/release passed with zero residential bytes.
 
 ## Phase 4 settings
 
