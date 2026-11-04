@@ -72,7 +72,14 @@ export function validPayload(
     title,
   };
 }
-type Entry = { rung: number; expires: number; split: boolean };
+type Entry = {
+  rung: number;
+  expires: number;
+  split: boolean;
+  startRung?: number;
+  ttlSeconds?: number;
+};
+const initialRungs: Record<string, number> = { annas: 2, udn: 2, newspapers: 1 };
 export class Routing {
   private entries: Record<string, Entry> = {};
   private ready: Promise<void>;
@@ -105,10 +112,17 @@ export class Routing {
     await this.ready;
     return this.entries;
   }
-  async policy(host: string, split: boolean) {
+  async policy(host: string, split: boolean, startRung?: number, ttlSeconds?: number) {
     await this.ready;
     const current = this.entries[host];
-    this.entries[host] = { rung: current?.rung ?? 3, expires: Date.now() + 7 * 86400_000, split };
+    this.entries[host] = {
+      ...current,
+      rung: startRung ?? current?.rung ?? 3,
+      startRung: startRung ?? current?.startRung,
+      ttlSeconds: ttlSeconds ?? current?.ttlSeconds,
+      expires: startRung === undefined ? current?.expires ?? 0 : 0,
+      split,
+    };
     await this.save();
   }
   async fetch(
@@ -121,6 +135,8 @@ export class Routing {
       retry?: boolean;
       retain?: boolean;
       splitTraffic?: boolean;
+      maxRung?: number;
+      forceDirectFailure?: boolean;
     },
     agent: Agent,
   ) {
@@ -131,12 +147,34 @@ export class Routing {
     if (route && routeChecks[route]?.host !== host)
       throw Object.assign(new Error("Route does not match host"), { statusCode: 400 });
     const known = this.entries[host];
+    if (options.forceDirectFailure && !agent.admin)
+      throw Object.assign(new Error("Admin key required for failure injection"), {
+        statusCode: 403,
+      });
+    const baseline = known?.startRung ?? (route ? initialRungs[route] ?? 3 : 1);
+    const nextEntry = (rung: number): Entry => ({
+      ...known,
+      rung,
+      split: known?.split ?? false,
+      expires: Date.now() + (known?.ttlSeconds ?? 604800) * 1000,
+    });
     const start = options.identity
       ? 3
-      : options.startRung ??
-        (known && known.expires > Date.now() ? known.rung : route && route !== "udn" ? 3 : 1);
+      : options.startRung ?? (known && known.expires > Date.now() ? known.rung : baseline);
     const attempts: any[] = [];
-    for (let rung = start; rung <= 3; rung++) {
+    for (let rung = start; rung <= (options.maxRung ?? 3); rung++) {
+      if (rung < 3 && options.forceDirectFailure) {
+        attempts.push({
+          rung,
+          pass: false,
+          error: "Injected direct failure",
+          bytes: 0,
+          seconds: 0,
+        });
+        this.entries[host] = nextEntry(rung + 1);
+        await this.save();
+        continue;
+      }
       if (rung === 1) {
         const began = Date.now();
         try {
@@ -157,11 +195,7 @@ export class Routing {
             directBytes: Buffer.byteLength(html),
           });
           if (validation.pass) {
-            this.entries[host] = {
-              rung,
-              split: known?.split ?? false,
-              expires: Date.now() + 7 * 86400_000,
-            };
+            this.entries[host] = nextEntry(rung);
             await this.save();
             return { status: "ok", rung, attempts, html, url: response.url };
           }
@@ -250,11 +284,7 @@ export class Routing {
               challengeActions,
             });
             if (validation.pass) {
-              this.entries[host] = {
-                rung,
-                expires: Date.now() + 7 * 86400_000,
-                split: known?.split ?? false,
-              };
+              this.entries[host] = nextEntry(rung);
               await this.save();
               if (options.retain) {
                 retained = true;
@@ -290,11 +320,7 @@ export class Routing {
           }
         }
       }
-      this.entries[host] = {
-        rung: Math.min(3, rung + 1),
-        expires: Date.now() + 7 * 86400_000,
-        split: known?.split ?? false,
-      };
+      this.entries[host] = nextEntry(Math.min(3, rung + 1));
       await this.save();
     }
     return { status: "failed", attempts };

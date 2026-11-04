@@ -115,3 +115,5 @@ Create a quiet session with identity `ancestry` or `mary-ferrell`, then call `PO
 Protected identities require access to their vault entry and use a fixed sticky residential allocation throughout. `/request` sends authenticated GET or POST requests over that same exit. Signed CDN downloads can try direct egress. Protected profile exports and image capture are refused because they can expose login details; text responses and CDP replies are scrubbed.
 
 Two-step outcomes remain explicit. Stored authenticator seeds generate TOTP codes at use. Email checks report missing mailbox access; SMS and Google checks stop for owner action. The service does not request a manual login.
+
+Direct acceptance can bound `/fetch` with `maxRung:2` (or `1` for HTTP). An administrator may set `forceDirectFailure:true` to exercise the remaining ladder in one request. `/routing/policies/{host}` accepts `startRung` and `ttlSeconds`; temporary learned escalation expires back to that configured starting rung. Failure injection is an explicit test condition.

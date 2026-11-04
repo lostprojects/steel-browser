@@ -17,6 +17,7 @@ export async function healthRoutes(server: FastifyInstance) {
       reply.code(server.sessionPool.draining ? 503 : 200).send({
         status: server.sessionPool.draining ? "draining" : "ok",
         chromeVersion,
+        revision: process.env.RAILWAY_GIT_COMMIT_SHA ?? null,
         liveSessions: server.sessionPool.size,
         maxSessions: server.sessionPool.maxSessions,
         freeMemory: os.freemem(),

@@ -18,6 +18,10 @@ Checks run against the deployed instance through the Evomi proxy:
       Run all six routes per exit. --routes-only uses a separately completed
       quiet-probe; otherwise each route group also repeats the bot checks.
 
+  stealth_check.py direct-soak /tmp/steel-direct-soak
+      Resume four 20-page batches per direct route over 24 hours and one
+      200-page volume check per route. Requires the maxRung API option.
+
   stealth_check.py routes core|none [ROUTE ...]
       Load each Mosaic collector route that needs a residential IP and report
       pass/fail, seconds and bytes received. Failed pages are saved as a
@@ -631,9 +635,158 @@ def quiet_routes(count=1, detectors=True):
     return rows
 
 
+
+def direct_soak(output):
+    """Resume four direct batches over 24 hours and collector-sized volume reads.
+
+    State is raw measurement data in system temporary storage. No credentials,
+    account pages or corpus writes belong here. A pause file stops new sessions.
+    """
+    from datetime import datetime, timezone
+    output = Path(output)
+    output.mkdir(parents=True, exist_ok=True)
+    state_file = output / 'state.json'
+    state = json.loads(state_file.read_text()) if state_file.exists() else {
+        'began': None, 'batches': [], 'volumes': [], 'egress': [], 'failures': []}
+    lock = (output / 'runner.lock').open('w')
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def save():
+        tmp = state_file.with_suffix('.tmp')
+        tmp.write_text(json.dumps(state, indent=2))
+        tmp.replace(state_file)
+
+    def now():
+        return datetime.now(timezone.utc).isoformat()
+
+    def wait_ready(needs_slot=True):
+        while True:
+            if (output / 'stop').exists():
+                raise RuntimeError('Direct soak stopped by control file')
+            if (output / 'pause').exists():
+                time.sleep(15)
+                continue
+            health = call('GET', '/health')
+            if health['status'] == 'ok' and (not needs_slot or health['liveSessions'] < health['maxSessions']):
+                return health
+            time.sleep(15)
+
+    def ip(session):
+        session.page.goto('https://api.ipify.org/?format=json', wait_until='domcontentloaded', timeout=30000)
+        value = json.loads(session.page.inner_text('body'))['ip']
+        import ipaddress
+        ipaddress.ip_address(value)
+        row = {'at': now(), 'ip': value, 'health': call('GET', '/health')}
+        state['egress'].append(row)
+        save()
+        return value
+
+    def read_page(session, route, url):
+        began = time.monotonic()
+        row = {'at': now(), 'route': route, 'url': url, 'pass': False}
+        try:
+            response = session.page.goto(url, wait_until='domcontentloaded', timeout=60000)
+            row['httpStatus'] = response.status if response else None
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline:
+                data = session.page.evaluate('() => ({count: (' + ROUTES[route][1] + '), title: document.title, text: (document.body?.innerText || "").slice(0,1200)})')
+                blocked = any(x in (data['title'] + ' ' + data['text']).lower() for x in CHALLENGE)
+                row['challengeSeen'] = row.get('challengeSeen', False) or blocked
+                if data['count'] >= ROUTES[route][2] and not blocked:
+                    row.update({'pass': True, 'payloads': data['count'], 'title': data['title']})
+                    break
+                time.sleep(2)
+            if not row['pass']:
+                row['error'] = 'payload_missing'
+        except Exception as error:
+            row['error'] = type(error).__name__
+            # Reattach to the existing target; a second navigation would hide
+            # the first-attempt failure, so it belongs to the next observation.
+            try:
+                session.reconnect()
+            except Exception:
+                row['reattachFailed'] = True
+        row['seconds'] = round(time.monotonic() - began, 3)
+        print('DIRECT ' + json.dumps(row), flush=True)
+        return row
+
+    def http_page(route, url):
+        began = time.monotonic()
+        result = call('POST', '/v1/fetch', {'url': url, 'route': route, 'startRung': 1, 'maxRung': 1, 'retry': False})
+        attempts = result.get('attempts', [])
+        return {'at': now(), 'route': route, 'url': url, 'pass': result.get('status') == 'ok',
+                'rung': result.get('rung'), 'attempts': attempts,
+                'seconds': round(time.monotonic() - began, 3),
+                'challengeSeen': any(not a.get('pass') for a in attempts)}
+
+    for batch_number in range(4):
+        if state['began'] is not None:
+            due = state['began'] + batch_number * 8 * 3600
+            while time.time() < due:
+                time.sleep(min(30, due - time.time()))
+        for route in ('annas', 'udn', 'newspapers'):
+            key = (batch_number + 1, route)
+            batch = next((b for b in state['batches'] if (b['batch'], b['route']) == key), None)
+            if batch is None:
+                batch = {'batch': key[0], 'route': route, 'rows': [], 'started': now()}
+                state['batches'].append(batch)
+            while len(batch['rows']) < 20:
+                wait_ready()
+                if state['began'] is None:
+                    state['began'] = time.time()
+                    save()
+                with Session('none', {'mode': 'agent'}) as session:
+                    address = ip(session)
+                    row = http_page(route, ROUTES[route][0]) if route == 'newspapers' else read_page(session, route, ROUTES[route][0])
+                    row['ip'] = address
+                    batch['rows'].append(row)
+                    save()
+                time.sleep(2)
+            batch['passed'] = sum(r['pass'] for r in batch['rows'])
+            batch['completed'] = now()
+            save()
+            print(f"Direct batch {key}: {batch['passed']}/20; state: {state_file}", flush=True)
+        if batch_number == 0:
+            for route in ('annas', 'udn', 'newspapers'):
+                volume = next((v for v in state['volumes'] if v['route'] == route), None)
+                if volume is None:
+                    volume = {'route': route, 'rows': [], 'started': now()}
+                    state['volumes'].append(volume)
+                if len(volume['rows']) >= 200:
+                    continue
+                wait_ready()
+                with Session('none', {'mode': 'agent'}) as session:
+                    address = ip(session)
+                    while len(volume['rows']) < 200:
+                        number = len(volume['rows']) + 1
+                        if route == 'annas':
+                            url = 'https://annas-archive.pk/search?' + urllib.parse.urlencode({'q': 'history', 'page': number})
+                        elif route == 'udn':
+                            url = 'https://newspapers.lib.utah.edu/search?' + urllib.parse.urlencode({'q': 'war', 'rows': 50, 'page': number})
+                        else:
+                            url = ROUTES[route][0]
+                        row = http_page(route, url) if route == 'newspapers' else read_page(session, route, url)
+                        row['ip'] = address
+                        volume['rows'].append(row)
+                        save()
+                        # Collector loops issue the next read after parsing;
+                        # allow two seconds for that work on these fixtures.
+                        time.sleep(2)
+                volume['passed'] = sum(r['pass'] for r in volume['rows'])
+                volume['completed'] = now()
+                save()
+                print(f"Direct volume {route}: {volume['passed']}/200; state: {state_file}", flush=True)
+    state['completed'] = now()
+    save()
+    print(f"Direct soak finished: 12 batches and three volume checks; observations: {state_file}", flush=True)
+
+
 def main(argv):
-    if len(argv) < 2 or argv[1] not in ('probe', 'routes', 'fingerprints', 'quiet-probe', 'quiet-routes'):
+    if len(argv) < 2 or argv[1] not in ('probe', 'routes', 'fingerprints', 'quiet-probe', 'quiet-routes', 'direct-soak'):
         sys.exit(__doc__)
+    if argv[1] == 'direct-soak':
+        direct_soak(argv[2])
+        return
     if argv[1] == 'quiet-routes':
         quiet_routes(int(argv[2]) if len(argv) > 2 else 1, detectors='--routes-only' not in argv)
         return

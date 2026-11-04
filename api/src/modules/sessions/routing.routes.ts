@@ -28,6 +28,8 @@ const fetchBody = z
     retry: z.boolean().optional(),
     retain: z.boolean().optional(),
     splitTraffic: z.boolean().optional(),
+    maxRung: z.number().int().min(1).max(3).optional(),
+    forceDirectFailure: z.boolean().optional(),
   })
   .strict();
 export default async function routes(server: FastifyInstance) {
@@ -76,9 +78,16 @@ export default async function routes(server: FastifyInstance) {
       .regex(/^[A-Za-z0-9.-]{1,253}$/)
       .parse(req.params.host)
       .toLowerCase();
-    const { split } = z.object({ split: z.boolean() }).strict().parse(req.body);
-    await routing.policy(host, split);
-    return { host, split };
+    const policy = z
+      .object({
+        split: z.boolean(),
+        startRung: z.number().int().min(1).max(3).optional(),
+        ttlSeconds: z.number().int().min(1).max(604800).optional(),
+      })
+      .strict()
+      .parse(req.body);
+    await routing.policy(host, policy.split, policy.startRung, policy.ttlSeconds);
+    return { host, ...policy };
   });
   server.post("/fetch", async (req) => {
     const options = fetchBody.parse(req.body);
