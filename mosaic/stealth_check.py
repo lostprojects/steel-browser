@@ -643,6 +643,8 @@ def direct_soak(output):
     account pages or corpus writes belong here. A pause file stops new sessions.
     """
     from datetime import datetime, timezone
+    import signal
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     state_file = output / 'state.json'
@@ -719,10 +721,21 @@ def direct_soak(output):
                 'seconds': round(time.monotonic() - began, 3),
                 'challengeSeen': any(not a.get('pass') for a in attempts)}
 
+    def require_residential(route, reason):
+        if any(r['route'] == route for r in state['failures']):
+            return
+        host = urllib.parse.urlsplit(ROUTES[route][0]).hostname
+        call('PUT', '/v1/routing/policies/' + host,
+             {'split': True, 'startRung': 3, 'ttlSeconds': 604800})
+        state['failures'].append({'route': route, 'at': now(), 'reason': reason})
+        save()
+
     for batch_number in range(4):
         if state['began'] is not None:
             due = state['began'] + batch_number * 8 * 3600
             while time.time() < due:
+                if (output / 'stop').exists():
+                    raise RuntimeError('Direct soak stopped by control file')
                 time.sleep(min(30, due - time.time()))
         for route in ('annas', 'udn', 'newspapers'):
             key = (batch_number + 1, route)
@@ -744,9 +757,14 @@ def direct_soak(output):
                 time.sleep(2)
             batch['passed'] = sum(r['pass'] for r in batch['rows'])
             batch['completed'] = now()
+            if batch['passed'] < 19:
+                require_residential(route, 'batch_below_19_of_20')
             save()
             print(f"Direct batch {key}: {batch['passed']}/20; state: {state_file}", flush=True)
         if batch_number == 0:
+            if (output / 'pause-after-batch').exists():
+                (output / 'pause').touch()
+                (output / 'pause-after-batch').unlink()
             for route in ('annas', 'udn', 'newspapers'):
                 volume = next((v for v in state['volumes'] if v['route'] == route), None)
                 if volume is None:
@@ -760,7 +778,7 @@ def direct_soak(output):
                     while len(volume['rows']) < 200:
                         number = len(volume['rows']) + 1
                         if route == 'annas':
-                            url = 'https://annas-archive.pk/search?' + urllib.parse.urlencode({'q': 'history', 'page': number})
+                            url = 'https://annas-archive.pk/search?' + urllib.parse.urlencode({'q': ('history', 'science', 'war', 'physics', 'medicine', 'engineering', 'biology', 'art', 'philosophy', 'mathematics')[(number - 1) // 20], 'page': (number - 1) % 20 + 1})
                         elif route == 'udn':
                             url = 'https://newspapers.lib.utah.edu/search?' + urllib.parse.urlencode({'q': 'war', 'rows': 50, 'page': number})
                         else:
@@ -774,6 +792,8 @@ def direct_soak(output):
                         time.sleep(2)
                 volume['passed'] = sum(r['pass'] for r in volume['rows'])
                 volume['completed'] = now()
+                if volume['passed'] < 200 or any(r.get('challengeSeen') for r in volume['rows']):
+                    require_residential(route, 'volume_block_challenge_or_missing_payload')
                 save()
                 print(f"Direct volume {route}: {volume['passed']}/200; state: {state_file}", flush=True)
     state['completed'] = now()

@@ -154,7 +154,7 @@ export class Routing {
     const baseline = known?.startRung ?? (route ? initialRungs[route] ?? 3 : 1);
     const nextEntry = (rung: number): Entry => ({
       ...known,
-      rung,
+      rung: Math.max(rung, known?.startRung ?? 1),
       split: known?.split ?? false,
       expires: Date.now() + (known?.ttlSeconds ?? 604800) * 1000,
     });
@@ -234,6 +234,7 @@ export class Routing {
               seconds: (Date.now() - began) / 1000,
             });
             if ((error as any).statusCode === 429) throw error;
+            if (attempt + 1 < maxAttempts) continue;
             break;
           }
           const before = session.info();
