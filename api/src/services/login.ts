@@ -344,9 +344,12 @@ export class LoginService {
                 /sign\s*out|log\s*out/i.test(a.textContent ?? "") ||
                 /\/(?:signout|logout)(?:[/?]|$)/i.test(a.href),
             ) ||
+            // Ancestry's header, and its marker, also appear on the sign-in
+            // and verify-email pages.
             (!!signedIn &&
               !!document.querySelector(signedIn) &&
-              !inputs.some((e) => e.type === "password")),
+              !/\/(?:signin|login)(?:[/?]|$)/i.test(location.pathname) &&
+              !inputs.some((e) => e.type === "password" || e.matches(otpSelector))),
           mary: /sign out/i.test(text) && /my membership/i.test(text),
           signedOut:
             inputs.some((e) => e.type === "password") ||
