@@ -452,6 +452,15 @@ export class LoginService {
     }
     if (site === "hathitrust-google")
       return this.record(session, site, "not_attempted", "google_flow_unimplemented", agent);
+    // Newspapers.com and Fold3 sign in through Ancestry. Settle Ancestry first in
+    // the main tab, where its new-device code page is visible; their SSO then
+    // completes without input. Fold3's SSO popup would otherwise hide that page.
+    if (!resume && (site === "newspapers" || site === "fold3")) {
+      await go("https://www.ancestry.com/");
+      let pre = await this.run(session, "ancestry", fields, agent, true);
+      if (pre.status === "unchecked") pre = await this.run(session, "ancestry", fields, agent, false);
+      if (pre.status !== "ok") return pre;
+    }
     if (resume) {
       if (page.url() !== resume.url || Date.parse(resume.request.expires) <= Date.now())
         return this.record(session, site, "failed", "code_request_changed", agent);
