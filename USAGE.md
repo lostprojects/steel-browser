@@ -19,6 +19,8 @@ Its sticky ID lives in the service's private routing state. A second claim gets
 HTTP 409. Mosaic's client can wait (`identity_policy="wait"`, ten-minute default)
 or ask for a throwaway profile (`identity_policy="throwaway"`). Throwaway sessions
 receive independent sticky exits and profiles.
+Session cookies are saved alongside the profile on release and restored on its
+next start. The source identity's local storage is imported during migration.
 
 A fourth session waits up to five seconds, then gets HTTP 429. Mosaic currently
 uses Browserbase after that response. Three simultaneous Mosaic callers and the
@@ -56,6 +58,9 @@ retry; identity sessions retain their exit and do not retry under another identi
 The result keeps each attempt's outcome, timing and residential bytes separately.
 A successful response includes HTML and either a retained session or its settled
 record. `GET /v1/routing` shows the host table; `GET /v1/usage` shows durable totals.
+Usage separates the current UTC day from cumulative traffic. Admin responses
+include cumulative `totalByAgent`; a named key sees its own cumulative
+`totalResidentialBytes` alongside its daily `residentialBytes` and budget.
 
 Traffic splitting is off unless a site has an approved policy. It routes a small
 static-CDN list directly and refuses a small advertising/media list; unknown hosts,
@@ -95,3 +100,8 @@ quiet mode. Agent sessions retain the existing instrumentation and action routes
 named profile under its identity lock and checks every unexpired cookie before
 release. Keep the source credential file until the login check passes. The updated
 client uses the server profile and does not read or overwrite that local file.
+
+The US migration preserved 87 unexpired cookies and 48 local-storage entries.
+The three sites still displayed sign-in links after both migration fixes, so the
+logged-in state remains unconfirmed. Keep the original credential file until a
+manual login check succeeds; the updated client leaves it unused.

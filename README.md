@@ -1,6 +1,6 @@
 # Steel Browser, Mosaic fork
 
-A self-hosted remote browser on Railway for Mosaic's collector. Browserbase remains available as a fallback while this service develops. Railway compute plus Evomi residential traffic at about $1/GB costs a fraction of Browserbase's $10–12/GB for proxy traffic.
+A self-hosted remote browser on Railway for Mosaic's collector. Browserbase remains a temporary fallback until phase 6 moves the callers. Railway compute plus Evomi residential traffic at about $1/GB costs a fraction of Browserbase's $10–12/GB for proxy traffic.
 
 The browser uses a Linux desktop display and accepts a residential proxy and its timezone. Detection results are measured separately for each build.
 
@@ -13,6 +13,8 @@ The service runs up to three independent sessions, with named profiles on a Rail
 Phases 0–3 are accepted on Google Chrome 156.0.8078.79. Twenty distinct exits passed the phase 2 fingerprint checks, and quiet-mode detector checks remained clear with full snapshots and native clicks active.
 
 All six final route sets met their pass marks. [STEALTH.md](STEALTH.md#phase-3-acceptance) records the earlier failures and Utah’s focused rerun. Production supports both agent and quiet modes; `main` and `deploy` remain synchronized.
+
+Phase 4 adds managed Core exits, daily 1 GB budgets per agent key, payload validation and service challenge clearing. Its live measurements and remaining acceptance gaps are recorded in [STEALTH.md](STEALTH.md#phase-4-implementation-checks).
 
 ## Documents
 
@@ -32,7 +34,7 @@ python mosaic/stealth_check.py probe                                        # fi
 python mosaic/stealth_check.py routes core                                  # the six collector routes
 ```
 
-The measuring tool reads `STEEL_URL`, `STEEL_API_KEY` and the Evomi proxy URLs from `/Users/moi/nosync.nosync/-env/global.env`. Run the route check from a temporary directory: it saves failed pages to `./stealth-failures/`.
+The measuring tool reads `STEEL_URL` and `STEEL_API_KEY` from `/Users/moi/nosync.nosync/-env/global.env`. Run the route check from a temporary directory: it saves failed pages to `./stealth-failures/`.
 
 ## Local development
 
@@ -47,5 +49,3 @@ The [commands example](repl/README.md) creates and releases its own session. Bui
 ## Licence
 
 Apache 2.0, as upstream. See [LICENSE](LICENSE).
-
-Phase 4 adds managed Core exits, daily 1 GB budgets per agent key, payload-based routing and service challenge clearing. See [USAGE.md](USAGE.md) for the API and [STEALTH.md](STEALTH.md) for measured acceptance. Browserbase is temporary until phase 6 moves Mosaic callers.

@@ -1,6 +1,8 @@
 # Deployment
 
-Production runs the phase 3 service with Google Chrome 156.0.8078.79, including the cleanup build listed below. The owner accepts replacement of incomplete transport and fixture attempts; 20 complete fingerprint results on distinct exits passed. Documentation and measurement-client pushes remain excluded from deployments.
+Production runs the phase 4 implementation with Google Chrome 156.0.8078.79. Live acceptance gaps are recorded in `STEALTH.md`.
+
+Phase 3 passed 20 complete fingerprint results on distinct exits, with owner-approved replacements for incomplete transport and fixture attempts. Documentation and measurement-client pushes remain excluded from deployments.
 
 ## Service
 
@@ -49,7 +51,8 @@ Values live in two files and nowhere else, under the same names:
 | Name | What |
 |---|---|
 | `STEEL_URL` | The service URL |
-| `STEEL_API_KEY` | Must match the Railway variable. When rotating it, change Railway and both files |
+| `STEEL_API_KEY` | Admin key. Must match Railway and both local files |
+| `STEEL_AGENT_KEY` | Named `mosaic` key in both local files; matches its entry in Railway `STEEL_AGENT_KEYS` |
 | `EVOMI_RESIDENTIAL_PROXY_URL` | Evomi Core Residential, `http://user:pass@core-residential.evomi.com:1000`. The default for every job |
 | `EVOMI_PREMIUM_PROXY_URL` | Evomi Premium Residential. In testing it passed nothing that Core failed, so reserve it for a site that blocks Core's IPs |
 
@@ -65,15 +68,17 @@ It permits isolated-world reads, refuses instrumentation subscriptions and sends
 
 The quiet launch disables `OptimizationHints`, matching the agent launch, because Chrome otherwise downloads Optimization Guide data in the background. Live byte getters include open proxy tunnels, and `proxyTraffic` reports hostname totals without paths or credentials. Released totals remain the final accounting record.
 
-Production application commit `5174f4d` is deployment `097d4bac-9c8c-4e1e-8230-31f06fb72a0b`. The full phase 3 acceptance measurements came from `bfbc39f`, deployment `89b38d9f-9008-45a5-86e3-4557db263f17`, which remains a known-good rollback target. The older phase 2 target is `6ffa7417-bc73-4f16-8090-59ed3c929e4a`; that older image lacks quiet mode and includes open-tunnel bytes only on release.
+The preceding cleanup application was commit `5174f4d`, deployment `097d4bac-9c8c-4e1e-8230-31f06fb72a0b`. The full phase 3 acceptance measurements came from `bfbc39f`, deployment `89b38d9f-9008-45a5-86e3-4557db263f17`, which remains a known-good rollback target. The older phase 2 target is `6ffa7417-bc73-4f16-8090-59ed3c929e4a`; that older image lacks quiet mode and includes open-tunnel bytes only on release.
 
 The `rw rollback` wrapper now uses the scalar rollback result. Its dry run was
 checked against the accepted phase 3 deployment; repeat with `--commit` only when
 a rollback is needed.
 
+Current application commit `c364bd5` is deployment `83f16f3c-d9a8-443a-8eb1-e017d6afe797`. Health and direct quiet-session creation/release passed with zero residential bytes.
+
 ## Phase 4 settings
 
-Staged with `--skip-deploy`, after a dry run, for the phase 4 application build:
+Applied with `--skip-deploy` after a dry run, then activated by the phase 4 deployment:
 
 | Variable | Value | Purpose |
 |---|---|---|
@@ -83,7 +88,7 @@ Staged with `--skip-deploy`, after a dry run, for the phase 4 application build:
 
 The existing `/data` volume and `MAX_SESSIONS=3` are unchanged. `/data/routing`
 holds sticky identity metadata, durable spend and the seven-day host table.
-It contains no proxy credentials. Profile cookies remain credentials.
+It contains no proxy credentials. Profile cookies remain credentials, including `mosaic-session-cookies.json` in each named profile. The service writes that file on release so session cookies survive Chrome restarts.
 
 The existing one-second expiry timer also samples budgets and settles the ledger.
 A thirty-second check flags hosts above 10 MB and ends traffic above 5 MB per
@@ -92,3 +97,7 @@ The image adds Python and pinned `curl_cffi==0.16.3` for bounded HTTP reads.
 
 Use accepted phase 3 deployment `89b38d9f-9008-45a5-86e3-4557db263f17` as the
 first rollback target if phase 4 fails health or session creation.
+
+The tested splitting policy is enabled for `annas-archive.pk`, `www.bizapedia.com`,
+`newspapers.lib.utah.edu`, `www.ancestry.com`, `www.newspapers.com` and `www.fold3.com`.
+Those persisted policy writes changed no Railway variables or volumes.

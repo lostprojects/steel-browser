@@ -53,6 +53,9 @@ Quiet contexts and object handles belong to their frames. An iframe redirect inv
 The proxy manager allocates Core exits, resolves their timezones through the exit,
 and persists daily byte totals by agent key. Named identities keep their sticky IDs
 beside the persistent profiles. The default daily residential budget is 1 GB.
+Named profiles save session cookies on release, because Chrome otherwise discards
+those cookies when its process exits. Reopening the migrated US profile preserved
+all 87 unexpired source cookies.
 
 The routing service validates collector payloads and records its lowest working
 route for seven days. It can fetch files directly with session cookies and retry
@@ -61,4 +64,6 @@ through the exit. Measured site policies can split static hosts at the forwarder
 Challenge clearing now belongs to the service, with isolated frame reads and
 native input. Visual puzzles retain their session for noVNC. API idempotency and
 Python CDP reattachment preserve work across dropped client connections.
+The measurement client uses fresh API connections after reused connections stalled
+during live checks. Completed and interrupted attempts remain in `STEALTH.md`.
 Browserbase is a temporary Mosaic fallback until phase 6 moves the callers.

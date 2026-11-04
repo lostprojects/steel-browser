@@ -12,7 +12,7 @@ The build is not yet robust enough to run unattended. Every job shares one Chrom
 
 These can be patched inside Steel, but each patch widens the fork against a beta upstream that documents a concurrency of one. The simpler path is a small image of our own built from the same parts: Google Chrome, Xvfb, a noVNC view for manual logins, and a supervisor of a few hundred lines. That image has no server-side CDP client at all, so the class of leaks the fork spent most of its effort closing cannot recur.
 
-Keep Browserbase as the fallback, and measure it with our own Evomi proxy before building anything. Browserbase accepts an external proxy from its $20 Developer plan **[source]**. If it does not meter that traffic per GB, it may already meet the cost goal with no operations at all, and the self-hosted build becomes a choice the owner can decline.
+This review originally proposed measuring Browserbase with Evomi before building. The owner has since chosen the Steel fork, with Browserbase retained temporarily until phase 6 moves the callers. Browserbase accepts an external proxy from its $20 Developer plan **[source]**. If it does not meter that traffic per GB, it may already meet the cost goal with no operations at all, and the self-hosted build becomes a choice the owner can decline.
 
 ## 2. Recommended design
 
@@ -82,7 +82,7 @@ Mosaic gets one client module, `scripts/browser/remote.py`, that opens a session
 | Camoufox server | Strong Firefox-level spoofing; releases resumed in 2026 | Speaks Playwright's protocol instead of CDP, so Patchright cannot drive it; persistent contexts cannot be served ([repo](https://github.com/daijro/camoufox)) | Keep in reserve for one site that defeats Chrome |
 | nodriver or zendriver service | Strong Turnstile results in one benchmark | Client libraries only (AGPL); no maintained server | Borrow its techniques, such as the checkbox click |
 | CloakBrowser | Patched Chromium with built-in proxy and timezone matching | Closed binary with a licence key; one session on the free tier ([repo](https://github.com/CloakHQ/CloakBrowser)) **[vendor]** | Rejected |
-| Browserbase with our Evomi proxy | No operations; persistent contexts; live view | $20/month plus $0.12 per browser-hour; unclear whether external-proxy bytes are metered ([proxies](https://docs.browserbase.com/features/proxies), [pricing](https://www.browserbase.com/pricing)) | **Fallback, and measure first** |
+| Browserbase with our Evomi proxy | No operations; persistent contexts; live view | $20/month plus $0.12 per browser-hour; unclear whether external-proxy bytes are metered ([proxies](https://docs.browserbase.com/features/proxies), [pricing](https://www.browserbase.com/pricing)) | Temporary fallback until phase 6 |
 | Browser Use Cloud with our proxy | $0.02 per hour plus $0.20/GB for our own proxy **[vendor]** ([pricing](https://browser-use.com/pricing)) | Presents Chrome on macOS from Linux hosts (survey below); profiles unverified | Second fallback candidate |
 | Steel Cloud | Our proxy on all plans | Sessions capped at 15 minutes on Launch ([pricing](https://steel.dev/pricing)) **[vendor]** | Rejected for logins |
 | Kernel, Anchor, Hyperbrowser | Capable | Our own proxy needs a $200, $500 or Enterprise plan **[vendor]** | Rejected on cost |
@@ -162,8 +162,8 @@ Each step ends with a check. Browserbase stays the default until step 8 passes.
 6. **Move the throwaway-profile callers one at a time**, each with Browserbase fallback on failure, in order of risk: `fetch_news.py` (UDN), `companies_fetch.py` (Bizapedia), then `aa.py`. *Check:* a week of normal use per caller with a fallback rate under 10%.
 7. **Move the Ancestry family.** Log in once through the noVNC view into the `ancestry` profile on the volume, pinned to one exit region. Switch `bb_session.py` callers to `remote.py` with `profile="ancestry"`. *Check:* the logged-in marks in §6.
 8. **Soak and fault tests** in §6. *Check:* every mark met.
-9. **Switch the default.** Make the new service the default in `remote.py`, update `.claude/tooling.md`, and record the service in `.claude/infrastructure.md`. Keep the Browserbase fallback.
-10. **Retire.** Delete the Steel service after two clean weeks. After 30 days, move Browserbase to the cheapest plan that still allows our proxy.
+9. **Switch the default.** Make the new service the default in `remote.py`, update `.claude/tooling.md`, and record the service in `.claude/infrastructure.md`. Keep Browserbase temporarily until phase 6 moves the callers.
+10. **Retire.** Delete the Steel service after two clean weeks. That retirement proposal is superseded: retain Browserbase temporarily until phase 6 moves the callers, then retire it.
 
 ## 6. Test plan
 
