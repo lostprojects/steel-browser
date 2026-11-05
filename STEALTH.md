@@ -1905,3 +1905,18 @@ Synthetic service checks also passed owner binding, URL changes, expiry, one-tim
 TypeScript passed and the existing secret-handling file passed all seven tests. No real message content was read, no login code was printed or stored, and these local checks used zero residential bytes. Successful completion of an actual site’s email or SMS challenge remains unverified until such a challenge occurs.
 
 The service endpoint waits for a collector-free deployment window. The preceding verified application remains `b2da0b3`.
+
+## Ancestry-family login persistence, 5 November 2026
+
+- **Refused password.** About 25 sign-ins from fresh profiles on 4 November ended with Ancestry answering the correct password with "Your email or password is incorrect". The owner's own browser signed in normally. Typing was ruled out: 24 of 24 random strings with the credentials' shape landed exactly through the login's X11 path. The daily check added about a dozen more attempts from test profiles at 00:03 UTC.
+- **Known device.** A profile that passed the emailed new-device check stayed signed in to all three sites from a different exit. Collectors had fetched on `residential-US` while logins ran on `ancestry`; both now use `ancestry`, which signed in to all three without a password.
+- **Cookie lifetimes** (`GET /v1/sessions/:id/cookie-lifetimes`, no values):
+
+  | Site | Sign-in cookies | Expiry |
+  |---|---|---|
+  | Ancestry | `SecureATT`, `ANCATT`, `RMEATT`; session `ATT`, `ANCSESSIONID` | about 400 days; `SecureATT` reissued on visit |
+  | Newspapers.com | `ncom-rt`; `user_token` 12 h; `ncom-session` 30 min | 30 days; renewed through Ancestry sign-on |
+  | Fold3 | `sess` | 30 days; renewed through Ancestry sign-on |
+
+  Ancestry's sign-in form has no remember-me checkbox. Named profiles restore session cookies, so the daily check keeps the login indefinitely.
+- **Checker changes** (`4faffe1`): skip refused passwords and unanswered codes, run when two slots are free, and remove test identities with `DELETE /v1/logins/:identity`. The idempotency table now evicts finished operations instead of refusing all keyed calls after 128 (`01a9c98`).
