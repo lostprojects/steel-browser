@@ -248,7 +248,7 @@ export class FilesController {
 
       return reply.send({
         data: files.map((file) => ({
-          path: file.path,
+          path: path.relative(this.fileService.getBaseFilesPath(), file.path),
           size: file.size,
           lastModified: file.lastModified,
         })),

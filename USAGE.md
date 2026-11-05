@@ -30,9 +30,10 @@ protected identities. A busy identity returns 409; deletion holds its lock until
 all removals finish. Vault entries and metered spend remain. Clients sending
 a JSON content type should include `{}` as the DELETE body.
 
-A fourth session waits up to five seconds, then gets HTTP 429. Mosaic currently
-uses Browserbase after that response. Three simultaneous Mosaic callers and the
-fourth-caller fallback passed before the service update, using zero residential bytes.
+A fourth session waits up to five seconds, then gets HTTP 429. Mosaic waits and
+retries capacity refusals for up to ten minutes. A busy pool or identity does not
+switch providers. Service unavailability can still use the temporary Browserbase
+fallback while phase 6 observations remain open.
 
 Create requests accept a caller-generated UUID in `sessionId`. Send an
 `idempotency-key` header when retrying a create after a lost response. Reusing the
@@ -189,3 +190,72 @@ after the 175-minute sample and restarts earlier if the exit IP changes.
 original time and sample numbers. Run the local sampler detached when it must
 survive chat interruptions. Keep its metadata path and PID in Mosaic's
 infrastructure register until it releases the browser.
+
+
+## Phase 6 interface and caller observations
+
+`bb.py` and `steel.py` are the shared Python client; no parallel `remote.py` is
+needed. Use `Browser(site="bizapedia", caller="companies_fetch.py")` for interaction
+or `fetch_page(url, site="udn", caller="fetch_news.py")` for one page. The fast path
+climbs the measured routing ladder and releases any allocated browser. Callers can
+supply a payload validator; an empty search with an explicit zero-results marker
+is a successful read.
+
+Site defaults share `/data/routing/routes.json` with learned rungs and measured
+traffic policies. `GET /v1/sites` lists them; `GET /v1/sites/{name}` also accepts an
+encoded source URL for a dynamic host. Each row holds its identity (null means
+throwaway), mode, residential country, starting rung and vault login site.
+`PUT /v1/routing/policies/{host}` can update these fields alongside `split` and
+`ttlSeconds`. Ancestry, Newspapers.com and Fold3 keep `ancestry` for login and
+collection. Explicit mode and residential overrides apply to unprotected sites.
+
+`POST /mcp` serves stateless Streamable HTTP using the same named keys, vault
+permissions and session ownership as REST. Send `steel-api-key` or a Bearer token
+in a header. A supplied Origin must match the configured service origin. GET and
+DELETE return 405; the service provides no standalone SSE stream.
+
+| Tool | Operation |
+| --- | --- |
+| `browser_open` | Open by site or URL, with optional identity, mode and residential override |
+| `browser_snapshot`, `browser_act` | Element references and batched navigation/input/wait commands |
+| `browser_read` | Markdown, visible text or masked HTML |
+| `browser_screenshot` | PNG; protected identities refuse capture |
+| `browser_download` | Fetch a URL or click a reference and return a session-scoped files link |
+| `browser_login` | Run the configured vault flow; local email/SMS codes use Mosaic's code-only helper |
+| `browser_handoff` | Require the owner's explicit agreement before returning an authenticated view |
+| `browser_network` | Agent-mode request metadata, omitting headers, bodies and query strings |
+| `browser_close` | Release and report settled bytes and estimated residential cost |
+| `fetch` | Read one page as markdown and close its browser |
+
+A download includes a suggested local INBOX path. The service cannot write the
+Mac's filesystem; the local client copies the authenticated files response there.
+Files URLs and listing paths are relative to the selected session. Copy the result
+before closing when using MCP. No tool asks a person for help automatically.
+
+After the owner agrees to a particular handoff, an administrator may record that
+agreement with `POST /v1/sessions/{id}/handoff-approval` and
+`{"ownerAgreed":true,"reason":"the agreed reason"}`. The returned token lasts five
+minutes, is bound to the session/reason/owner, and can be used once. Named keys
+cannot issue approvals. Protected identities refuse both approval and views.
+
+Session creation accepts a `caller` tag. `GET /v1/caller-outcomes?from=...&to=...`
+is admin-only and returns metadata by caller and UTC day, including session end
+reasons, settled bytes, caller results and fallback counts. It stores no page
+content, URLs or credential values. The end time is exclusive. Results survive
+restarts on `/data/routing/caller-outcomes.jsonl`.
+
+Each Python `Browser` context is one measured caller run; each `fetch_page` is one
+read. A caller's explicit failed validation remains failed if later reads succeed
+in the same context. `unknown` means the run did not establish payload success.
+MCP rows count tool operations separately. `failedOrFallback` counts their union,
+so a failed fallback is counted once. Divide it by `observedAttempts`; unknown
+results prevent acceptance. Python queues unacknowledged metadata in
+`Mosaic/.state/browser-outcomes.jsonl` and retries it at the next result, preserving
+the original observation time. Clear that queue through successful sync before
+judging a window.
+
+Each moved caller needs seven days of normal use with less than 10% failures or
+fallbacks. A single successful check starts its observation; it cannot establish
+a week's reliability. Keep Browserbase branches, contexts and credentials until
+every moved caller passes. The before-change inventory and current results are in
+[mosaic/CALLERS.md](mosaic/CALLERS.md).

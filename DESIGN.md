@@ -185,7 +185,7 @@ The service performs logins from the vault. It answers machine-readable device c
 
 ## The agent interface
 
-The service serves an MCP endpoint over HTTP with the same key. Any Mosaic agent, local or in the cloud, can use it without a local browser. Mosaic's Python scripts use a thin client, `scripts/browser/remote.py`, over the same API.
+The service serves an MCP endpoint over HTTP with the same key. Any Mosaic agent, local or in the cloud, can use it without a local browser. Mosaic's Python scripts use the existing `scripts/browser/bb.py` and `steel.py` as the thin client over the same API. Phase 6 extends those modules and avoids a parallel `remote.py`.
 
 | Tool | Does |
 |---|---|
@@ -215,7 +215,7 @@ Each phase ends with a check. The current service keeps running throughout as th
 | 3 | Quiet mode: Chrome started without Puppeteer; engine with isolated world and X11 input | Bot tests clean with a full snapshot and a click running; six routes at `REVIEW.md` §6 marks |
 | 4 | Proxy manager: exits, exit checks, metering, budgets, retry; the routing ladder and per-host table; per-host split at the forwarder; direct file fetch with session cookies | Timezone matches the exit in 20 of 20; budgets end a session; retry recovers Anna's Archive; each collector route settles on its cheapest rung with the same pass rate; residential bytes per route fall by at least half with no drop in pass rate |
 | 5 | Vault, login flows, TOTP, hand-off | Vault login passed 5 November 2026. Authenticated daily jobs observe the existing Ancestry identity from 5–12 November; seven-day acceptance awaits that window. Deploy/crash survival, viewer measurements and hand-off checks are recorded in STEALTH.md. |
-| 6 | MCP endpoint and `remote.py`; site registry; move the six collector callers one at a time | Each caller runs a week with under 10% failure |
+| 6 | MCP endpoint and the existing Python client; site defaults in the host routing table; tagged caller outcomes and sequential caller migration | Implementation prepared 5 November 2026; production checks and seven-day caller windows are recorded in `mosaic/CALLERS.md`. Browserbase remains until each caller has under 10% failures/fallbacks over its week. |
 | 7 | Session log, failure video, canary; soak and fault tests | Every soak and fault mark in `REVIEW.md` §6 |
 
 Phase 1 is the largest change and the one everything else depends on. Phases 3 to 5 can run in parallel after phase 2.

@@ -25,12 +25,14 @@ function readCookie(header: string | undefined, name: string): string | undefine
 }
 
 /**
- * Returns the key supplied by a request, from the header, the apiKey query
+ * Returns the key from steel-api-key, Authorization: Bearer, the apiKey query
  * parameter or the cookie set when the UI was opened with ?apiKey=
  */
 export function suppliedKey(req: IncomingMessage): { key?: string; fromQuery: boolean } {
   const header = req.headers[API_KEY_HEADER];
   if (typeof header === "string") return { key: header, fromQuery: false };
+  const bearer = req.headers.authorization?.match(/^Bearer (\S+)$/i)?.[1];
+  if (bearer) return { key: bearer, fromQuery: false };
   const query = new URL(req.url ?? "", "http://localhost").searchParams.get("apiKey");
   if (query) return { key: query, fromQuery: true };
   return { key: readCookie(req.headers.cookie, API_KEY_COOKIE), fromQuery: false };

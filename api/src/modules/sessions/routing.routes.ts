@@ -1,9 +1,8 @@
 import { scrub } from "../../services/vault.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import path from "node:path";
 import { z } from "zod";
 import { agentFor } from "../../utils/api-key.js";
-import { Routing } from "../../services/routing.js";
+import { callerTag, outcomeBody } from "../../services/caller-outcomes.js";
 import { clearChallenge } from "../../services/challenge-service.js";
 import { downloadFile, httpFetch } from "../../services/http-fetch.js";
 import { selectedSession } from "./sessions.controller.js";
@@ -14,10 +13,16 @@ const name = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/);
 const httpUrl = z
   .string()
   .url()
-  .refine((v) => ["http:", "https:"].includes(new URL(v).protocol));
+  .refine((v) => {
+    const url = new URL(v);
+    return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password;
+  });
 const fetchBody = z
   .object({
     url: httpUrl,
+    site: z.string().min(1).max(2048).optional(),
+    caller: callerTag.optional(),
+    outcomeAttemptId: z.string().uuid().optional(),
     route: z.enum(["annas", "bizapedia", "udn", "ancestry", "newspapers", "fold3"]).optional(),
     startRung: z.number().int().min(1).max(3).optional(),
     identity: name.optional(),
@@ -33,15 +38,37 @@ const fetchBody = z
   })
   .strict();
 export default async function routes(server: FastifyInstance) {
-  const routing = new Routing(
-    server.sessionPool,
-    path.join(path.dirname(server.sessionPool.profilesRoot), "routing"),
-  );
+  const routing = server.sessionPool.routing;
   const admin = (req: FastifyRequest) => {
     if (!agentFor(req.raw)?.admin)
       throw Object.assign(new Error("Admin key required"), { statusCode: 403 });
   };
   server.get("/routing", () => routing.table());
+  server.get("/sites", () => routing.registry());
+  server.get<{ Params: { site: string } }>("/sites/:site", (req) =>
+    routing.resolve(req.params.site),
+  );
+  server.post("/caller-outcomes", async (req) => {
+    const body = outcomeBody.parse(req.body);
+    const agent = agentFor(req.raw)!;
+    if (
+      body.sessionId &&
+      body.backend === "steel" &&
+      !agent.admin &&
+      (server.sessionPool.owner(body.sessionId)?.name ??
+        (await server.sessionPool.outcomes.sessionOwner(body.sessionId))) !== agent.name
+    )
+      throw Object.assign(new Error("Session belongs to another agent"), { statusCode: 403 });
+    return server.sessionPool.outcomes.result(body, agent.name);
+  });
+  server.get("/caller-outcomes", async (req) => {
+    admin(req);
+    const q = z
+      .object({ from: z.string().datetime().optional(), to: z.string().datetime().optional() })
+      .strict()
+      .parse(req.query);
+    return server.sessionPool.outcomes.summary(q.from, q.to);
+  });
   server.get("/usage", async (req) => {
     const totals = await server.sessionPool.proxies!.totals();
     const agent = agentFor(req.raw)!;
@@ -80,13 +107,29 @@ export default async function routes(server: FastifyInstance) {
       .toLowerCase();
     const policy = z
       .object({
-        split: z.boolean(),
+        split: z.boolean().optional(),
         startRung: z.number().int().min(1).max(3).optional(),
         ttlSeconds: z.number().int().min(1).max(604800).optional(),
+        site: name.optional(),
+        url: httpUrl.optional(),
+        identity: name.nullable().optional(),
+        mode: z.enum(["agent", "quiet"]).optional(),
+        country: z
+          .string()
+          .regex(/^[A-Z]{2}$/)
+          .nullable()
+          .optional(),
+        loginSite: z
+          .enum(["ancestry", "newspapers", "fold3", "mary-ferrell", "hathitrust-google"])
+          .nullable()
+          .optional(),
       })
       .strict()
       .parse(req.body);
-    await routing.policy(host, policy.split, policy.startRung, policy.ttlSeconds);
+    if (policy.url && new URL(policy.url).hostname !== host)
+      throw Object.assign(new Error("Site URL must match policy host"), { statusCode: 400 });
+    const { split, startRung, ttlSeconds, ...site } = policy;
+    await routing.policy(host, split, startRung, ttlSeconds, site);
     return { host, ...policy };
   });
   server.post("/fetch", async (req) => {

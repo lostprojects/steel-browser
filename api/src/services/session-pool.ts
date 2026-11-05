@@ -12,10 +12,14 @@ import { BrowserSession } from "./browser-session.js";
 import { SessionContextSchema } from "./context/types.js";
 import { releaseStaleProfileLock } from "./cdp/utils/profile-lock.js";
 import { ProxyManager, DAILY_BUDGET, type Agent } from "./proxy-manager.js";
+import { Routing } from "./routing.js";
+import { CallerOutcomes, callerTag } from "./caller-outcomes.js";
 
 export const sessionOptions = z
   .object({
     sessionId: z.string().uuid().optional(),
+    site: z.string().min(1).max(2048).optional(),
+    caller: callerTag.optional(),
     residential: z
       .object({
         country: z
@@ -111,6 +115,8 @@ export interface PoolOptions {
   ) => BrowserSession;
 }
 export class SessionPool {
+  readonly routing: Routing;
+  readonly outcomes: CallerOutcomes;
   readonly proxies?: ProxyManager;
   private owners = new Map<string, Agent>();
   owner(id: string) {
@@ -160,6 +166,11 @@ export class SessionPool {
     if (!Number.isInteger(this.maxSessions) || this.maxSessions < 1)
       throw new Error("MAX_SESSIONS must be a positive integer");
     this.profilesRoot = options.profilesRoot ?? process.env.PROFILES_ROOT ?? "/data/profiles";
+    const routingRoot = options.factory
+      ? path.join(this.profilesRoot, ".routing")
+      : path.join(path.dirname(this.profilesRoot), "routing");
+    this.routing = new Routing(this, routingRoot);
+    this.outcomes = new CallerOutcomes(routingRoot);
     if (!options.factory)
       this.proxies = new ProxyManager(path.join(path.dirname(this.profilesRoot), "routing"));
     this.timer = setInterval(
@@ -229,7 +240,7 @@ export class SessionPool {
     agent: Agent = { name: "admin", admin: true, dailyBudgetBytes: DAILY_BUDGET },
     measuredPolicy = false,
   ): Promise<BrowserSession> {
-    const parsed = sessionOptions.safeParse(body);
+    const parsed = sessionOptions.safeParse(await this.routing.sessionOptions(body));
     if (!parsed.success)
       throw new PoolError(
         400,
@@ -320,6 +331,8 @@ export class SessionPool {
         if (profilePath && !identity) await rm(profilePath, { recursive: true, force: true });
         if (acquired && this.reservations.has(id)) this.free(id);
         if (identity) this.identities.delete(identity);
+        if (session?.info)
+          await this.outcomes.session(session.info(), agent.name, options.caller, options.site);
       }
       throw error;
     } finally {
@@ -353,9 +366,17 @@ export class SessionPool {
       this.sessions.delete(id);
       if (session.options.identity) this.identities.delete(session.options.identity);
       this.free(id);
+      await this.outcomes.session(
+        info,
+        this.owners.get(id)?.name ?? "unknown",
+        session.options.caller,
+        session.options.site,
+      );
       this.logger.info(
         {
           sessionId: id,
+          caller: session.options.caller,
+          site: session.options.site,
           reason,
           bytes: info.proxyTxBytes + info.proxyRxBytes,
           duration: info.duration,
@@ -409,6 +430,8 @@ export class SessionPool {
     ),
   ) {
     this.stopping = true;
+    await this.routing.table();
+    await this.outcomes.summary();
     clearInterval(this.timer);
     for (const item of this.queue.splice(0)) {
       clearTimeout(item.timer);

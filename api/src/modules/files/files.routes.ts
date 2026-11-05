@@ -4,9 +4,30 @@ import { $ref } from "../../plugins/schemas.js";
 import { FileService } from "../../services/file.service.js";
 import { MB } from "../../utils/size.js";
 import { FilesController } from "./files.controller.js";
+import path from "node:path";
+import { agentFor } from "../../utils/api-key.js";
 
 async function routes(server: FastifyInstance) {
-  const filesController = new FilesController(FileService.getInstance());
+  const controller = (request: FastifyRequest) => {
+    const id = (request.params as { sessionId: string }).sessionId;
+    const agent = agentFor(request.raw)!;
+    const owner = server.sessionPool.owner(id);
+    if (!owner || (!agent.admin && owner.name !== agent.name))
+      throw Object.assign(new Error("Session files are outside this agent's scope"), {
+        statusCode: 403,
+      });
+    return new FilesController(
+      new FileService({
+        baseFilesPath: path.join(FileService.getInstance().getBaseFilesPath(), id),
+        prebuiltArchiveDir: path.join(
+          FileService.getInstance().getBaseFilesPath(),
+          ".archives",
+          id,
+        ),
+        watchFiles: false,
+      }),
+    );
+  };
 
   await server.register(fastifyMultipart, {
     limits: {
@@ -37,7 +58,7 @@ async function routes(server: FastifyInstance) {
         Params: { sessionId: string };
       }>,
       reply,
-    ) => filesController.handleFileUpload(server, request, reply),
+    ) => controller(request).handleFileUpload(server, request, reply),
   );
 
   server.head(
@@ -51,7 +72,7 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: FastifyRequest<{ Params: { sessionId: string; "*": string } }>, reply) =>
-      filesController.handleFileHead(server, request, reply),
+      controller(request).handleFileHead(server, request, reply),
   );
 
   server.get(
@@ -65,7 +86,7 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: FastifyRequest<{ Params: { sessionId: string; "*": string } }>, reply) =>
-      filesController.handleFileDownload(server, request, reply),
+      controller(request).handleFileDownload(server, request, reply),
   );
 
   server.get(
@@ -86,7 +107,7 @@ async function routes(server: FastifyInstance) {
         Params: { sessionId: string };
       }>,
       reply,
-    ) => filesController.handleFileList(server, request, reply),
+    ) => controller(request).handleFileList(server, request, reply),
   );
 
   server.delete(
@@ -106,7 +127,7 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: FastifyRequest<{ Params: { sessionId: string; "*": string } }>, reply) =>
-      filesController.handleFileDelete(server, request, reply),
+      controller(request).handleFileDelete(server, request, reply),
   );
 
   server.delete(
@@ -127,7 +148,7 @@ async function routes(server: FastifyInstance) {
     },
 
     async (request: FastifyRequest<{ Params: { sessionId: string } }>, reply) =>
-      filesController.handleFileDeleteAll(server, request, reply),
+      controller(request).handleFileDeleteAll(server, request, reply),
   );
 
   server.get(
@@ -141,7 +162,7 @@ async function routes(server: FastifyInstance) {
       },
     },
     async (request: FastifyRequest<{ Params: { sessionId: string } }>, reply) =>
-      filesController.handleDownloadArchive(server, request, reply),
+      controller(request).handleDownloadArchive(server, request, reply),
   );
 }
 

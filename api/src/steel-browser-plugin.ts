@@ -18,6 +18,7 @@ import { actionsRoutes, cdpRoutes, filesRoutes, logsRoutes, sessionsRoutes } fro
 import { fileURLToPath } from "node:url";
 import ejs from "ejs";
 import routingRoutes from "./modules/sessions/routing.routes.js";
+import mcpRoutes from "./modules/mcp/mcp.routes.js";
 import type { BrowserSession } from "./services/browser-session.js";
 import type { CommandEngine } from "./services/commands/engine.js";
 import type { BrowserLauncherOptions } from "./types/browser.js";
@@ -97,6 +98,7 @@ const steelBrowserPlugin: FastifyPluginAsync<SteelBrowserConfig> = async (fastif
   if (enableLogsRoutes) {
     await fastify.register(logsRoutes, { prefix: "/v1/logs" });
   }
+  await fastify.register(mcpRoutes);
 };
 
 export default fp<SteelBrowserConfig>(steelBrowserPlugin, {

@@ -372,6 +372,8 @@ export class LoginService {
   ) {
     await this.ready;
     const spec = loginSites[site];
+    if (spec.vault === "ancestry" && session.options.identity !== "ancestry")
+      throw Object.assign(new Error("Ancestry family requires its known identity"), { statusCode: 403 });
     if (identityVault(session.options.identity) !== spec.vault)
       throw Object.assign(new Error("Session identity does not match the login"), {
         statusCode: 403,

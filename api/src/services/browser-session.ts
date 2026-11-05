@@ -617,6 +617,8 @@ export class BrowserSession extends EventEmitter {
       status: this.status,
       mode: this.options.mode,
       identity: this.options.identity,
+      site: this.options.site,
+      caller: this.options.caller,
       last_login_ok: this.lastLoginOk,
       duration: (this.endedAt ?? Date.now()) - this.startedAt,
       endReason: this.endReason,
