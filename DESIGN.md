@@ -149,7 +149,7 @@ A per-host routing table records the lowest rung that worked, with a 7-day expir
 | Ancestry, Newspapers.com, Fold3 after login | 3 | Keep authenticated pages and API requests on the identity’s fixed residential allocation, using the same egress as login |
 | Ancestry-family sign-in | 3 | The device check is the step a residential IP helps (`ancestry_com_fetch.py`) |
 | Bizapedia | 3 | 0 of 3 on datacenter egress, 3 of 3 residential (`companies_fetch.py`, 20 Aug 2026) |
-| Anna's Archive | 3 | DDoS-Guard does not clear without the proxy (`aa.py`) |
+| Anna's Archive | 2, then 3 | The latest 20-search acceptance passed directly in 20/20 with zero residential bytes; residential escalation remains available (`STEALTH.md`) |
 | Utah Digital Newspapers | 1, then measure | Uses residential today with no recorded reason |
 
 Railway's addresses have a different reputation from Browserbase's, so re-measure every start rung once on Railway.

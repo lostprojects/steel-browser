@@ -1920,3 +1920,50 @@ The service endpoint waits for a collector-free deployment window. The preceding
 
   Ancestry's sign-in form has no remember-me checkbox. Named profiles restore session cookies, so the daily check keeps the login indefinitely.
 - **Checker changes** (`4faffe1`): skip refused passwords and unanswered codes, run when two slots are free, and remove test identities with `DELETE /v1/logins/:identity`. The idempotency table now evicts finished operations instead of refusing all keyed calls after 128 (`01a9c98`).
+
+## Browser-service follow-up, 4 November 2026 (5 November UTC)
+
+### Login diagnosis and regression checks
+
+The first read-only Mary Ferrell observation reached `/member/signin`. Username
+and password fields and an enabled `submit_button` were visible. Neither Sign Out
+nor My Membership was present. Creation through the full pool first returned 429;
+that refusal was followed by a later successful allocation. The observation settled
+69,940 residential bytes.
+
+A subsequent vault login passed on the existing application and reached `/home`.
+Sign Out and My Membership were visible; `/member/memberinfo` and
+`/member/signout` were present in its links. That session settled 105,573 bytes.
+The earlier failure was therefore intermittent; these observations do not identify
+its original cause.
+
+The service now recognizes Mary Ferrell's `/member/signout` link even in a closed
+menu. All member markers reject sign-in pages and visible password/code forms;
+current-page checks also validate the origin. Browser input and the fixed identity
+allocation retain their existing behavior.
+
+TypeScript passed. The final full suite passed 241 tests with 237 skipped across
+38 passing files and one skipped file. New focused cases cover idempotency eviction,
+cookie lifetimes without values and domain boundaries, daily-check guards and
+forgetting, scoped login deletion, member markers, Newspapers' callback and the
+Ancestry prerequisite for both sibling sites. Identity deletion tests check the
+profile's removal, concurrent claims and preserved spend after sticky-state removal.
+
+### Anna's Archive acceptance
+
+The accepted set searched `history`, pages 1–20, through `/v1/fetch`. Each request
+started at rung 2 with residential escalation and its new-exit retry available.
+All 20 passed their first attempt at rung 2. Each returned 100 or 116 payload links.
+Median server time was 15.604 seconds; the longest was 27.368 seconds.
+
+The administrative usage ledger increased by zero residential bytes. The phase 3
+comparison is 41,705,644 bytes for 20 searches, so this is a 100% reduction on the
+measured set. The policy remains `startRung: 2`, `split: true`, with its seven-day
+learned-route expiry. No residential retry was required in this acceptance set.
+
+An earlier narrow-query pilot was stopped after three direct payload passes as
+its result count declined. A second runner lost an API response to a connection
+reset. Those incomplete pilots are excluded from the accepted set. The completed
+runner used idempotency keys to recover transport responses without repeating its
+browser allocations. These checks establish short-run acceptance on Railway's
+direct egress; they add no 24-hour stability result.
