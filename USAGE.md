@@ -278,6 +278,8 @@ fallbacks. A single successful check starts its observation; it cannot establish
 a week's reliability.
 The exact UTC windows and unresolved source blocks are in `mosaic/CALLERS.md`.
 Ancestry general search and Utah failures remain counted after their parser fixes.
+Utah's explicit empty-search heading and suggestion list are valid even when
+the result table is absent; the real caller verified this on `4bf8e12`.
 PICRYL and Legacy use measured quiet US host policies with throwaway profiles;
 these policies do not change other hosts or protected logins.
 

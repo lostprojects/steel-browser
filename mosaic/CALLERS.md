@@ -2,14 +2,15 @@
 
 Twenty-one remote callers have verified payloads; DTIC and HathiTrust still need
 verified browser runs. Every seven-day window is open and normal-use sufficiency
-is unestablished. Browserbase remains available. The Utah empty-result fix is
-prepared for deployment; `a1da357` remains the currently verified application.
+is unestablished. Browserbase remains available. Application `4bf8e12` is healthy
+on Railway; its real Utah caller verified an explicit zero-result payload.
 
 | Commit | Change |
 | --- | --- |
 | `0684078` | Scoped MCP tools, site defaults in the existing routing table and durable caller outcomes |
 | `fcba673` | Bounded summary rates when fallback outcomes are unknown |
 | `a1da357` | Overall fetch deadlines, authenticated cancellation and stopped-request replay protection |
+| `4bf8e12` | Accept verified Utah empty-search markup outside the result table |
 
 The Python client remains `bb.py`/`steel.py`, with `bb_session.py` for the family.
 All 23 remote callers carry tags; known sites use the service registry and
@@ -104,7 +105,7 @@ These are first verified payloads, not seven-day passes.
 | Caller awaiting a window | Current blocker |
 |---|---|
 | dtic.py | Live apps.dtic.mil returns a 1,408-byte maintenance page. Ordinary mirror search returned ten matches and cite resolved AD0688332, 417 pages; those HTTP results cannot start its browser window. The browser validator now requires the requested accession. |
-| hathitrust.py | Ordinary and supported --proxy public searches both stopped at ChallengeRequired on 5 November. No result count was established. The caller now stops after the service returns that classification. Protected Google login was untouched. |
+| hathitrust.py | Ordinary public search stopped at ChallengeRequired; supported --proxy retries returned BLOCKED on 5 November. No result count was established. The caller stops when the service reports ChallengeRequired. Protected Google login was untouched. |
 
 The first AIP and image-verification results were transport-only and must not be counted as payload validation. Earlier unknown, failed and interrupted events remain in the service ledger. Filter each observation window from the listed verified-run start; compare failures and fallbacks, and treat unknowns and insufficient normal use as no acceptance.
 
@@ -153,13 +154,13 @@ worker, and cancels unfinished service work before fallback or interruption.
 
 Stopped IDs cannot restart for ten minutes, including through dropped failed
 idempotency entries. Late launches release as soon as they resolve. The production
-checks above verified those controls; they do not establish Utah's zero-result
-payload support, which remains unresolved.
+checks above verified those controls. The separate production check below now
+verifies Utah's zero-result payload.
 
 The verified Utah policy remains rung 2 with its measured split policy preserved.
 No Browserbase code, account, contexts or environment keys were removed.
-Retirement awaits every caller's week, successful browser checks for DTIC and
-HathiTrust, and the production verification of Utah's empty-result correction.
+Retirement awaits every caller's week and successful browser checks for DTIC and
+HathiTrust. No Browserbase retirement is supported yet.
 
 ## Follow-up diagnostics, 5 November
 
@@ -197,9 +198,9 @@ The service, Browserbase fallback validator and collector now recognize that
 specific markup. The earlier prolonged failed caller remains recorded.
 
 After flushing metadata (pending zero), all 21 exact seven-day ranges were queried
-through `steel.py --outcomes --from START --to END`. As of 5 November before the
-Utah deployment, fetch_news was 1 failedOrFallback / 2 attempts (50%); Ancestry was
-1 / 3 (33.3%). Other started windows had zero failedOrFallback with only 1–4
+through `steel.py --outcomes --from START --to END`. After the Utah production
+check on 5 November, fetch_news and Ancestry were each 1 failedOrFallback / 3
+attempts (33.3%). Other started windows had zero failedOrFallback with only 1–4
 attempts each. All selected windows had zero unknowns, but every window was still
 open and normal-use sufficiency was unestablished. None passed acceptance.
 
@@ -215,3 +216,31 @@ Focused checks passed: news 10, acquisition 3, photo 21 and service routing 5.
 TypeScript and syntax checks for the ten changed Python files passed. Collector
 procedure checks found zero problems. No corpus records or source files were
 written by these diagnostics.
+
+## Production verification and delivery
+
+Railway deployed `4bf8e12` successfully on 5 November. The normal
+`fetch_news.udn_search` call for `qxzvplmnytr8nonexistent` ran from
+18:21:56.233517 to 18:21:57.816632 UTC and returned `ZERO_RESULTS`, total 0,
+shown 0. Its real caller outcome was successful with no fallback, zero residential
+bytes and a released session. Health was OK, the pool empty and pending metadata
+zero afterward. Utah's original failed run remains inside its original window.
+
+The final public HathiTrust challenge-helper probe reported CLEARED on the
+`residential-US` profile without reading a source payload, so its separately
+tagged outcome remains unknown. The ordinary caller's supported `--proxy` retry
+used its configured unnamed profile and still returned BLOCKED at
+18:07:37.788451 UTC. It cannot inherit clearance from the other profile, and
+neither result starts its window. No protected Google login was attempted.
+
+Before the application push, the pool was empty and the preceding ten minutes
+contained no collector requests. `rw logs --http --since 10m` currently returns
+older HTTP rows too; its HTTP implementation ignores the parsed start time.
+Use the requested command with `--limit 1000 --format json`, then filter its UTC
+`time` values to the actual ten-minute interval. Check that the returned rows
+cover that interval, and exclude only administrative reads when deciding whether
+collector traffic is absent. Keep keys and query strings out of diagnostic output.
+
+Both branches were pushed together with `git push origin main main:deploy` after
+pulling with rebase. The documentation-only follow-up does not need a service
+restart. No account, context or environment key was removed.
