@@ -34,4 +34,4 @@ Import search: `rg -l 'from browser\\.(bb|bb_session|steel|api) import|from brow
 
 ## Migration results
 
-Prepared on 5 November 2026. Activation waits for the phase 5 viewer to release the pool. No observation window has started under the new caller ledger.
+Service `0684078` deployed on 5 November 2026. The official local MCP SDK passed all eleven tools against production, including scope refusals, PNG and file bytes, an unapproved handoff and a rung-1 markdown fetch. No test sessions remain. An initial fixture assertion expected the page title in readable markdown; extraction removes that title, so the corrected body assertion passed. Caller activation and observation timestamps follow below.

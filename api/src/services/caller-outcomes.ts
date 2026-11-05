@@ -164,12 +164,8 @@ export class CallerOutcomes {
         .map((row) => ({
           ...row,
           observedAttempts: row.successes + row.failures,
-          failureRate:
-            row.successes + row.failures
-              ? row.failedOrFallback / (row.successes + row.failures)
-              : null,
-          fallbackRate:
-            row.successes + row.failures ? row.fallbacks / (row.successes + row.failures) : null,
+          failureRate: row.attempts ? row.failedOrFallback / row.attempts : null,
+          fallbackRate: row.attempts ? row.fallbacks / row.attempts : null,
         }))
         .sort((a, b) => `${a.day}/${a.caller}`.localeCompare(`${b.day}/${b.caller}`)),
       acceptance:

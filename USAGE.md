@@ -248,8 +248,8 @@ Each Python `Browser` context is one measured caller run; each `fetch_page` is o
 read. A caller's explicit failed validation remains failed if later reads succeed
 in the same context. `unknown` means the run did not establish payload success.
 MCP rows count tool operations separately. `failedOrFallback` counts their union,
-so a failed fallback is counted once. Divide it by `observedAttempts`; unknown
-results prevent acceptance. Python queues unacknowledged metadata in
+so a failed fallback is counted once. Divide it by `attempts`; unknown results
+prevent acceptance. Python queues unacknowledged metadata in
 `Mosaic/.state/browser-outcomes.jsonl` and retries it at the next result, preserving
 the original observation time. Clear that queue through successful sync before
 judging a window.
