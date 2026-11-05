@@ -125,11 +125,16 @@ export class LoginService {
         const today = new Date().toISOString().slice(0, 10);
         for (const [key, record] of Object.entries(this.records)) {
           const [identity, site] = key.split("/");
+          // A refused password or an unanswered code waits for an agent's login:
+          // repeating either from the server looks like account takeover to the site,
+          // and only the Mac can read emailed codes. Leave one slot for collectors.
           if (
             !record.last_login_ok ||
+            record.status === "check_required" ||
+            record.check === "credentials_rejected" ||
             checked[key] === today ||
             pool.identityBusy(identity) ||
-            pool.size ||
+            pool.size > pool.maxSessions - 2 ||
             pool.draining
           )
             continue;
@@ -180,6 +185,20 @@ export class LoginService {
   async metadata() {
     await this.ready;
     return this.records;
+  }
+  // Remove an identity from the schedule; its browser profile is untouched.
+  async forget(identity: string) {
+    await this.ready;
+    const keys = Object.keys(this.records).filter((k) => k.split("/")[0] === identity);
+    keys.forEach((k) => delete this.records[k]);
+    const text = JSON.stringify(this.records);
+    const work = this.writes.then(async () => {
+      await writeFile(path.join(this.root, "logins.json.tmp"), text, { mode: 0o600 });
+      await rename(path.join(this.root, "logins.json.tmp"), path.join(this.root, "logins.json"));
+    });
+    this.writes = work.catch(() => undefined);
+    await work;
+    return { identity, forgotten: keys.map((k) => k.split("/")[1]) };
   }
   private async record(
     session: BrowserSession,
