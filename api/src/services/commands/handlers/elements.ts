@@ -1,5 +1,4 @@
-import { realpath, stat } from "node:fs/promises";
-import { resolve, sep } from "node:path";
+import { sessionUploadFiles } from "../policy.js";
 import type { Command } from "../commands.js";
 import { CommandError, withEffect } from "../errors.js";
 import { axString } from "../ax.js";
@@ -448,23 +447,7 @@ export async function upload(
 ): Promise<CommandResult> {
   const target = await element(ctx, command);
   const names = Array.isArray(command.files) ? command.files : [command.files];
-  const root = await realpath(ctx.host.filesRoot());
-  const files: string[] = [];
-  for (const name of names) {
-    const path = resolve(root, name);
-    const real = path.startsWith(root + sep) ? await realpath(path).catch(() => null) : path;
-    if (!real || !real.startsWith(root + sep)) {
-      throw new CommandError(
-        "forbidden_file",
-        `${name} is not a file in this session's files. Upload it with the files API first.`,
-        real ? "outside_files" : "missing",
-      );
-    }
-    if (!(await stat(real)).isFile()) {
-      throw new CommandError("forbidden_file", `${name} is not a file.`, "not_file");
-    }
-    files.push(real);
-  }
+  const files = await sessionUploadFiles(ctx.host.filesRoot(), names);
   const input = await callOn<{ file: boolean; multiple: boolean }>(
     target,
     `function () {

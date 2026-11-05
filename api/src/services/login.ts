@@ -12,6 +12,7 @@ import type { Agent } from "./proxy-manager.js";
 import { vault, totp, protect } from "./vault.js";
 import { QuietInput } from "./quiet-input.js";
 import { clearChallenge } from "./challenge-service.js";
+import { withSessionLogin } from "./session-access.js";
 
 // `signedIn` marks a member page whose sign-out control sits in an unopened
 // menu (observed 4 November 2026 on all three Ancestry-family sites).
@@ -98,6 +99,15 @@ type PendingCode = {
   identity: string;
   url: string;
   back?: string;
+};
+type LoginResult = {
+  identity?: string;
+  site: LoginSite;
+  status: string;
+  check: string;
+  last_login_ok?: string;
+  exitIp?: string;
+  codeRequest?: CodeRequest;
 };
 export class LoginService {
   private records: Record<string, LoginRecord> = {};
@@ -373,7 +383,9 @@ export class LoginService {
     await this.ready;
     const spec = loginSites[site];
     if (spec.vault === "ancestry" && session.options.identity !== "ancestry")
-      throw Object.assign(new Error("Ancestry family requires its known identity"), { statusCode: 403 });
+      throw Object.assign(new Error("Ancestry family requires its known identity"), {
+        statusCode: 403,
+      });
     if (identityVault(session.options.identity) !== spec.vault)
       throw Object.assign(new Error("Session identity does not match the login"), {
         statusCode: 403,
@@ -386,14 +398,11 @@ export class LoginService {
     this.pendingCodes.delete(session.id);
     for (const [id, pending] of this.pendingCodes)
       if (Date.parse(pending.request.expires) <= Date.now()) this.pendingCodes.delete(id);
-    const job = vault.use(spec.vault, agent, async (fields) => {
-      session.loginBusy = true;
-      try {
-        return await this.run(session, site, fields, agent, current, resume);
-      } finally {
-        session.loginBusy = false;
-      }
-    });
+    const job = withSessionLogin(session, () =>
+      vault.use(spec.vault, agent, (fields) =>
+        this.run(session, site, fields, agent, current, resume),
+      ),
+    );
     this.active.set(session.id, job);
     try {
       return await job;
@@ -408,7 +417,7 @@ export class LoginService {
     agent: Agent,
     current: boolean,
     resume?: PendingCode & { code: string },
-  ) {
+  ): Promise<LoginResult> {
     const spec = loginSites[site];
     const page = await session.getPrimaryPage();
     const { width, height } = session.getDimensions();

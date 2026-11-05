@@ -2,10 +2,12 @@
 // credentials). Quiet Chrome owns a process group so crash cleanup is scoped.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { browserProcessEnv } from "../utils/browser.js";
 const execute = promisify(execFile);
 export async function chromeProcesses(group: number) {
   const { stdout } = await execute("ps", ["-e", "-o", "pid=,pgid=,rss=,stat="], {
     maxBuffer: 1024 * 1024,
+    env: browserProcessEnv(),
   });
   return stdout
     .trim()

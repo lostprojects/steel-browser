@@ -9,6 +9,7 @@ import { selectedSession } from "./sessions.controller.js";
 import { idempotent } from "../../utils/idempotency.js";
 import { QuietInput } from "../../services/quiet-input.js";
 import { createHash, randomUUID } from "node:crypto";
+import { withSessionOperation } from "../../services/session-access.js";
 
 const name = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/);
 const httpUrl = z
@@ -164,14 +165,12 @@ export default async function routes(server: FastifyInstance) {
         stopped.statusCode === 408 &&
         ["fetch_timeout", "fetch_cancelled"].includes(stopped.reason ?? "")
       )
-        return reply
-          .code(408)
-          .send({
-            status: "failed",
-            requestId: stopped.requestId,
-            reason: stopped.reason,
-            error: stopped.reason,
-          });
+        return reply.code(408).send({
+          status: "failed",
+          requestId: stopped.requestId,
+          reason: stopped.reason,
+          error: stopped.reason,
+        });
       throw error;
     }
   });
@@ -184,14 +183,19 @@ export default async function routes(server: FastifyInstance) {
       .strict()
       .parse(req.body ?? {});
     const session = selectedSession(server, req);
-    return idempotent(req, () => clearChallenge(session, options.targetId, options.budgetMs));
+    return idempotent(req, () =>
+      withSessionOperation(session, () =>
+        clearChallenge(session, options.targetId, options.budgetMs),
+      ),
+    );
   });
   server.post("/sessions/:sessionId/download", async (req) => {
     const { url, referer } = z
       .object({ url: httpUrl, referer: httpUrl.optional() })
       .strict()
       .parse(req.body);
-    return downloadFile(selectedSession(server, req), url, referer);
+    const session = selectedSession(server, req);
+    return withSessionOperation(session, () => downloadFile(session, url, referer));
   });
   server.post("/sessions/:sessionId/request", async (req) => {
     const session = selectedSession(server, req);
@@ -207,22 +211,24 @@ export default async function routes(server: FastifyInstance) {
     for (const key of Object.keys(options.headers))
       if (!/^(accept|content-type|accept-language|referer)$/i.test(key))
         throw Object.assign(new Error("Request header is not allowed"), { statusCode: 400 });
-    const result = await httpFetch({
-      ...options,
-      cookies: await session.getCookies(),
-      userAgent: session.getUserAgent(),
-      proxy: session.proxyServer?.url,
-      maxBytes: 64000000,
-      timeout: 120,
+    return withSessionOperation(session, async () => {
+      const result = await httpFetch({
+        ...options,
+        cookies: await session.getCookies(),
+        userAgent: session.getUserAgent(),
+        proxy: session.proxyServer?.url,
+        maxBytes: 64000000,
+        timeout: 120,
+      });
+      delete result.headers["set-cookie"];
+      const type = result.headers["content-type"] ?? "";
+      if (/json|text|javascript/.test(type))
+        result.body = Buffer.from(scrub(Buffer.from(result.body, "base64").toString())).toString(
+          "base64",
+        );
+      session.touch();
+      return result;
     });
-    delete result.headers["set-cookie"];
-    const type = result.headers["content-type"] ?? "";
-    if (/json|text|javascript/.test(type))
-      result.body = Buffer.from(scrub(Buffer.from(result.body, "base64").toString())).toString(
-        "base64",
-      );
-    session.touch();
-    return result;
   });
   server.post("/sessions/:sessionId/input", async (req) => {
     const session = selectedSession(server, req);
@@ -247,36 +253,38 @@ export default async function routes(server: FastifyInstance) {
       .strict()
       .parse(req.body);
     if (!session.display.name) throw new Error("Session display unavailable");
-    return idempotent(req, async () => {
-      const { width, height } = session.getDimensions();
-      const input = new QuietInput(session.display.name!, width, height);
-      const mouse = (type: string, x: number | undefined, y: number | undefined, deltaY = 0) =>
-        input.mouse({ type, x, y, deltaY, button: "left" }, { x: 0, y: 0 });
-      for (const a of actions) {
-        if (a.action === "type") await input.text(a.text ?? "");
-        else if (a.action === "press") {
-          await input.key({ type: "keyDown", key: a.text });
-          await input.key({ type: "keyUp", key: a.text });
-        } else if (a.action === "wait")
-          await new Promise((r) => setTimeout(r, Math.max(0, Math.min(10, a.value ?? 0)) * 1000));
-        else if (a.action === "scroll")
-          await mouse("mouseWheel", a.x ?? width / 2, a.y ?? height / 2, a.value);
-        else {
-          await mouse("mousePressed", a.x, a.y);
-          if (a.action === "drag") await mouse("mouseMoved", a.x2, a.y2);
-          await mouse(
-            "mouseReleased",
-            a.action === "drag" ? a.x2 : a.x,
-            a.action === "drag" ? a.y2 : a.y,
-          );
-          if (a.action === "dblclick") {
+    return idempotent(req, () =>
+      withSessionOperation(session, async () => {
+        const { width, height } = session.getDimensions();
+        const input = new QuietInput(session.display.name!, width, height);
+        const mouse = (type: string, x: number | undefined, y: number | undefined, deltaY = 0) =>
+          input.mouse({ type, x, y, deltaY, button: "left" }, { x: 0, y: 0 });
+        for (const a of actions) {
+          if (a.action === "type") await input.text(a.text ?? "");
+          else if (a.action === "press") {
+            await input.key({ type: "keyDown", key: a.text });
+            await input.key({ type: "keyUp", key: a.text });
+          } else if (a.action === "wait")
+            await new Promise((r) => setTimeout(r, Math.max(0, Math.min(10, a.value ?? 0)) * 1000));
+          else if (a.action === "scroll")
+            await mouse("mouseWheel", a.x ?? width / 2, a.y ?? height / 2, a.value);
+          else {
             await mouse("mousePressed", a.x, a.y);
-            await mouse("mouseReleased", a.x, a.y);
+            if (a.action === "drag") await mouse("mouseMoved", a.x2, a.y2);
+            await mouse(
+              "mouseReleased",
+              a.action === "drag" ? a.x2 : a.x,
+              a.action === "drag" ? a.y2 : a.y,
+            );
+            if (a.action === "dblclick") {
+              await mouse("mousePressed", a.x, a.y);
+              await mouse("mouseReleased", a.x, a.y);
+            }
           }
         }
-      }
-      session.touch();
-      return { success: true, sessionId: session.id };
-    });
+        session.touch();
+        return { success: true, sessionId: session.id };
+      }),
+    );
   });
 }

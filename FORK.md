@@ -70,6 +70,18 @@ Browserbase is a temporary Mosaic fallback until phase 6 moves the callers.
 
 ## Vault and login service
 
+The access hardening patch requires API credentials at startup, checks browser
+origins on REST and WebSockets, and removes keys from dashboard URLs after setting
+the authentication cookie. Chrome and its helpers receive an explicit OS
+environment without service secrets. The CDP relay applies the existing upload
+directory restriction and fixes download destinations to the session directory.
+
+A shared login lock waits for active operations and pauses new REST browser work
+until login ends. It preserves existing profiles and cookie files. This patch
+does not provide full isolation against an authorized client's arbitrary scripts;
+Chrome sandbox changes, comprehensive internal-network filtering and encrypted
+cookie-file migration need separate compatibility checks before deployment.
+
 Credentials use Node's AES-256-GCM in one encrypted volume file. Vault entries restrict use to named agents; metadata reads expose no values. Login flows use isolated page reads and native typing, with positive account checks and persistent last-login times. The CDP relay and HTTP output scrub known values, and protected identities refuse profile export and image capture.
 
 Authenticated API requests remain on the profile's egress. A daily timer checks previously authenticated identities when the pool is free and records device checks and exit addresses across deployments. Live acceptance is recorded in STEALTH.md.

@@ -121,6 +121,26 @@ on 5 November UTC. The unused local migrated context has been deleted.
 
 ## Vault login
 
+The API requires its admin key at startup and validates configured named keys.
+Browser-origin requests, including WebSockets, must come from the configured
+service origin. Native clients can continue using their existing headers and CDP
+URLs without an Origin header. Opening a dashboard or live view with `apiKey`
+sets the existing HttpOnly cookie and redirects to a URL without the key.
+
+REST commands, native input, challenges and authenticated HTTP reads wait while
+the service signs in. Login first gives existing operations up to thirty seconds
+to finish; if they remain active it returns 409 before entering credentials.
+Raw CDP retains its existing limited setup access during login.
+
+Raw CDP uploads and drag-and-drop files use the same session-directory checks as
+the commands API, including resolved symlinks. Browser download destinations are
+fixed to that session's files directory. Upload files through the files API before
+selecting them in a page.
+
+Chrome and its display and HTTP helpers receive only the OS environment settings
+they need. Service keys and proxy credentials are omitted. Existing profiles,
+cookie formats and automatic verification-code handling are preserved.
+
 An administrator imports values with `PUT /v1/vault/{name}` using `fields` and `allowedAgents`. `GET /v1/vault` and `GET /v1/vault/{name}` return names, field names and last-use times. `mosaic/vault_import.py` transfers the selected project env fields through that API without printing values.
 
 Create a quiet session with identity `ancestry` or `mary-ferrell`, then call `POST /v1/sessions/{id}/login {"site":"ancestry"}`. The Ancestry identity also accepts sites `newspapers` and `fold3`. The service validates account content, types through X11 and records `last_login_ok`. `current:true` checks the present page and signs in again when it observes signed-out controls. An unrecognized page returns `unchecked`; it does not establish authentication.

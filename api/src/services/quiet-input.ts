@@ -2,6 +2,7 @@ import { protectedDisplays } from "./vault.js";
 // Native input and screenshots for one session's display. Do not send CDP Input
 // events or shell commands containing page text, credentials, or filenames.
 import { spawn } from "node:child_process";
+import { browserProcessEnv } from "../utils/browser.js";
 
 export type RunX = (args: string[], text?: string) => Promise<Buffer>;
 
@@ -13,7 +14,7 @@ export function runDisplay(
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
-      env: { ...process.env, DISPLAY: display, LANG: "C.UTF-8", LC_ALL: "C.UTF-8" },
+      env: browserProcessEnv({ DISPLAY: display, LANG: "C.UTF-8", LC_ALL: "C.UTF-8" }),
       stdio: ["pipe", "pipe", "pipe"],
     });
     const chunks: Buffer[] = [];

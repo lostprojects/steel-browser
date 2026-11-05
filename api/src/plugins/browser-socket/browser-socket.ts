@@ -5,7 +5,7 @@ import { WebSocketServer } from "ws";
 import { WebSocketRegistryService } from "../../services/websocket-registry.service.js";
 import type { WebSocketHandler } from "../../types/websocket.js";
 import { defaultHandlers } from "./handlers/index.js";
-import { isAuthorized, agentFor } from "../../utils/api-key.js";
+import { isAuthorized, agentFor, browserOriginAllowed } from "../../utils/api-key.js";
 export interface BrowserSocketOptions {
   customHandlers?: WebSocketHandler[];
 }
@@ -15,6 +15,10 @@ const plugin: FastifyPluginAsync<BrowserSocketOptions> = async (server, options)
   for (const handler of [...defaultHandlers, ...(options.customHandlers ?? [])])
     registry.registerHandler(handler);
   server.server.on("upgrade", async (request, socket, head) => {
+    if (!browserOriginAllowed(request)) {
+      socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+      return;
+    }
     if (!isAuthorized(request)) {
       socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
       return;

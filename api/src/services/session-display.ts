@@ -4,6 +4,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createServer, connect } from "node:net";
 import type { WebSocket } from "ws";
+import { browserProcessEnv } from "../utils/browser.js";
 
 const displays = new Set<number>();
 export async function unusedPort(): Promise<number> {
@@ -44,7 +45,7 @@ export class SessionDisplay {
     displays.add(n);
     this.number = n;
     const launch = (command: string, args: string[]) => {
-      const child = spawn(command, args, { stdio: "ignore" });
+      const child = spawn(command, args, { stdio: "ignore", env: browserProcessEnv() });
       child.once("error", () => {
         if (!this.closing) onExit();
       });

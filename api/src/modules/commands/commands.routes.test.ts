@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import { afterEach, describe, expect, test, vi } from "vitest";
+vi.mock("../../utils/api-key.js", () => ({ agentFor: () => ({ name: "admin", admin: true }) }));
 import routes from "./commands.routes.js";
 import { PoolError, type SessionPool } from "../../services/session-pool.js";
 const apps: ReturnType<typeof Fastify>[] = [];

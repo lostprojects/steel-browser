@@ -3,6 +3,18 @@ import path from "path";
 import { Page } from "puppeteer-core";
 import { env } from "../env.js";
 
+// Browser and display helpers need OS settings, not the service's vault, API or
+// proxy credentials. Keep this list explicit so future service secrets stay out.
+export function browserProcessEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const allowed =
+    /^(?:PATH|HOME|USER|LOGNAME|SHELL|TMPDIR|TMP|TEMP|LANG|LANGUAGE|LC_[A-Z_]+|TZ|DISPLAY|XAUTHORITY|DBUS_SESSION_BUS_ADDRESS|XDG_(?:CONFIG_HOME|CACHE_HOME|DATA_HOME|DATA_DIRS|CONFIG_DIRS|RUNTIME_DIR)|FONTCONFIG_(?:PATH|FILE)|LD_LIBRARY_PATH|LIBGL_DRIVERS_PATH|LIBGL_ALWAYS_SOFTWARE|MESA_LOADER_DRIVER_OVERRIDE|SSL_CERT_FILE|SSL_CERT_DIR|CURL_CA_BUNDLE|SystemRoot|SYSTEMROOT|WINDIR|LOCALAPPDATA|APPDATA|USERPROFILE|ProgramFiles|__CF_USER_TEXT_ENCODING)$/;
+  return Object.fromEntries(
+    Object.entries({ ...process.env, ...overrides }).filter(
+      ([key, value]) => value !== undefined && allowed.test(key),
+    ),
+  );
+}
+
 export const getChromeExecutablePath = () => {
   if (env.CHROME_EXECUTABLE_PATH) {
     const executablePath = env.CHROME_EXECUTABLE_PATH;

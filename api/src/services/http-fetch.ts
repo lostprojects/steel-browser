@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { BrowserSession } from "./browser-session.js";
 import { challengeMarker } from "./challenge-service.js";
+import { browserProcessEnv } from "../utils/browser.js";
 
 export type HttpResult = {
   status: number;
@@ -32,7 +33,7 @@ export function httpFetch(options: {
     const child = spawn(
       process.env.FETCH_PYTHON ?? "/opt/browser-fetch/bin/python",
       [fileURLToPath(new URL("../../fetch.py", import.meta.url))],
-      { stdio: ["pipe", "pipe", "ignore"] },
+      { stdio: ["pipe", "pipe", "ignore"], env: browserProcessEnv() },
     );
     const chunks: Buffer[] = [];
     let size = 0;

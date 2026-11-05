@@ -44,7 +44,9 @@ export function scrubObject<T>(value: T): T {
     return Object.fromEntries(
       Object.entries(value).map(([k, v]) => [
         scrub(k),
-        /^(?:password|authorization|cookie|set-cookie|seed|proxyUrl|VAULT_KEY)$/i.test(k)
+        /^(?:password|authorization|cookie|set-cookie|seed|proxyUrl|VAULT_KEY|steel-api-key|apiKey|STEEL_API_KEY|STEEL_AGENT_KEYS)$/i.test(
+          k,
+        )
           ? "[redacted]"
           : scrubObject(v),
       ]),

@@ -9,11 +9,18 @@ import { MB } from "./utils/size.js";
 import path from "node:path";
 import type { Duplex } from "node:stream";
 import { env } from "./env.js";
-import { API_KEY_COOKIE, isAuthorized, suppliedKey } from "./utils/api-key.js";
+import {
+  API_KEY_COOKIE,
+  isAuthorized,
+  suppliedKey,
+  requireApiKey,
+  browserOriginAllowed,
+} from "./utils/api-key.js";
 
 const HOST = process.env.HOST ?? "0.0.0.0";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-const SHUTDOWN_TIMEOUT_MS = Number(process.env.RAILWAY_DEPLOYMENT_DRAINING_SECONDS ?? 120) * 1000 + 15_000;
+const SHUTDOWN_TIMEOUT_MS =
+  Number(process.env.RAILWAY_DEPLOYMENT_DRAINING_SECONDS ?? 120) * 1000 + 15_000;
 
 export const server = fastify({
   logger: loggingConfig[process.env.NODE_ENV ?? "development"] ?? true,
@@ -23,10 +30,13 @@ export const server = fastify({
 });
 
 const setupServer = async () => {
+  requireApiKey();
   await server.register(fastifySensible);
   await server.register(fastifyCors, { origin: true });
 
   server.addHook("onRequest", async (request, reply) => {
+    if (!browserOriginAllowed(request.raw))
+      return reply.code(403).send({ error: "Origin is not allowed" });
     if (request.method === "OPTIONS") return;
     if (!isAuthorized(request.raw)) {
       return reply.code(401).send({ error: "Unauthorized" });
@@ -39,6 +49,15 @@ const setupServer = async () => {
         "set-cookie",
         `${API_KEY_COOKIE}=${encodeURIComponent(key)}; Path=/; HttpOnly; SameSite=Lax${secure}`,
       );
+      reply.header("referrer-policy", "no-referrer").header("cache-control", "no-store");
+      const url = new URL(request.raw.url ?? "/", "http://localhost");
+      if (
+        request.method === "GET" &&
+        (url.pathname.startsWith("/ui/") || /^\/v1\/sessions\/[^/]+\/view$/.test(url.pathname))
+      ) {
+        url.searchParams.delete("apiKey");
+        return reply.redirect(url.pathname + url.search);
+      }
     }
   });
 

@@ -14,7 +14,11 @@ import { scrubObject, protectedDisplays, protect } from "./vault.js";
 import { identityVault } from "./login.js";
 import type { FastifyBaseLogger } from "fastify";
 import { env } from "../env.js";
-import { getChromeExecutablePath, defaultPluginPreferences } from "../utils/browser.js";
+import {
+  getChromeExecutablePath,
+  defaultPluginPreferences,
+  browserProcessEnv,
+} from "../utils/browser.js";
 import {
   deepMerge,
   groupSessionStorageByOrigin,
@@ -36,6 +40,8 @@ import type { SessionOptions } from "./session-pool.js";
 import { QuietBrowser } from "./quiet-browser.js";
 import { QuietInput } from "./quiet-input.js";
 import type { Exit } from "./proxy-manager.js";
+import { scopeClientFiles } from "./commands/policy.js";
+import { beginSessionOperation } from "./session-access.js";
 
 export class BrowserSession extends EventEmitter {
   readonly createdAt = new Date().toISOString();
@@ -198,7 +204,7 @@ export class BrowserSession extends EventEmitter {
         getChromeExecutablePath(),
         [...args, `--user-data-dir=${this.profilePath}`, "about:blank"],
         {
-          env: { ...process.env, TZ: timezone, DISPLAY: this.display.name },
+          env: browserProcessEnv({ TZ: timezone, DISPLAY: this.display.name }),
           stdio: "ignore",
           detached: true,
         },
@@ -249,7 +255,7 @@ export class BrowserSession extends EventEmitter {
         "--disable-ipc-flooding-protection",
       ],
       timeout: 30_000,
-      env: { ...process.env, TZ: timezone, DISPLAY: this.display.name ?? env.DISPLAY },
+      env: browserProcessEnv({ TZ: timezone, DISPLAY: this.display.name ?? env.DISPLAY }),
       args,
     });
     this.endpoint = this.browser.wsEndpoint();
@@ -541,48 +547,89 @@ export class BrowserSession extends EventEmitter {
     this.cdpRelay.handleUpgrade(req, socket, head, (client) => {
       const upstream = new WebSocket(this.endpoint);
       const queued: string[] = [];
-      const pending = new Map<number, string>();
+      const pending = new Map<string, { method: string; finish: () => void }>();
+      const messageKey = (message: any) => JSON.stringify([message.sessionId ?? "", message.id]);
+      const finishPending = () => {
+        for (const operation of pending.values()) operation.finish();
+        pending.clear();
+      };
+      let incoming = Promise.resolve();
       client.on("message", (data) => {
-        let raw = data.toString();
-        let message: any;
-        try {
-          message = JSON.parse(raw);
-        } catch {
-          client.close(1003);
-          return;
-        }
-        if (identityVault(this.options.identity)) {
-          // An observing client must not pause newly opened login frames.
-          if (message.method === "Target.setAutoAttach") {
-            message.params.waitForDebuggerOnStart = false;
-            raw = JSON.stringify(message);
-          }
-          const setup =
-            /^(Target\.(setDiscoverTargets|getTargets|getTargetInfo|attachToTarget|detachFromTarget|setAutoAttach)|Page\.(enable|setLifecycleEventsEnabled|getFrameTree)|DOM.enable|Accessibility.enable|Runtime.runIfWaitingForDebugger|Browser.getVersion)$/.test(
-              message.method,
-            );
-          if (
-            (this.loginBusy && !setup) ||
-            ["Page.captureScreenshot", "Page.startScreencast", "Page.printToPDF"].includes(
-              message.method,
-            )
-          ) {
-            client.send(
-              JSON.stringify({
-                id: message.id,
-                sessionId: message.sessionId,
-                error: {
-                  code: -32000,
-                  message: "Protected identity output unavailable during login or image capture",
-                },
-              }),
-            );
-            return;
-          }
-          pending.set(message.id, message.method);
-        }
-        if (upstream.readyState === WebSocket.OPEN) upstream.send(raw);
-        else queued.push(raw);
+        incoming = incoming
+          .then(async () => {
+            let message: any;
+            try {
+              message = JSON.parse(data.toString());
+              if (
+                !message ||
+                !Number.isSafeInteger(message.id) ||
+                typeof message.method !== "string"
+              )
+                throw new Error("Invalid browser command");
+            } catch {
+              client.close(1003);
+              return;
+            }
+            let setup = false;
+            if (identityVault(this.options.identity)) {
+              // An observing client must not pause newly opened login frames.
+              if (message.method === "Target.setAutoAttach") {
+                message.params ??= {};
+                message.params.waitForDebuggerOnStart = false;
+              }
+              setup =
+                /^(Target\.(setDiscoverTargets|getTargets|getTargetInfo|attachToTarget|detachFromTarget|setAutoAttach)|Page\.(enable|setLifecycleEventsEnabled|getFrameTree)|DOM.enable|Accessibility.enable|Runtime.runIfWaitingForDebugger|Browser.getVersion)$/.test(
+                  message.method,
+                );
+              if (
+                (this.loginBusy && !setup) ||
+                ["Page.captureScreenshot", "Page.startScreencast", "Page.printToPDF"].includes(
+                  message.method,
+                )
+              ) {
+                client.send(
+                  JSON.stringify({
+                    id: message.id,
+                    sessionId: message.sessionId,
+                    error: {
+                      code: -32000,
+                      message:
+                        "Protected identity output unavailable during login or image capture",
+                    },
+                  }),
+                );
+                return;
+              }
+            }
+            let finish = () => {};
+            try {
+              if (pending.has(messageKey(message))) throw new Error("Duplicate browser command ID");
+              if (!(this.loginBusy && setup)) finish = beginSessionOperation(this);
+              await scopeClientFiles(message, this.filesPath);
+              if (client.readyState !== WebSocket.OPEN || upstream.readyState > WebSocket.OPEN) {
+                finish();
+                return;
+              }
+              pending.set(messageKey(message), { method: message.method, finish });
+              const raw = JSON.stringify(message);
+              if (upstream.readyState === WebSocket.OPEN) upstream.send(raw);
+              else queued.push(raw);
+            } catch {
+              finish();
+              if (client.readyState === WebSocket.OPEN)
+                client.send(
+                  JSON.stringify({
+                    id: message.id,
+                    sessionId: message.sessionId,
+                    error: {
+                      code: -32000,
+                      message: "Browser command refused by session access policy",
+                    },
+                  }),
+                );
+            }
+          })
+          .catch(() => client.close(1011));
       });
       upstream.on("open", () => {
         for (const raw of queued) upstream.send(raw);
@@ -596,15 +643,26 @@ export class BrowserSession extends EventEmitter {
           client.close(1011);
           return;
         }
-        if (pending.has(payload.id)) {
-          if (/^(Storage|Network)\.get(?:All)?Cookies$/.test(pending.get(payload.id)!))
+        const operation = pending.get(messageKey(payload));
+        if (operation) {
+          if (
+            identityVault(this.options.identity) &&
+            /^(Storage|Network)\.get(?:All)?Cookies$/.test(operation.method)
+          )
             for (const cookie of payload.result?.cookies ?? []) cookie.value = "[redacted]";
-          pending.delete(payload.id);
+          operation.finish();
+          pending.delete(messageKey(payload));
         }
         if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(scrubObject(payload)));
       });
-      client.on("close", () => upstream.terminate());
-      upstream.on("close", () => client.close());
+      client.on("close", () => {
+        finishPending();
+        upstream.terminate();
+      });
+      upstream.on("close", () => {
+        finishPending();
+        client.close();
+      });
       client.on("error", () => upstream.terminate());
       upstream.on("error", () => client.close(1011));
     });

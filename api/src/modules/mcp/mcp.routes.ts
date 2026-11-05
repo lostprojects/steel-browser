@@ -17,8 +17,8 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { commandSchema } from "../../services/commands/commands.js";
 import { identityVault } from "../../services/login.js";
 import { scrub, scrubObject } from "../../services/vault.js";
-import { getBaseUrl, getUrl } from "../../utils/url.js";
-import { agentFor, suppliedKey } from "../../utils/api-key.js";
+import { getUrl } from "../../utils/url.js";
+import { agentFor, suppliedKey, browserOriginAllowed } from "../../utils/api-key.js";
 import { selectedSession } from "../sessions/sessions.controller.js";
 import { getDefuddleContent } from "../../utils/scrape/readability.js";
 import { BrowserEventType } from "../../types/enums.js";
@@ -159,16 +159,9 @@ export default async function mcpRoutes(server: FastifyInstance) {
     string,
     { session: string; reason: string; owner: string; expires: number }
   >();
-  const validOrigin = (req: FastifyRequest) => {
-    const origin = req.headers.origin;
-    if (!origin) return true;
-    // The canonical service origin comes from deployment configuration, never
-    // from the caller's Host or forwarded headers.
-    return origin === new URL(getBaseUrl()).origin;
-  };
   const check = (req: FastifyRequest) => {
     if (!agentFor(req.raw)) throw Object.assign(new Error("Unauthorized"), { statusCode: 401 });
-    if (!validOrigin(req))
+    if (!browserOriginAllowed(req.raw))
       throw Object.assign(new Error("Origin is not allowed"), { statusCode: 403 });
   };
   const access = (req: FastifyRequest, id: string) =>
