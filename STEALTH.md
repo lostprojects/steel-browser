@@ -1970,3 +1970,25 @@ reset. Those incomplete pilots are excluded from the accepted set. The completed
 runner used idempotency keys to recover transport responses without repeating its
 browser allocations. These checks establish short-run acceptance on Railway's
 direct egress; they add no 24-hour stability result.
+
+### Native form-input fault and remaining ad hosts
+
+On the first follow-up deployment, `current:true` passed using 30,696 route bytes.
+Logout was confirmed, but re-login failed using 41,916 route bytes; its session
+settled 117,007 bytes. A further current-page recovery failed (105,087 settled
+bytes). The dedicated form observation then reproduced the failure and settled
+101,858 bytes. Its username field was empty while its password field was filled.
+The submit button was enabled and uncovered, with no credential-rejection text.
+
+That empty field explains the reproduced failure. The input helper now checks
+focus before typing and compares the field with the intended value inside the
+service. It retries the field once and refuses submission if either field was not
+populated. Responses expose only the result. Synthetic checks reproduce a lost
+first click and verify recovery, and verify that failed typing cannot submit.
+
+The first four Bizapedia pilot pages passed with 51 links each, using 2,224,019,
+1,901,046, 1,901,147 and 1,903,310 bytes. AdThrive was absent. The cold trace also
+contained Google advertising and tracking hosts, so the final policy adds those
+existing refused-host classes and `analytics.google.com` for Bizapedia only.
+The pilot was interrupted during its fifth page; its context manager released
+that session. It is separate from the final twenty-page acceptance set below.

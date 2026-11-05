@@ -14,6 +14,10 @@ it("refuses Bizapedia ad hosts only and retains Cloudflare challenge traffic", (
     "g2.gumgum.com",
     "btloader.com",
     "launchpad.privacymanager.io",
+    "www.googletagmanager.com",
+    "www.google-analytics.com",
+    "analytics.google.com",
+    "stats.g.doubleclick.net",
   ]) {
     expect(identityHostRoute(host, "bizapedia")).toBe("refused");
     expect(identityHostRoute(host, "ancestry")).toBe("residential");

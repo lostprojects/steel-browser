@@ -479,13 +479,38 @@ export class LoginService {
     };
     const type = async (selector: string, value: string) => {
       if (!value) throw new Error("Required vault field is missing");
-      if (!(await click(selector))) return false;
-      await input.key({ type: "keyDown", key: "Control" });
-      await input.key({ type: "keyDown", key: "a" });
-      await input.key({ type: "keyUp", key: "a" });
-      await input.key({ type: "keyUp", key: "Control" });
-      await input.text(value);
-      return true;
+      // A native click can activate Chrome without focusing the first field.
+      // Read back only a boolean inside the service; never return field values.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (!(await click(selector))) return false;
+        const focused = await page.evaluate(
+          (selector) => document.activeElement?.matches(selector) ?? false,
+          selector,
+        );
+        if (focused) {
+          await input.key({ type: "keyDown", key: "Control" });
+          await input.key({ type: "keyDown", key: "a" });
+          await input.key({ type: "keyUp", key: "a" });
+          await input.key({ type: "keyUp", key: "Control" });
+          await input.text(value);
+          if (
+            await page.evaluate(
+              ({ selector, value }) => {
+                const field = document.activeElement;
+                return (
+                  field instanceof HTMLInputElement &&
+                  field.matches(selector) &&
+                  field.value === value
+                );
+              },
+              { selector, value },
+            )
+          )
+            return true;
+        }
+        await pause(150);
+      }
+      return false;
     };
     const go = async (url: string) => {
       session.lastNavigation = Date.now();
@@ -653,11 +678,14 @@ export class LoginService {
         if (spec.vault === "ancestry" && s.host !== "www.ancestry.com")
           return this.record(session, site, "failed", "ancestry_oauth_missing", agent);
         if (!formFilled) {
-          await type(
+          const usernameEntered = await type(
             'input[type="email"],input[name="username"],input#username,input[name="email"],input#email,input[name="userId"]',
             fields.username || fields.email,
           );
-          if (s.password) await type('input[type="password"]', fields.password);
+          const passwordEntered =
+            !s.password || (await type('input[type="password"]', fields.password));
+          if (!usernameEntered || !passwordEntered)
+            return this.record(session, site, "failed", "form_field_input_failed", agent);
           formFilled = true;
         }
         if ((await state()).submitDisabled) {

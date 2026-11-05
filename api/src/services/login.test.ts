@@ -30,6 +30,9 @@ const roots: string[] = [],
 const agent = { name: "mosaic", dailyBudgetBytes: 1000 };
 beforeEach(() => {
   vi.clearAllMocks();
+  native.mouse.mockReset();
+  native.key.mockReset();
+  native.text.mockReset();
   vi.useFakeTimers({ toFake: ["setTimeout", "setInterval", "clearInterval", "Date"] });
   vi.setSystemTime(new Date("2026-11-05T04:00:00Z"));
 });
@@ -76,8 +79,14 @@ async function fixture(
       },
     });
     dom.window.HTMLElement.prototype.getBoundingClientRect = function () {
-      return { x: 0, y: 0, width: this.style.display === "none" ? 0 : 10, height: 10 } as DOMRect;
+      return {
+        x: Number(this.dataset.x ?? 0),
+        y: 0,
+        width: this.style.display === "none" ? 0 : 10,
+        height: 10,
+      } as DOMRect;
     };
+    dom.window.HTMLElement.prototype.scrollIntoView = () => {};
   };
   load(url, html);
   const page = {
@@ -272,3 +281,62 @@ test.each(["eligible", "refused", "code", "never", "checked", "busy", "capacity"
     }
   },
 );
+
+test("retries a lost first-field focus before typing and submitting Mary Ferrell", async () => {
+  const { login, session } = await fixture(
+    "about:blank",
+    "",
+    {
+      "https://www.maryferrell.org/home": '<a href="/member/signin">Sign in</a>',
+      "https://www.maryferrell.org/member/signin":
+        '<input id="username" name="username" data-x="100"><input id="password" type="password" data-x="200"><button id="submit_button" data-x="300">Sign in</button>',
+    },
+    "mary-ferrell",
+  );
+  let usernameClicks = 0;
+  native.mouse.mockImplementation(async (event: any) => {
+    if (event.type !== "mouseReleased") return;
+    const dom = windows.at(-1)!;
+    const field = [...dom.window.document.querySelectorAll<HTMLElement>("input,button")].find(
+      (e) => Number(e.dataset.x) + 5 === event.x,
+    );
+    if (field?.id === "username" && ++usernameClicks === 1) return;
+    field?.focus();
+    if (field?.id === "submit_button") {
+      dom.reconfigure({ url: "https://www.maryferrell.org/home" });
+      dom.window.document.body.innerHTML = '<a href="/member/signout">Sign out</a>';
+    }
+  });
+  native.text.mockImplementation(async (value: string) => {
+    (windows.at(-1)!.window.document.activeElement as HTMLInputElement).value = value;
+  });
+  expect((await finish(login.login(session, "mary-ferrell", agent))).status).toBe("ok");
+  expect(usernameClicks).toBe(2);
+  expect(native.text).toHaveBeenCalledTimes(2);
+});
+
+test("refuses to submit when native typing does not populate a form field", async () => {
+  const { login, session } = await fixture(
+    "about:blank",
+    "",
+    {
+      "https://www.maryferrell.org/home": '<a href="/member/signin">Sign in</a>',
+      "https://www.maryferrell.org/member/signin":
+        '<input id="username" name="username" data-x="100"><input id="password" type="password" data-x="200"><button id="submit_button" data-x="300">Sign in</button>',
+    },
+    "mary-ferrell",
+  );
+  native.mouse.mockImplementation(async (event: any) => {
+    if (event.type === "mouseReleased") {
+      const dom = windows.at(-1)!;
+      [...dom.window.document.querySelectorAll<HTMLElement>("input")]
+        .find((e) => Number(e.dataset.x) + 5 === event.x)
+        ?.focus();
+    }
+  });
+  expect(await finish(login.login(session, "mary-ferrell", agent))).toMatchObject({
+    status: "failed",
+    check: "form_field_input_failed",
+  });
+  expect(native.mouse.mock.calls.some(([event]) => event.x === 305)).toBe(false);
+});

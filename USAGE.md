@@ -76,7 +76,8 @@ first-party resources and challenge providers retain the residential exit. Admin
 `PUT /v1/routing/policies/{host} {"split":true}`.
 
 The `bizapedia` identity refuses AdThrive, GumGum, btloader and PrivacyManager
-hosts at the forwarder. Cloudflare challenge hosts retain the residential exit.
+hosts, plus Google advertising and analytics hosts, at the forwarder. Cloudflare
+challenge hosts retain the residential exit.
 This policy does not enable browser request interception or service-wide ad blocking.
 
 `POST /v1/sessions/{id}/download {"url":"https://..."}` fetches from Railway with

@@ -19,9 +19,15 @@ export type HostRoute = "residential" | "direct" | "refused";
 export function identityHostRoute(host: string, identity?: string): HostRoute {
   if (
     identity === "bizapedia" &&
-    ["adthrive.com", "adthrive.net", "gumgum.com", "btloader.com", "privacymanager.io"].some(
-      (s) => host === s || host.endsWith(`.${s}`),
-    )
+    (hostRoute(host) === "refused" ||
+      [
+        "adthrive.com",
+        "adthrive.net",
+        "gumgum.com",
+        "btloader.com",
+        "privacymanager.io",
+        "analytics.google.com",
+      ].some((s) => host === s || host.endsWith(`.${s}`)))
   )
     return "refused";
   return "residential";
