@@ -1,8 +1,9 @@
 # Phase 6 caller migration
 
-Application `a1da357` is healthy on Railway. Fifteen remote callers have a verified
-first run; eight still need one. Their seven-day checks are incomplete, so
-Browserbase remains available.
+Twenty-one remote callers have verified payloads; DTIC and HathiTrust still need
+verified browser runs. Every seven-day window is open and normal-use sufficiency
+is unestablished. Browserbase remains available. The Utah empty-result fix is
+prepared for deployment; `a1da357` remains the currently verified application.
 
 | Commit | Change |
 | --- | --- |
@@ -72,36 +73,38 @@ Import search: `rg -l 'from browser\\.(bb|bb_session|steel|api) import|from brow
 
 ## First checks and observation windows
 
-Times below are America/New_York. A seven-day window ends at the same local time on 12 November 2026; each still needs normal use and under 10% failure. These are first-run results, not seven-day passes.
+All timestamps below are UTC. End times are exclusive. The initial fifteen
+windows close early on 12 November EST; the six later windows close that afternoon.
+These are first verified payloads, not seven-day passes.
 
-| Caller | Verified-run start | First check |
-|---|---|---|
-| fetch_news.py | 05 Nov 03:51:42 EST | Utah search FOUND, 3 rows; direct agent browser |
-| aa.py | 05 Nov 03:54:08 EST | Anna search, 3 parsed rows; direct agent browser |
-| newspapers_fetch.py | 05 Nov 03:55:18 EST | validated authenticated search API; ancestry identity |
-| fold3_fetch.py | 05 Nov 03:55:35 EST | validated authenticated search API; ancestry identity |
-| maryferrell.py | 05 Nov 03:56:14 EST | FOUND, 3 rows; protected Mary Ferrell identity |
-| crest.py | 05 Nov 03:56:42 EST | 20 parsed rows |
-| documentcloud.py | 05 Nov 03:56:52 EST | structured search API result |
-| aip.py | 05 Nov 04:15:30 EST | retry parsed child records; first empty-list success is unverified |
-| yale.py | 05 Nov 04:15:10 EST | retry returned nonempty catalog data; first outcome unknown |
-| archive.py | 05 Nov 04:05:19 EST | NARA browser result parsed; existing tests passed |
-| dpia.py | 05 Nov 04:05:52 EST | parsed search hits |
-| quartex.py | 05 Nov 04:27:00 EST | full retry returned parsed search hits; session released; first attempt interrupted |
-| imageverify.py | 05 Nov 04:18:33 EST | retry returned parsed reverse-search links; first record unverified |
-| render_diagram.py | 05 Nov 04:09:17 EST | valid 1,411-byte generated SVG; scratch removed |
-| wayback_bb_fetch.py | 05 Nov 04:19:04 EST | retry captured 1,256 bytes with expected page content; scratch removed |
+| Caller | Window start UTC | Window end UTC | Verified payload |
+|---|---|---|---|
+| fetch_news.py | 2026-11-05T08:51:42Z | 2026-11-12T08:51:42Z | Utah search FOUND, 3 rows; direct agent browser |
+| aa.py | 2026-11-05T08:54:08Z | 2026-11-12T08:54:08Z | Anna search, 3 parsed rows; direct agent browser |
+| newspapers_fetch.py | 2026-11-05T08:55:18Z | 2026-11-12T08:55:18Z | validated authenticated search API; ancestry identity |
+| fold3_fetch.py | 2026-11-05T08:55:35Z | 2026-11-12T08:55:35Z | validated authenticated search API; ancestry identity |
+| maryferrell.py | 2026-11-05T08:56:14Z | 2026-11-12T08:56:14Z | FOUND, 3 rows; protected Mary Ferrell identity |
+| crest.py | 2026-11-05T08:56:42Z | 2026-11-12T08:56:42Z | 20 parsed rows |
+| documentcloud.py | 2026-11-05T08:56:52Z | 2026-11-12T08:56:52Z | structured search API result |
+| aip.py | 2026-11-05T09:15:30Z | 2026-11-12T09:15:30Z | retry parsed child records; first empty-list success is unverified |
+| yale.py | 2026-11-05T09:15:10Z | 2026-11-12T09:15:10Z | retry returned nonempty catalog data; first outcome unknown |
+| archive.py | 2026-11-05T09:05:19Z | 2026-11-12T09:05:19Z | NARA browser result parsed; existing tests passed |
+| dpia.py | 2026-11-05T09:05:52Z | 2026-11-12T09:05:52Z | parsed search hits |
+| quartex.py | 2026-11-05T09:27:00Z | 2026-11-12T09:27:00Z | full retry returned parsed search hits; session released; first attempt interrupted |
+| imageverify.py | 2026-11-05T09:18:33Z | 2026-11-12T09:18:33Z | retry returned parsed reverse-search links; first record unverified |
+| render_diagram.py | 2026-11-05T09:09:17Z | 2026-11-12T09:09:17Z | valid 1,411-byte generated SVG; scratch removed |
+| wayback_bb_fetch.py | 2026-11-05T09:19:04Z | 2026-11-12T09:19:04Z | retry captured 1,256 bytes with expected page content; scratch removed |
+| companies_fetch.py | 2026-11-05T17:19:30.596935Z | 2026-11-12T17:19:30.596935Z | Three officer/company cards after selector correction; subsequent company grab verified five filing-field markers. |
+| ancestry_com_fetch.py | 2026-11-05T17:10:03.893000Z | 2026-11-12T17:10:03.893000Z | Three WWI draft records on ancestry. Start is the first verified session settlement; later general-search failure remains in this window. |
+| fbi.py | 2026-11-05T17:09:28.027499Z | 2026-11-12T17:09:28.027499Z | UFO list returned all 16 parts after /view normalization. |
+| wikidata_expand.py | 2026-11-05T17:15:12.671537Z | 2026-11-12T17:15:12.671537Z | NARA rendered search returned three NAID/title rows, total 61,261; no dossier write. |
+| photo.py | 2026-11-05T17:17:50.680635Z | 2026-11-12T17:17:50.680635Z | PICRYL dry run verified a 231,552-byte JPEG in memory; quiet US route; no attachment. |
+| obit.py | 2026-11-05T17:19:09.389786Z | 2026-11-12T17:19:09.389786Z | Legacy returned a complete 1,715-byte JSON-LD obituary; quiet US route. |
 
-| Caller | First-run result and remaining work |
+| Caller awaiting a window | Current blocker |
 |---|---|
-| companies_fetch.py | two failures on same Bizapedia identity; quota marker absent; generic error, cause unresolved; successful window pending |
-| ancestry_com_fetch.py | initial 0 rows unknown, retry failed after missing result/zero markers; member marker present, no verified payload; successful window pending |
-| fbi.py | two failed Vault part-list attempts; no fallback; successful window pending |
-| hathitrust.py | first run interrupted; full retry completed BLOCKED at 04:26:34 EST, sessions released; successful window pending |
-| obit.py | Legacy browser read failed payload validation; successful window pending |
-| photo.py | PICRYL dry run failed; no file or corpus write; successful window pending |
-| wikidata_expand.py | NARA browser path failed; no dossier was written; successful window pending |
-| dtic.py | browser-path check failed with direct probe bypassed; successful window pending |
+| dtic.py | Live apps.dtic.mil returns a 1,408-byte maintenance page. Ordinary mirror search returned ten matches and cite resolved AD0688332, 417 pages; those HTTP results cannot start its browser window. The browser validator now requires the requested accession. |
+| hathitrust.py | Ordinary and supported --proxy public searches both stopped at ChallengeRequired on 5 November. No result count was established. The caller now stops after the service returns that classification. Protected Google login was untouched. |
 
 The first AIP and image-verification results were transport-only and must not be counted as payload validation. Earlier unknown, failed and interrupted events remain in the service ledger. Filter each observation window from the listed verified-run start; compare failures and fallbacks, and treat unknowns and insufficient normal use as no acceptance.
 
@@ -155,5 +158,60 @@ payload support, which remains unresolved.
 
 The verified Utah policy remains rung 2 with its measured split policy preserved.
 No Browserbase code, account, contexts or environment keys were removed.
-Retirement awaits every caller's week, including successful checks for the eight
-pending callers and resolution of unverified payload behavior.
+Retirement awaits every caller's week, successful browser checks for DTIC and
+HathiTrust, and the production verification of Utah's empty-result correction.
+
+## Follow-up diagnostics, 5 November
+
+Earlier failed, unknown and interrupted events remain in the ledger. Diagnostics
+use `phase6-diagnostic.*` tags and are excluded from the caller windows above.
+The first two Bizapedia results in this follow-up were navigation-only and cannot
+establish payload success despite their old validator's success flag. Its window
+starts with the corrected card parser. No historical ledger rows were rewritten.
+
+- Bizapedia renders `a.people-card-link` company cards with state-code company URLs.
+  The old selector returned state navigation, and grab accepted “Add My Company”.
+  Search now returns cards; grab requires a company link or multiple filing labels.
+- Ancestry's general search displayed 40 member-photo rows and no indexed-record
+  links. It now follows the displayed record categories with the same filters.
+  A real retry returned three census records. The earlier general-search failure
+  remains inside the original verified window; its start was not moved.
+- FBI's Plone `/view` links were rejected before normalization. Its corrected
+  ordinary list returned all 16 UFO parts. A separately tagged download diagnostic
+  verified Part 01 as a 7,508,456-byte PDF, held only in memory.
+- NARA's old proxy URL returns an HTML application shell. Its browser caller now
+  validates the rendered catalog result count and NAID/title rows. The UI supplies
+  no `recordType`, so that field remains null. VIAF was not exercised.
+- PICRYL now reads DOM image metadata, builds size URLs correctly and validates
+  downloaded image bytes even in a dry run. Legacy validates its obituary DOM
+  after challenge handling, since the initial status can remain 403. Both hosts
+  failed on fresh direct access and passed a tagged quiet US diagnostic, then
+  passed their real caller paths with host policies set to quiet, US, identity null.
+  `picryl.com`, `www.picryl.com`, `legacy.com` and `www.legacy.com` retain split=false.
+  No account login or protected profile was used for those sources. GetArchive
+  was not exercised.
+
+Utah's genuine zero-result page returns HTTP 418 with the Utah title and an `h5`
+“No results found for” heading followed by `ul.suggest`; it has no result table.
+The service, Browserbase fallback validator and collector now recognize that
+specific markup. The earlier prolonged failed caller remains recorded.
+
+After flushing metadata (pending zero), all 21 exact seven-day ranges were queried
+through `steel.py --outcomes --from START --to END`. As of 5 November before the
+Utah deployment, fetch_news was 1 failedOrFallback / 2 attempts (50%); Ancestry was
+1 / 3 (33.3%). Other started windows had zero failedOrFallback with only 1–4
+attempts each. All selected windows had zero unknowns, but every window was still
+open and normal-use sufficiency was unestablished. None passed acceptance.
+
+For the next review, flush again and use each exact range in the table. Sum
+`failedOrFallback` and divide by `attempts` for that caller across all returned
+UTC-day rows. Require less than 10%, zero unresolved unknowns, seven elapsed days
+and sufficient normal collection use; diagnostics and repeated acceptance probes
+cannot establish that use. A later repair does not erase a failure or restart an
+already verified window. DTIC and HathiTrust need their own dates after real
+browser payloads become available.
+
+Focused checks passed: news 10, acquisition 3, photo 21 and service routing 5.
+TypeScript and syntax checks for the ten changed Python files passed. Collector
+procedure checks found zero problems. No corpus records or source files were
+written by these diagnostics.

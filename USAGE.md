@@ -276,6 +276,10 @@ Clear that queue through successful sync before judging a window:
 Each moved caller needs seven days of normal use with less than 10% failures or
 fallbacks. A single successful check starts its observation; it cannot establish
 a week's reliability.
+The exact UTC windows and unresolved source blocks are in `mosaic/CALLERS.md`.
+Ancestry general search and Utah failures remain counted after their parser fixes.
+PICRYL and Legacy use measured quiet US host policies with throwaway profiles;
+these policies do not change other hosts or protected logins.
 
 Keep Browserbase branches, contexts and credentials until every moved caller
 passes. The before-change inventory and current results are in

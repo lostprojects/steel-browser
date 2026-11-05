@@ -166,6 +166,13 @@ export function validPayload(
   if (route === "udn" && /Utah Digital Newspapers/.test(title))
     real ||=
       !!$(".main-search-results").length ||
+      $("h5")
+        .toArray()
+        .some(
+          (heading) =>
+            /^No results found for\s+/.test($(heading).text().trim()) &&
+            !!$(heading).next("ul.suggest").length,
+        ) ||
       (!!$("h4#title").length && !!$("td[data-field=type_t]").length);
   if (route && ["ancestry", "newspapers", "fold3"].includes(route))
     real ||=
