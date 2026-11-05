@@ -2230,3 +2230,54 @@ attempts on exceptions and expose `readAttempts`. They no longer consult the
 viewer's primary-page object. Prompts and device checks return immediately.
 The runner saves memory and exit-IP measurements before its auxiliary membership
 probe, preserving those observations if a later request fails.
+
+### Fold3 final measured result, 5 November 2026
+
+The finite run did not pass the three-hour mark. It recorded 7 memory/IP measurements and 7 complete membership observations. Peak sampled Chrome process-group RSS was 1,604,620,288 bytes.
+The runner stopped with HTTPError; HTTP status 410. It reported Transport or service error; no browser payload saved.
+The viewer canvas heuristic reported the states shown below. A `partial` observation establishes no complete source-image capture. No image was saved.
+
+| UTC | Elapsed seconds | Exit IP | Chrome RSS bytes | Member read | Canvas |
+| --- | ---: | --- | ---: | --- | --- |
+| 07:02:14 | 5.491 | 71.214.129.141 | 1,604,620,288 | ok | partial |
+| 07:07:13 | 305.046 | 71.214.129.141 | 1,587,146,752 | ok | partial |
+| 07:12:13 | 604.226 | 71.214.129.141 | 1,520,869,376 | ok | partial |
+| 07:17:13 | 904.222 | 71.214.129.141 | 1,526,566,912 | ok | partial |
+| 07:22:13 | 1204.347 | 71.214.129.141 | 1,527,533,568 | ok | partial |
+| 07:27:13 | 1504.281 | 71.214.129.141 | 1,528,893,440 | ok | partial |
+| 07:32:13 | 1805.031 | 71.214.129.141 | 1,532,133,376 | ok | partial |
+
+Application `d36ab5b` also passed all three retained-login checks after deployment, each on its first read attempt. No additional Google attempt or Chrome fault was made.
+The daily observation window still requires evaluation on or after 12 November. Read `readVersion:2` jobs for `ancestry` at the admin history route, retaining earlier validator failures as separate observations.
+
+## Phase 6 caller interface and timeout checks, 5 November 2026
+
+Applications `0684078` and `fcba673` added the MCP interface, shared site defaults
+and per-caller metadata. All eleven tools passed the local official MCP SDK
+against production; the download and Python files receiver delivered identical
+135-byte fixtures. Both copies were removed.
+
+The serial caller check established fifteen verified first runs. Eight callers
+remain without a verified payload; the complete audit, first-run results and
+Eastern-time observation windows are in [mosaic/CALLERS.md](mosaic/CALLERS.md).
+Browserbase remains available while those checks and the seven-day windows finish.
+
+A Utah empty-result probe ran for more than nineteen minutes. The caller was
+interrupted, its remaining session released, and its failure retained. It did not
+establish a valid zero result.
+
+Application `a1da357` adds one overall fetch deadline and same-agent cancellation.
+Its production 2,000 ms timeout returned HTTP 408 in 2,050 ms. Replaying the stopped
+ID did not create another session, including after a grace interval.
+
+A wrong-owner cancellation did not stop the named request. Owner cancellation
+returned `fetch_cancelled`; automatic cleanup left zero live test sessions.
+The updated MCP fast fetch returned a validated rung-1 markdown page.
+
+The bounded Python client returned three Utah rows at rung 2 in 2.982 seconds.
+Its three-second missing-payload call returned HTTP 408 in 2.924 seconds and left
+no live session. The verified Utah rung-2/split policy remains in place.
+
+TypeScript and the changed service files' 47 existing checks passed. Mosaic's
+three affected existing test files passed 24 checks. No new permanent test files
+or autonomous observation worker were added.

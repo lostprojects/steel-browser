@@ -227,35 +227,76 @@ DELETE return 405; the service provides no standalone SSE stream.
 | `browser_close` | Release and report settled bytes and estimated residential cost |
 | `fetch` | Read one page as markdown and close its browser |
 
-A download includes a suggested local INBOX path. The service cannot write the
-Mac's filesystem; the local client copies the authenticated files response there.
-Files URLs and listing paths are relative to the selected session. Copy the result
-before closing when using MCP. No tool asks a person for help automatically.
+A download includes a suggested local INBOX path. Copy its authenticated files
+response through the local client before closing the MCP session:
+
+```bash
+.venv/bin/python scripts/browser/steel.py --receive-download SESSION_ID --file FILE_NAME
+```
+
+This saves into `Source Data/-INBOX/browser-downloads` and prints the path and byte
+count. `--out DIR` selects another directory; existing files are preserved. Files
+URLs and listing paths are relative to the selected session.
 
 After the owner agrees to a particular handoff, an administrator may record that
 agreement with `POST /v1/sessions/{id}/handoff-approval` and
 `{"ownerAgreed":true,"reason":"the agreed reason"}`. The returned token lasts five
-minutes, is bound to the session/reason/owner, and can be used once. Named keys
-cannot issue approvals. Protected identities refuse both approval and views.
+minutes, is bound to the session/reason/owner, and can be used once.
 
-Session creation accepts a `caller` tag. `GET /v1/caller-outcomes?from=...&to=...`
-is admin-only and returns metadata by caller and UTC day, including session end
-reasons, settled bytes, caller results and fallback counts. It stores no page
-content, URLs or credential values. The end time is exclusive. Results survive
-restarts on `/data/routing/caller-outcomes.jsonl`.
+Named keys cannot issue approvals. Protected identities refuse approvals and
+views. No tool asks a person for help automatically.
+
+Session creation accepts a `caller` tag. Admin-only
+`GET /v1/caller-outcomes?from=...&to=...` returns metadata by caller and UTC day,
+including session end reasons, settled bytes and caller results.
+
+Results survive restarts on `/data/routing/caller-outcomes.jsonl`. The summary
+contains no page content, URLs or credential values. The end time is exclusive.
 
 Each Python `Browser` context is one measured caller run; each `fetch_page` is one
-read. A caller's explicit failed validation remains failed if later reads succeed
-in the same context. `unknown` means the run did not establish payload success.
-MCP rows count tool operations separately. `failedOrFallback` counts their union,
-so a failed fallback is counted once. Divide it by `attempts`; unknown results
-prevent acceptance. Python queues unacknowledged metadata in
-`Mosaic/.state/browser-outcomes.jsonl` and retries it at the next result, preserving
-the original observation time. Clear that queue through successful sync before
-judging a window.
+read. Successful transport alone does not establish payload success.
+
+Callers report validated results with `outcome(True)`, failed access with
+`outcome(False, reason)`, or an unverified empty response with `outcome(None)`.
+A failed validation remains failed if later reads succeed in the same context.
+`unknown` results prevent acceptance.
+
+MCP rows count tool operations separately. `failedOrFallback` counts the union,
+so a failed fallback is counted once; divide it by `attempts`.
+
+Python queues unacknowledged metadata in `Mosaic/.state/browser-outcomes.jsonl`
+and retries it at the next result, preserving the original observation time.
+Clear that queue through successful sync before judging a window:
+
+```bash
+.venv/bin/python scripts/browser/steel.py --flush-outcomes
+.venv/bin/python scripts/browser/steel.py --outcomes --from 2026-11-05T00:00:00Z --to 2026-11-13T00:00:00Z
+```
 
 Each moved caller needs seven days of normal use with less than 10% failures or
 fallbacks. A single successful check starts its observation; it cannot establish
-a week's reliability. Keep Browserbase branches, contexts and credentials until
-every moved caller passes. The before-change inventory and current results are in
+a week's reliability.
+
+Keep Browserbase branches, contexts and credentials until every moved caller
+passes. The before-change inventory and current results are in
 [mosaic/CALLERS.md](mosaic/CALLERS.md).
+
+Steel caller cleanup releases the shared browser before waiting for the local CDP
+driver to stop. The serial checks exposed a stalled driver after SIGINT; this order
+keeps that local cleanup from holding a pool slot.
+
+Fetch requests accept `timeoutMs` (1,000–300,000; default 180,000) and a UUID
+`requestId`. One deadline covers the entire routing ladder. A stopped request
+returns HTTP 408 with `fetch_timeout` or `fetch_cancelled`; its ID cannot start a
+new job for ten minutes, including when a failed idempotent request is retried.
+
+`POST /v1/fetch/{requestId}/cancel {}` cancels only that agent's request. Unknown
+IDs return `not_running` and prevent a late request with the same ID from starting.
+Cancellation releases the job's browsers; a launch already pending releases as
+soon as it resolves and cannot advance to another route.
+
+The Python fast path supplies a stable request ID and a total caller budget
+(default 300 seconds). Its HTTP worker bounds a full exchange, and it explicitly
+cancels unfinished service work before fallback or interruption cleanup.
+Browserbase setup, connection and navigation use the remaining budget; remote
+release receives a short cleanup allowance after expiry.
