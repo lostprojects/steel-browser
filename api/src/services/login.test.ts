@@ -143,6 +143,19 @@ test("rejects a member marker on an unexpected current origin", async () => {
     check: "unexpected_origin",
   });
 });
+test("checks Mary Ferrell's retained member session before opening its sign-in form", async () => {
+  const { login, session, page } = await fixture(
+    "about:blank",
+    "",
+    {
+      "https://www.maryferrell.org/home": '<a href="/member/signout">Sign out</a>',
+    },
+    "mary-ferrell",
+  );
+  expect((await finish(login.login(session, "mary-ferrell", agent))).status).toBe("ok");
+  expect(page.goto.mock.calls.map(([url]) => url)).toEqual(["https://www.maryferrell.org/home"]);
+  expect(native.text).not.toHaveBeenCalled();
+});
 test("settles Ancestry, follows Newspapers' callback, and confirms its home payload", async () => {
   const { login, session, page } = await fixture("https://www.newspapers.com/signin/", "", {
     "https://www.ancestry.com/": '<div id="navAccount"></div>',

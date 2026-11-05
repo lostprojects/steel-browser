@@ -1940,9 +1940,12 @@ its original cause.
 The service now recognizes Mary Ferrell's `/member/signout` link even in a closed
 menu. All member markers reject sign-in pages and visible password/code forms;
 current-page checks also validate the origin. Browser input and the fixed identity
-allocation retain their existing behavior.
+allocation retain their existing behavior. A vault login now checks the member
+home before opening the sign-in form, preserving an existing authenticated session.
+A later old-build fixture attempt reproduced `account_payload_missing` (82,254
+bytes); the following login passed (101,996 bytes).
 
-TypeScript passed. The final full suite passed 241 tests with 237 skipped across
+TypeScript passed. The final full suite passed 242 tests with 237 skipped across
 38 passing files and one skipped file. New focused cases cover idempotency eviction,
 cookie lifetimes without values and domain boundaries, daily-check guards and
 forgetting, scoped login deletion, member markers, Newspapers' callback and the

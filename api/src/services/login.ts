@@ -40,6 +40,7 @@ export const loginSites = {
   "mary-ferrell": {
     vault: "mary-ferrell",
     url: "https://www.maryferrell.org/member/signin",
+    home: "https://www.maryferrell.org/home",
     hosts: ["www.maryferrell.org"],
     signedIn: 'a[href="/member/signout"]',
   },
@@ -517,7 +518,19 @@ export class LoginService {
     if (resume) {
       if (page.url() !== resume.url || Date.parse(resume.request.expires) <= Date.now())
         return this.record(session, site, "failed", "code_request_changed", agent);
-    } else await go(spec.url);
+    } else {
+      // The sign-in route can show a fresh form even with a retained member
+      // session. Confirm the member page before submitting credentials again.
+      if (site === "mary-ferrell") {
+        await go(loginSites[site].home);
+        const s = await state();
+        if (page.url().startsWith("https://www.maryferrell.org/") && s.loggedIn) {
+          if (back && back !== page.url()) await go(back);
+          return this.record(session, site, "ok", "none", agent);
+        }
+      }
+      await go(spec.url);
+    }
     let submissions = 0,
       otpUsed = false,
       check = "none";
