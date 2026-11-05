@@ -1,5 +1,6 @@
 // Owns one browser and its resources. Sessions must be created through SessionPool;
 // this class must not launch an idle browser or reuse another session's profile.
+import { chromeProcesses, killChromeGroup } from "./chrome-processes.js";
 import { EventEmitter } from "node:events";
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
@@ -68,6 +69,8 @@ export class BrowserSession extends EventEmitter {
   private userAgent = "";
   private stopping = false;
   private closing?: Promise<void>;
+  private chromeGroup?: number;
+  chromeCleanup?: { remainingProcesses: number; remainingZombies: number };
   private setups = new Map<string, Promise<void>>();
   private sockets = new Set<Duplex>();
   private launchConfig!: BrowserLauncherOptions;
@@ -194,8 +197,13 @@ export class BrowserSession extends EventEmitter {
       this.chrome = spawn(
         getChromeExecutablePath(),
         [...args, `--user-data-dir=${this.profilePath}`, "about:blank"],
-        { env: { ...process.env, TZ: timezone, DISPLAY: this.display.name }, stdio: "ignore" },
+        {
+          env: { ...process.env, TZ: timezone, DISPLAY: this.display.name },
+          stdio: "ignore",
+          detached: true,
+        },
       );
+      this.chromeGroup = this.chrome.pid;
       let launchError: Error | undefined;
       this.chrome.once("error", (error) => {
         launchError = error;
@@ -380,6 +388,37 @@ export class BrowserSession extends EventEmitter {
   }
   getBrowserInstance() {
     return this.browser ?? this.quiet?.asBrowser() ?? null;
+  }
+  async diagnostics() {
+    const processes = this.chromeGroup ? await chromeProcesses(this.chromeGroup) : [];
+    return {
+      sessionId: this.id,
+      at: new Date().toISOString(),
+      status: this.status,
+      chromeProcesses: processes.length,
+      chromeRssBytes: processes.reduce((total, row) => total + row.rssBytes, 0),
+      chromeZombies: processes.filter((row) => row.zombie).length,
+      cleanup: this.chromeCleanup ?? null,
+    };
+  }
+  async killChrome() {
+    if (!this.chromeGroup || !this.chrome?.pid || this.status !== "live")
+      throw Object.assign(new Error("A live quiet Chrome session is required"), {
+        statusCode: 409,
+      });
+    const group = this.chromeGroup;
+    const exited = new Promise<void>((resolve) => this.chrome!.once("exit", () => resolve()));
+    this.chrome.kill("SIGKILL");
+    await exited;
+    await this.close("chrome_exit");
+    const remaining = await chromeProcesses(group);
+    return {
+      sessionId: this.id,
+      signal: "SIGKILL",
+      endReason: this.endReason,
+      remainingProcesses: remaining.filter((row) => !row.zombie).length,
+      remainingZombies: remaining.filter((row) => row.zombie).length,
+    };
   }
   getBrowserProcess() {
     return this.chrome ?? this.browser?.process() ?? null;
@@ -663,6 +702,7 @@ export class BrowserSession extends EventEmitter {
       clearTimeout(kill);
       this.browser = null;
       if (this.display.name) protectedDisplays.delete(this.display.name);
+      if (this.chromeGroup) this.chromeCleanup = await killChromeGroup(this.chromeGroup);
       await this.display.close();
       await this.proxyServer?.close(true);
       for (const client of this.cdpRelay.clients) client.terminate();

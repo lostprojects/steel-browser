@@ -23,6 +23,17 @@ vi.mock("./vault.js", () => ({
 vi.mock("./challenge-service.js", () => ({
   clearChallenge: vi.fn(async () => ({ status: "cleared" })),
 }));
+vi.mock("./login-observation.js", () => ({
+  observeMemberRead: vi.fn(async () => ({
+    status: "ok",
+    check: "none",
+    signInPrompt: false,
+    deviceCheck: false,
+    readBytes: 1234,
+    proxyBytes: 5678,
+  })),
+}));
+import { observeMemberRead } from "./login-observation.js";
 import { LoginService } from "./login.js";
 const roots: string[] = [],
   windows: JSDOM[] = [],
@@ -250,7 +261,7 @@ test.each(["eligible", "refused", "code", "never", "checked", "busy", "capacity"
     if (condition === "checked")
       await writeFile(
         path.join(p, "login-daily.json"),
-        JSON.stringify({ "ancestry/ancestry": "2026-11-05" }),
+        JSON.stringify({ "ancestry/ancestry": "2026-11-05:read-v1" }),
       );
     const login = new LoginService(p);
     const loginCall = vi.spyOn(login, "login").mockResolvedValue({ status: "ok" } as any);
@@ -268,13 +279,15 @@ test.each(["eligible", "refused", "code", "never", "checked", "busy", "capacity"
       await vi.waitFor(() =>
         expect(pool.release).toHaveBeenCalledWith("daily", "daily_login_check"),
       );
-      expect(loginCall).toHaveBeenCalledTimes(1);
+      expect(loginCall).not.toHaveBeenCalled();
+      expect(observeMemberRead).toHaveBeenCalledTimes(1);
       expect(
         JSON.parse(await readFile(path.join(p, "login-daily.json"), "utf8"))["ancestry/ancestry"],
-      ).toBe("2026-11-05");
+      ).toBe("2026-11-05:read-v1");
       await vi.advanceTimersByTimeAsync(60000);
       await tick();
-      expect(loginCall).toHaveBeenCalledTimes(1);
+      expect(loginCall).not.toHaveBeenCalled();
+      expect(observeMemberRead).toHaveBeenCalledTimes(1);
     } else {
       for (let i = 0; i < 20; i++) await tick();
       expect(pool.create).not.toHaveBeenCalled();
@@ -339,4 +352,29 @@ test("refuses to submit when native typing does not populate a form field", asyn
     check: "form_field_input_failed",
   });
   expect(native.mouse.mock.calls.some(([event]) => event.x === 305)).toBe(false);
+});
+
+test("history drops account payloads and code requests from legacy rows", async () => {
+  const p = await root();
+  await writeFile(
+    path.join(p, "login-checks.jsonl"),
+    [
+      { at: "2026-11-04T00:00:00Z", site: "ancestry", status: "ok" },
+      {
+        at: "2026-11-05T00:00:00Z",
+        site: "ancestry",
+        readBytes: 123,
+        codeRequest: { recipientHash: "private" },
+        html: "private",
+      },
+    ]
+      .map((row) => JSON.stringify(row))
+      .join("\n") + "\n",
+  );
+  const result = await new LoginService(p).history(
+    "2026-11-05T00:00:00Z",
+    "2026-11-06T00:00:00Z",
+    1,
+  );
+  expect(result.checks).toEqual([{ at: "2026-11-05T00:00:00Z", site: "ancestry", readBytes: 123 }]);
 });

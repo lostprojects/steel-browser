@@ -18,6 +18,8 @@ async function fixture() {
     id: "one",
     options: { identity: "ancestry" },
     touch: vi.fn(),
+    diagnostics: vi.fn(async () => ({ chromeRssBytes: 1024 })),
+    killChrome: vi.fn(async () => ({ signal: "SIGKILL" })),
     getCookies: vi.fn(async () => [
       {
         domain: ".ancestry.com",
@@ -79,4 +81,20 @@ test("keeps cookie metadata inside the owning agent's session", async () => {
       })
     ).statusCode,
   ).toBe(200);
+});
+
+test("fault and process metadata require an admin", async () => {
+  const { app, session } = await fixture();
+  for (const [method, url] of [
+    ["GET", "/v1/sessions/one/diagnostics"],
+    ["POST", "/v1/sessions/one/fault/chrome-kill"],
+  ] as const) {
+    expect(
+      (await app.inject({ method, url, headers: { "fixture-agent": "owner" } })).statusCode,
+    ).toBe(403);
+  }
+  expect(session.killChrome).not.toHaveBeenCalled();
+  expect((await app.inject("/v1/sessions/one/diagnostics")).json()).toEqual({
+    chromeRssBytes: 1024,
+  });
 });

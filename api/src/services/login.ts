@@ -3,6 +3,9 @@ import type { SessionPool } from "./session-pool.js";
 // client to type credentials. Authentication needs a positive account payload.
 import { readFile, writeFile, rename, mkdir, appendFile } from "node:fs/promises";
 import path from "node:path";
+import { createReadStream } from "node:fs";
+import { createInterface } from "node:readline";
+import { observeMemberRead } from "./login-observation.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { BrowserSession } from "./browser-session.js";
 import type { Agent } from "./proxy-manager.js";
@@ -61,6 +64,7 @@ const codeSources: Record<string, { senderDomains: string[]; brands: string[] }>
   "accounts.google.com": { senderDomains: ["google.com"], brands: ["Google"] },
 };
 export function identityVault(identity?: string) {
+  if (identity === "hathitrust") return "hathitrust-google";
   return ["ancestry", "mary-ferrell", "hathitrust-google"].find(
     (n) => identity === n || identity?.startsWith(n + "-"),
   );
@@ -150,16 +154,17 @@ export class LoginService {
             !record.last_login_ok ||
             record.status === "check_required" ||
             record.check === "credentials_rejected" ||
-            checked[key] === today ||
+            checked[key] === (identity === "ancestry" ? today + ":read-v1" : today) ||
             pool.identityBusy(identity) ||
             pool.size > pool.maxSessions - 2 ||
             pool.draining
           )
             continue;
           // Persist before opening a session so a restart cannot repeat a code request.
-          checked[key] = today;
+          const stamp = identity === "ancestry" ? today + ":read-v1" : today;
+          checked[key] = stamp;
           await this.updateDaily((stored) => {
-            stored[key] = today;
+            stored[key] = stamp;
           });
           if (this.records[key] !== record || pool.identityBusy(identity) || pool.draining)
             continue;
@@ -171,7 +176,14 @@ export class LoginService {
               { identity, mode: "quiet", residential: { country: "US" } },
               agent,
             );
-            outcome = await this.login(session, site as LoginSite, agent);
+            if (identity === "ancestry" && ["ancestry", "newspapers", "fold3"].includes(site)) {
+              outcome = {
+                identity,
+                site,
+                ...(await observeMemberRead(session, site as "ancestry" | "newspapers" | "fold3")),
+              };
+              await this.record(session, site as LoginSite, outcome.status, outcome.check, agent);
+            } else outcome = await this.login(session, site as LoginSite, agent);
           } catch {
             /* Report only a stable classification, with no browser payload. */
           } finally {
@@ -181,7 +193,8 @@ export class LoginService {
             path.join(this.root, "login-checks.jsonl"),
             JSON.stringify({
               at: new Date().toISOString(),
-              ...outcome,
+              ...historyMetadata(outcome),
+              kind: identity === "ancestry" ? "authenticated_read" : "login",
               deviceCheck: [
                 "email_mailbox_missing",
                 "email",
@@ -202,6 +215,29 @@ export class LoginService {
     }, 60000);
     timer.unref();
     return () => clearInterval(timer);
+  }
+  async history(from?: string, to?: string, limit = 1000) {
+    const rows: Record<string, unknown>[] = [];
+    try {
+      const lines = createInterface({
+        input: createReadStream(path.join(this.root, "login-checks.jsonl")),
+        crlfDelay: Infinity,
+      });
+      for await (const line of lines) {
+        let row;
+        try {
+          row = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (typeof row.at !== "string" || (from && row.at < from) || (to && row.at >= to)) continue;
+        rows.push(historyMetadata(row));
+        if (rows.length > limit) rows.shift();
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    return { checks: rows, limit, order: "oldest_first" };
   }
   async metadata() {
     await this.ready;
@@ -712,4 +748,31 @@ export class LoginService {
     }
     return this.record(session, site, "failed", "account_payload_missing", agent);
   }
+}
+
+function historyMetadata(row: Record<string, unknown>) {
+  const fields = [
+    "at",
+    "identity",
+    "site",
+    "status",
+    "check",
+    "last_login_ok",
+    "exitIp",
+    "kind",
+    "deviceCheck",
+    "signInPrompt",
+    "readBytes",
+    "proxyBytes",
+    "httpStatus",
+    "memberMarker",
+    "memberPayload",
+    "path",
+    "durationMs",
+  ];
+  return Object.fromEntries(
+    fields
+      .filter((key) => ["string", "number", "boolean"].includes(typeof row[key]))
+      .map((key) => [key, row[key]]),
+  );
 }

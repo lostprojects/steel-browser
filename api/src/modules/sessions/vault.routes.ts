@@ -18,6 +18,19 @@ export default async function routes(server: FastifyInstance) {
   server.put<{ Params: { name: string } }>("/vault/:name", (req) =>
     vault.put(req.params.name, req.body, agentFor(req.raw)!),
   );
+  server.get("/login-checks", async (req) => {
+    if (!agentFor(req.raw)?.admin)
+      throw Object.assign(new Error("Admin key required"), { statusCode: 403 });
+    const query = z
+      .object({
+        from: z.string().datetime().optional(),
+        to: z.string().datetime().optional(),
+        limit: z.coerce.number().int().min(1).max(10000).default(1000),
+      })
+      .strict()
+      .parse(req.query);
+    return login.history(query.from, query.to, query.limit);
+  });
   server.get("/logins", async (req) => {
     const allowed = new Set((await vault.list(agentFor(req.raw)!)).map((e) => e.name));
     return Object.fromEntries(

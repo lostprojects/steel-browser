@@ -1,6 +1,11 @@
 import Fastify from "fastify";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ forget: vi.fn(), list: vi.fn(), deleteIdentity: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  forget: vi.fn(),
+  list: vi.fn(),
+  deleteIdentity: vi.fn(),
+  history: vi.fn(),
+}));
 vi.mock("../../utils/api-key.js", () => ({
   agentFor: (req: any) => ({
     name: req.headers["fixture-agent"] ?? "admin",
@@ -14,6 +19,7 @@ vi.mock("../../services/login.js", () => ({
       return () => {};
     }
     forget = mocks.forget;
+    history = mocks.history;
   },
 }));
 import routes from "./vault.routes.js";
@@ -80,4 +86,19 @@ test("busy identity deletion returns a conflict without forgetting logins", asyn
     (await app.inject({ method: "DELETE", url: "/v1/identities/ancestry-test" })).statusCode,
   ).toBe(409);
   expect(mocks.forget).not.toHaveBeenCalled();
+});
+
+test("check history is admin-only and validates the time window", async () => {
+  const app = await fixture();
+  mocks.history.mockResolvedValue({ checks: [] });
+  expect(
+    (await app.inject("/v1/login-checks?from=2026-11-05T00:00:00Z&limit=100")).statusCode,
+  ).toBe(200);
+  expect(mocks.history).toHaveBeenCalledWith("2026-11-05T00:00:00Z", undefined, 100);
+  mocks.history.mockClear();
+  expect(
+    (await app.inject({ url: "/v1/login-checks", headers: { "fixture-agent": "mosaic" } }))
+      .statusCode,
+  ).toBe(403);
+  expect(mocks.history).not.toHaveBeenCalled();
 });

@@ -12,6 +12,23 @@ export default async function routes(server: FastifyInstance) {
     if (!agent.admin && server.sessionPool.owner(id)?.name !== agent.name)
       throw Object.assign(new Error("Session belongs to another agent"), { statusCode: 403 });
   };
+  const admin = (req: FastifyRequest) => {
+    if (!agentFor(req.raw)?.admin)
+      throw Object.assign(new Error("Admin key required"), { statusCode: 403 });
+  };
+  server.get("/sessions/:sessionId/diagnostics", async (req) => {
+    admin(req);
+    return selectedSession(server, req).diagnostics();
+  });
+  server.post("/sessions/:sessionId/fault/chrome-kill", async (req) => {
+    admin(req);
+    return idempotent(req, async () => {
+      const session = selectedSession(server, req);
+      const result = await session.killChrome();
+      await server.sessionPool.release(session.id, "chrome_exit");
+      return result;
+    });
+  });
   server.get("/sessions/:sessionId/view", async (req, reply) => {
     const session = selectedSession(server, req);
     if (!session.display.name)
