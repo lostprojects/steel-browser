@@ -57,6 +57,40 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 describe("session pool", () => {
+  test("deletes an idle profile and holds its identity lock through metadata removal", async () => {
+    const pool = await fixture();
+    const session = await pool.create({ identity: "account" });
+    const forget = vi.fn(async () => {});
+    await expect(pool.deleteIdentity("account", forget)).rejects.toMatchObject({ statusCode: 409 });
+    expect(forget).not.toHaveBeenCalled();
+    await pool.release(session.id);
+    let finish!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const deletion = pool.deleteIdentity("account", () => blocked);
+    expect(pool.identityBusy("account")).toBe(true);
+    await expect(pool.create({ identity: "account" })).rejects.toMatchObject({ statusCode: 409 });
+    finish();
+    await deletion;
+    await expect(stat(session.profilePath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(pool.identityBusy("account")).toBe(false);
+    expect((await pool.create({ identity: "account" })).status).toBe("live");
+    await expect(pool.deleteIdentity("../escape", forget)).rejects.toThrow();
+  });
+  test("unlocks a deletion after metadata failure so it can be retried", async () => {
+    const pool = await fixture();
+    await expect(
+      pool.deleteIdentity("account", async () => {
+        throw new Error("disk");
+      }),
+    ).rejects.toThrow("disk");
+    expect(pool.identityBusy("account")).toBe(false);
+    expect(await pool.deleteIdentity("account", async () => {})).toEqual({
+      name: "account",
+      deleted: true,
+    });
+  });
   test("its generated budget schema compiles in Fastify and rejects zero bytes", async () => {
     const app = fastify();
     const { schemas, $ref } = buildJsonSchemas({ CreateSession: sessionOptions });
@@ -64,9 +98,17 @@ describe("session pool", () => {
     app.post("/create", { schema: { body: $ref("CreateSession") } }, async () => ({ ok: true }));
     try {
       await app.ready();
-      expect((await app.inject({ method: "POST", url: "/create", payload: { budgetBytes: 1 } })).statusCode).toBe(200);
-      expect((await app.inject({ method: "POST", url: "/create", payload: { budgetBytes: 0 } })).statusCode).toBe(400);
-    } finally { await app.close(); }
+      expect(
+        (await app.inject({ method: "POST", url: "/create", payload: { budgetBytes: 1 } }))
+          .statusCode,
+      ).toBe(200);
+      expect(
+        (await app.inject({ method: "POST", url: "/create", payload: { budgetBytes: 0 } }))
+          .statusCode,
+      ).toBe(400);
+    } finally {
+      await app.close();
+    }
   });
   test("runs three isolated sessions and refuses a fourth after its queue deadline", async () => {
     const pool = await fixture();

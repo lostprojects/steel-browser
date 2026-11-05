@@ -14,6 +14,18 @@ export interface IProxyServer {
 }
 
 export type HostRoute = "residential" | "direct" | "refused";
+// Measured on Bizapedia. Enforce at CONNECT, without pausing browser requests.
+// Other identities retain their existing traffic policy.
+export function identityHostRoute(host: string, identity?: string): HostRoute {
+  if (
+    identity === "bizapedia" &&
+    ["adthrive.com", "adthrive.net", "gumgum.com", "btloader.com", "privacymanager.io"].some(
+      (s) => host === s || host.endsWith(`.${s}`),
+    )
+  )
+    return "refused";
+  return "residential";
+}
 // Unknown hosts and challenge providers retain the session's residential exit.
 export function hostRoute(host: string): HostRoute {
   if (
@@ -89,7 +101,12 @@ export class ProxyServer extends Server implements IProxyServer {
     return this.settledRxBytes + this.openBytes("trgRxBytes");
   }
 
-  constructor(proxyUrl: string, split = false, allowed: () => boolean = () => true) {
+  constructor(
+    proxyUrl: string,
+    split = false,
+    allowed: () => boolean = () => true,
+    identity?: string,
+  ) {
     super({
       port: 0,
       host: "127.0.0.1",
@@ -116,7 +133,9 @@ export class ProxyServer extends Server implements IProxyServer {
           };
         }
         this.connectionHosts.set(connectionId, hostname);
-        const route = split ? hostRoute(hostname) : "residential";
+        const siteRoute = identityHostRoute(hostname, identity);
+        const route =
+          siteRoute === "refused" ? siteRoute : split ? hostRoute(hostname) : "residential";
         this.routes.set(connectionId, route);
         if (route === "refused") throw new Error("Host refused by measured traffic policy");
         return {

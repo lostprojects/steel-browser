@@ -14,13 +14,20 @@ residential exit, send `{"mode":"quiet","residential":{"country":"US"}}`.
 The service allocates a Core sticky exit, looks up its IP and timezone through
 that exit with ipwho.is, then starts Chrome with the returned timezone.
 
-Add `identity: "residential-US"` to keep a named profile on `/data/profiles`.
+Add a named `identity` to keep a profile on `/data/profiles`. Ancestry,
+Newspapers.com and Fold3 use `identity: "ancestry"` for both login and collection.
+Use `mary-ferrell` for Mary Ferrell and `bizapedia` for Bizapedia.
 Its sticky ID lives in the service's private routing state. A second claim gets
 HTTP 409. Mosaic's client can wait (`identity_policy="wait"`, ten-minute default)
 or ask for a throwaway profile (`identity_policy="throwaway"`). Throwaway sessions
 receive independent sticky exits and profiles.
 Session cookies are saved alongside the profile on release and restored on its
 next start. The source identity's local storage is imported during migration.
+
+An administrator can delete an idle identity with `DELETE /v1/identities/{name}`.
+It removes the profile, stored sticky allocation and login records, including for
+protected identities. A busy identity returns 409; deletion holds its lock until
+all removals finish. Vault entries and metered spend remain.
 
 A fourth session waits up to five seconds, then gets HTTP 429. Mosaic currently
 uses Browserbase after that response. Three simultaneous Mosaic callers and the
@@ -68,6 +75,10 @@ first-party resources and challenge providers retain the residential exit. Admin
 `splitTraffic` permits a detector check before enabling a site with
 `PUT /v1/routing/policies/{host} {"split":true}`.
 
+The `bizapedia` identity refuses AdThrive, GumGum, btloader and PrivacyManager
+hosts at the forwarder. Cloudflare challenge hosts retain the residential exit.
+This policy does not enable browser request interception or service-wide ad blocking.
+
 `POST /v1/sessions/{id}/download {"url":"https://..."}` fetches from Railway with
 the browser's cookies and User-Agent. It retries through the session's exit when
 direct fetching fails. Cookies retain their domain/path/secure rules across redirects.
@@ -102,9 +113,8 @@ release. Keep the source credential file until the login check passes. The updat
 client uses the server profile and does not read or overwrite that local file.
 
 The US migration preserved 87 unexpired cookies and 48 local-storage entries.
-The three sites still displayed sign-in links after both migration fixes, so the
-logged-in state remains unconfirmed. Keep the original credential file until a
-vault login check succeeds; the updated client leaves it unused.
+Subsequent Ancestry-family checks passed on the known-device `ancestry` profile
+on 5 November UTC. The unused local migrated context has been deleted.
 
 ## Vault login
 
@@ -116,7 +126,9 @@ Protected identities require access to their vault entry and use a fixed sticky 
 
 Two-step outcomes remain explicit. Stored authenticator seeds generate TOTP codes at use. Email and SMS code fields issue a local code request; other device checks retain their classification. HathiTrust Google values are stored, but its flow returns `not_attempted` / `google_flow_unimplemented`. No Google challenge has been observed. The service does not request a manual login.
 
-Mosaic’s Mary Ferrell caller uses this API. The three Ancestry-family `login` commands also use the vault, but collection sessions retain their earlier profile until automatic login passes. That migration remains incomplete; keep the original context file and credential env entries.
+Mosaic’s Mary Ferrell caller uses this API. The three Ancestry-family `login`
+commands and collection sessions use the `ancestry` identity. Sign in to these
+sites only on that known-device identity; stop on `credentials_rejected`.
 
 Direct acceptance can bound `/fetch` with `maxRung:2` (or `1` for HTTP). An administrator may set `forceDirectFailure:true` to exercise the remaining ladder in one request. `/routing/policies/{host}` accepts `startRung` and `ttlSeconds`; temporary learned escalation expires back to that configured starting rung. Failure injection is an explicit test condition.
 

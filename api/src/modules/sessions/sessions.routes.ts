@@ -70,18 +70,25 @@ export default async function routes(server: FastifyInstance) {
   });
   // Cookie lifetimes without values, so login persistence can be measured on
   // protected identities. Optional ?domain= keeps cookies for that site.
-  server.get<{ Querystring: { domain?: string } }>("/sessions/:sessionId/cookie-lifetimes", async (req) => {
-    const session = selectedSession(server, req);
-    const domain = (req.query.domain ?? "").replace(/^\./, "").toLowerCase();
-    return (await session.getCookies())
-      .filter((c: any) => !domain || c.domain.replace(/^\./, "").endsWith(domain))
-      .map((c: any) => ({
-        domain: c.domain,
-        name: c.name,
-        expires: c.session || c.expires < 0 ? "session" : new Date(c.expires * 1000).toISOString(),
-        httpOnly: c.httpOnly,
-      }));
-  });
+  server.get<{ Querystring: { domain?: string } }>(
+    "/sessions/:sessionId/cookie-lifetimes",
+    async (req) => {
+      const session = selectedSession(server, req);
+      const domain = (req.query.domain ?? "").replace(/^\./, "").toLowerCase();
+      return (await session.getCookies())
+        .filter((c: any) => {
+          const host = c.domain.replace(/^\./, "").toLowerCase();
+          return !domain || host === domain || host.endsWith(`.${domain}`);
+        })
+        .map((c: any) => ({
+          domain: c.domain,
+          name: c.name,
+          expires:
+            c.session || c.expires < 0 ? "session" : new Date(c.expires * 1000).toISOString(),
+          httpOnly: c.httpOnly,
+        }));
+    },
+  );
   server.get("/sessions/:sessionId/live-details", async (req) => {
     const session = selectedSession(server, req);
     const pages = await session.getAllPages();

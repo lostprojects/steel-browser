@@ -28,10 +28,22 @@ export default async function routes(server: FastifyInstance) {
   });
   server.delete<{ Params: { identity: string } }>("/logins/:identity", async (req) => {
     const allowed = (await vault.list(agentFor(req.raw)!)).map((e) => e.name);
-    const identity = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).parse(req.params.identity);
+    const identity = z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{1,64}$/)
+      .parse(req.params.identity);
     if (!allowed.some((n) => identity === n || identity.startsWith(n + "-")))
       throw Object.assign(new Error("Identity is outside this agent's vault"), { statusCode: 403 });
     return login.forget(identity);
+  });
+  server.delete<{ Params: { identity: string } }>("/identities/:identity", async (req) => {
+    if (!agentFor(req.raw)?.admin)
+      throw Object.assign(new Error("Admin key required"), { statusCode: 403 });
+    const identity = z
+      .string()
+      .regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/)
+      .parse(req.params.identity);
+    return server.sessionPool.deleteIdentity(identity, () => login.forget(identity));
   });
   server.post("/sessions/:sessionId/login", async (req) => {
     const { site, current } = z

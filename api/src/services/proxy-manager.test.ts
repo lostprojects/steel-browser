@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 const seen = vi.hoisted(() => ({ urls: [] as string[] }));
@@ -37,6 +37,28 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 describe("residential accounting", () => {
+  it("forgets only the named sticky allocation and preserves metered spend", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "proxy-forget-"));
+    roots.push(root);
+    await writeFile(
+      path.join(root, "proxy-state.json"),
+      JSON.stringify({
+        days: {},
+        total: 123,
+        identities: {
+          "ancestry-test": { country: "US", stickyId: "test123" },
+          ancestry: { country: "US", stickyId: "keep123" },
+        },
+        bad: {},
+      }),
+    );
+    const manager = new ProxyManager(root);
+    await manager.forgetIdentity("ancestry-test");
+    const state = JSON.parse(await readFile(path.join(root, "proxy-state.json"), "utf8"));
+    expect(Object.keys(state.identities)).toEqual(["ancestry"]);
+    expect(state.total).toBe(123);
+    expect((await new ProxyManager(root).identities()).map((v) => v.name)).toEqual(["ancestry"]);
+  });
   it("keeps cumulative per-key totals distinct from the new UTC day's budget", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-11-04T00:01:00Z"));

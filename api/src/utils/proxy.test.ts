@@ -5,7 +5,23 @@ import { once } from "node:events";
 
 vi.mock("../env.js", () => ({ env: {} }));
 
-import { ProxyServer } from "./proxy.js";
+import { ProxyServer, identityHostRoute } from "./proxy.js";
+
+it("refuses Bizapedia ad hosts only and retains Cloudflare challenge traffic", () => {
+  for (const host of [
+    "ads.adthrive.com",
+    "prebid.production.adthrive.com",
+    "g2.gumgum.com",
+    "btloader.com",
+    "launchpad.privacymanager.io",
+  ]) {
+    expect(identityHostRoute(host, "bizapedia")).toBe("refused");
+    expect(identityHostRoute(host, "ancestry")).toBe("residential");
+    expect(identityHostRoute(host)).toBe("residential");
+  }
+  for (const host of ["challenges.cloudflare.com", "www.bizapedia.com", "adthrive.com.example"])
+    expect(identityHostRoute(host, "bizapedia")).toBe("residential");
+});
 
 describe("ProxyServer close", () => {
   async function listen(server: net.Server) {

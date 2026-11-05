@@ -41,6 +41,7 @@ export const loginSites = {
     vault: "mary-ferrell",
     url: "https://www.maryferrell.org/member/signin",
     hosts: ["www.maryferrell.org"],
+    signedIn: 'a[href="/member/signout"]',
   },
   "hathitrust-google": {
     vault: "hathitrust-google",
@@ -108,6 +109,22 @@ export class LoginService {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
     }
   }
+  private async updateDaily(update: (checked: Record<string, string>) => void) {
+    const work = this.writes.then(async () => {
+      const file = path.join(this.root, "login-daily.json");
+      let checked: Record<string, string> = {};
+      try {
+        checked = JSON.parse(await readFile(file, "utf8"));
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+      }
+      update(checked);
+      await writeFile(file + ".tmp", JSON.stringify(checked), { mode: 0o600 });
+      await rename(file + ".tmp", file);
+    });
+    this.writes = work.catch(() => undefined);
+    await work;
+  }
   startDailyChecks(pool: SessionPool) {
     let running = false;
     const timer = setInterval(async () => {
@@ -140,8 +157,11 @@ export class LoginService {
             continue;
           // Persist before opening a session so a restart cannot repeat a code request.
           checked[key] = today;
-          await writeFile(file + ".tmp", JSON.stringify(checked), { mode: 0o600 });
-          await rename(file + ".tmp", file);
+          await this.updateDaily((stored) => {
+            stored[key] = today;
+          });
+          if (this.records[key] !== record || pool.identityBusy(identity) || pool.draining)
+            continue;
           let session: BrowserSession | undefined;
           let outcome: any = { identity, site, status: "failed", check: "session_unavailable" };
           try {
@@ -191,6 +211,8 @@ export class LoginService {
     await this.ready;
     const keys = Object.keys(this.records).filter((k) => k.split("/")[0] === identity);
     keys.forEach((k) => delete this.records[k]);
+    for (const [id, pending] of this.pendingCodes)
+      if (pending.identity === identity) this.pendingCodes.delete(id);
     const text = JSON.stringify(this.records);
     const work = this.writes.then(async () => {
       await writeFile(path.join(this.root, "logins.json.tmp"), text, { mode: 0o600 });
@@ -198,6 +220,10 @@ export class LoginService {
     });
     this.writes = work.catch(() => undefined);
     await work;
+    await this.updateDaily((checked) => {
+      for (const key of Object.keys(checked))
+        if (key.split("/")[0] === identity) delete checked[key];
+    });
     return { identity, forgotten: keys.map((k) => k.split("/")[1]) };
   }
   private async record(
@@ -345,74 +371,76 @@ export class LoginService {
     const started = Date.now();
     const signedIn = "signedIn" in spec ? spec.signedIn : "";
     const state = () =>
-      page.evaluate(({ otpSelector, signedIn }) => {
-        const visible = (e: Element) => {
-          const b = e.getBoundingClientRect();
-          return b.width > 0 && b.height > 0 && getComputedStyle(e).visibility !== "hidden";
-        };
-        const text = document.body?.innerText ?? "";
-        const lower = text.toLowerCase();
-        const inputs = [...document.querySelectorAll<HTMLInputElement>("input")].filter(visible);
-        const links = [...document.querySelectorAll<HTMLAnchorElement>("a[href]")].filter(visible);
-        return {
-          host: location.hostname,
-          path: location.pathname,
-          loggedIn:
-            links.some(
-              (a) =>
-                /sign\s*out|log\s*out/i.test(a.textContent ?? "") ||
-                /\/(?:signout|logout)(?:[/?]|$)/i.test(a.href),
-            ) ||
-            // Ancestry's header, and its marker, also appear on the sign-in
-            // and verify-email pages.
-            (!!signedIn &&
-              !!document.querySelector(signedIn) &&
+      page.evaluate(
+        ({ otpSelector, signedIn }) => {
+          const visible = (e: Element) => {
+            const b = e.getBoundingClientRect();
+            return b.width > 0 && b.height > 0 && getComputedStyle(e).visibility !== "hidden";
+          };
+          const text = document.body?.innerText ?? "";
+          const lower = text.toLowerCase();
+          const inputs = [...document.querySelectorAll<HTMLInputElement>("input")].filter(visible);
+          const links = [...document.querySelectorAll<HTMLAnchorElement>("a[href]")].filter(
+            visible,
+          );
+          return {
+            host: location.hostname,
+            path: location.pathname,
+            loggedIn:
+              (links.some(
+                (a) =>
+                  /sign\s*out|log\s*out/i.test(a.textContent ?? "") ||
+                  /\/(?:signout|logout)(?:[/?]|$)/i.test(a.href),
+              ) ||
+                // Ancestry's header, and its marker, also appear on the sign-in
+                // and verify-email pages.
+                (!!signedIn && !!document.querySelector(signedIn))) &&
               !/\/(?:signin|login)(?:[/?]|$)/i.test(location.pathname) &&
-              !inputs.some((e) => e.type === "password" || e.matches(otpSelector))),
-          mary: /sign out/i.test(text) && /my membership/i.test(text),
-          signedOut:
-            inputs.some((e) => e.type === "password") ||
-            links.some((a) => /^(?:sign|log)\s*in$/i.test(a.textContent?.trim() ?? "")),
-          password: inputs.some((e) => e.type === "password"),
-          submitDisabled: [
-            ...document.querySelectorAll<HTMLButtonElement>(
-              'button[type="submit"],input[type="submit"]',
+              !inputs.some((e) => e.type === "password" || e.matches(otpSelector)),
+            signedOut:
+              inputs.some((e) => e.type === "password") ||
+              links.some((a) => /^(?:sign|log)\s*in$/i.test(a.textContent?.trim() ?? "")),
+            password: inputs.some((e) => e.type === "password"),
+            submitDisabled: [
+              ...document.querySelectorAll<HTMLButtonElement>(
+                'button[type="submit"],input[type="submit"]',
+              ),
+            ]
+              .filter(visible)
+              .some((e) => e.disabled || e.getAttribute("aria-disabled") === "true"),
+            username: inputs.some((e) => /email|username|userId/i.test(e.name + e.id + e.type)),
+            otp: inputs.some((e) => e.matches(otpSelector)),
+            phoneSuffix: text.match(
+              /(?:[\*•●x]{2,}[\s-]*|(?:phone|number)[\s\S]{0,35}ending (?:in )?)(\d{2,4})(?!\d)/i,
+            )?.[1],
+            check: /text message|sms|phone number.*code|code.*phone number/i.test(text)
+              ? "sms"
+              : /authenticator|authentication app/i.test(text)
+              ? "totp"
+              : /check your email|email.*(?:code|link)|(?:code|link).*email/i.test(text) &&
+                /verify|verification|device|sent|check/i.test(text)
+              ? "email"
+              : /verify (?:it.s|your)|confirm it.s you|google prompt|check your.*(?:phone|device)|security key|passkey/i.test(
+                  text,
+                )
+              ? "device"
+              : "none",
+            rejected:
+              /incorrect password|invalid password|password is incorrect|invalid username|couldn.t sign you in|wrong password/i.test(
+                lower,
+              ),
+            codeRejected:
+              /incorrect code|invalid code|code (?:has )?expired|code is incorrect/i.test(text),
+            consent: [...document.querySelectorAll("button,a")].some(
+              (e) => visible(e) && /^Accept (?:All )?Cookies$/i.test(e.textContent?.trim() ?? ""),
             ),
-          ]
-            .filter(visible)
-            .some((e) => e.disabled || e.getAttribute("aria-disabled") === "true"),
-          username: inputs.some((e) => /email|username|userId/i.test(e.name + e.id + e.type)),
-          otp: inputs.some((e) => e.matches(otpSelector)),
-          phoneSuffix: text.match(
-            /(?:[\*•●x]{2,}[\s-]*|(?:phone|number)[\s\S]{0,35}ending (?:in )?)(\d{2,4})(?!\d)/i,
-          )?.[1],
-          check: /text message|sms|phone number.*code|code.*phone number/i.test(text)
-            ? "sms"
-            : /authenticator|authentication app/i.test(text)
-            ? "totp"
-            : /check your email|email.*(?:code|link)|(?:code|link).*email/i.test(text) &&
-              /verify|verification|device|sent|check/i.test(text)
-            ? "email"
-            : /verify (?:it.s|your)|confirm it.s you|google prompt|check your.*(?:phone|device)|security key|passkey/i.test(
-                text,
-              )
-            ? "device"
-            : "none",
-          rejected:
-            /incorrect password|invalid password|password is incorrect|invalid username|couldn.t sign you in|wrong password/i.test(
-              lower,
+            oauth: [...document.querySelectorAll("button,a")].some(
+              (e) => visible(e) && /(?:sign in|continue).*ancestry/i.test(e.textContent ?? ""),
             ),
-          codeRejected: /incorrect code|invalid code|code (?:has )?expired|code is incorrect/i.test(
-            text,
-          ),
-          consent: [...document.querySelectorAll("button,a")].some(
-            (e) => visible(e) && /^Accept (?:All )?Cookies$/i.test(e.textContent?.trim() ?? ""),
-          ),
-          oauth: [...document.querySelectorAll("button,a")].some(
-            (e) => visible(e) && /(?:sign in|continue).*ancestry/i.test(e.textContent ?? ""),
-          ),
-        };
-      }, { otpSelector: codeInputs, signedIn });
+          };
+        },
+        { otpSelector: codeInputs, signedIn },
+      );
     const point = async (selector: string, label?: string) =>
       page.evaluate(
         ({ selector, label }) => {
@@ -467,7 +495,9 @@ export class LoginService {
     };
     if (current) {
       const s = await state();
-      if (site === "mary-ferrell" ? s.mary : s.loggedIn)
+      if (!(spec.hosts as readonly string[]).includes(s.host) || !page.url().startsWith("https://"))
+        return this.record(session, site, "failed", "unexpected_origin", agent);
+      if (s.host === new URL(spec.url).hostname && s.loggedIn)
         return this.record(session, site, "ok", "none", agent);
       if (!s.signedOut && s.check === "none")
         return { identity: session.options.identity, site, status: "unchecked", check: "none" };
@@ -480,7 +510,8 @@ export class LoginService {
     if (!resume && (site === "newspapers" || site === "fold3")) {
       await go("https://www.ancestry.com/");
       let pre = await this.run(session, "ancestry", fields, agent, true);
-      if (pre.status === "unchecked") pre = await this.run(session, "ancestry", fields, agent, false);
+      if (pre.status === "unchecked")
+        pre = await this.run(session, "ancestry", fields, agent, false);
       if (pre.status !== "ok") return pre;
     }
     if (resume) {
@@ -506,7 +537,7 @@ export class LoginService {
       if (!(spec.hosts as readonly string[]).includes(s.host) || !page.url().startsWith("https://"))
         return this.record(session, site, "failed", "unexpected_origin", agent);
       const targetHost = new URL(spec.url).hostname;
-      if (s.host === targetHost && (site === "mary-ferrell" ? s.mary : s.loggedIn)) {
+      if (s.host === targetHost && s.loggedIn) {
         if (back && back !== page.url()) await go(back);
         return this.record(session, site, "ok", check, agent);
       }

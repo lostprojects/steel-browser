@@ -107,6 +107,11 @@ export class ProxyManager {
       lastExit: v.lastExit,
     }));
   }
+  async forgetIdentity(name: string) {
+    await this.ready;
+    delete this.state.identities[name];
+    await this.persist();
+  }
   async markBad(host: string, ip: string) {
     await this.ready;
     (this.state.bad[host] ??= {})[ip] = Date.now() + 3_600_000;
@@ -154,6 +159,7 @@ export class ProxyManager {
         upstream,
         options.splitTraffic,
         () => this.remaining(agent) > 0 && session.status !== "released",
+        options.identity,
       );
       session.proxyServer = proxy;
       const previous = this.active.get(session.id);

@@ -119,6 +119,21 @@ export class SessionPool {
   identityBusy(name: string) {
     return this.identities.has(name);
   }
+  async deleteIdentity(name: string, forgetLogin: () => Promise<unknown>) {
+    // Share the creation lock through every asynchronous removal. Protected
+    // identities follow the same deletion path; the route requires an admin.
+    sessionOptions.parse({ identity: name });
+    if (this.identities.has(name)) throw new PoolError(409, "Identity is already in use");
+    this.identities.add(name);
+    try {
+      await rm(path.join(this.profilesRoot, name), { recursive: true, force: true });
+      await this.proxies?.forgetIdentity(name);
+      await forgetLogin();
+      return { name, deleted: true };
+    } finally {
+      this.identities.delete(name);
+    }
+  }
   private launchHooks: Array<(session: BrowserSession) => Promise<void> | void> = [];
   registerSessionHook(hook: (session: BrowserSession) => Promise<void> | void) {
     this.launchHooks.push(hook);
