@@ -23,8 +23,14 @@ export async function idempotent<T>(req: FastifyRequest, run: () => Promise<T>):
       });
     return previous.promise as Promise<T>;
   }
-  if (requests.size >= 128)
-    throw Object.assign(new Error("Too many recent idempotent operations"), { statusCode: 429 });
+  // The table is shared by every agent. When it fills, forget the oldest finished
+  // operation (Map keeps insertion order); refuse only when all are still running.
+  if (requests.size >= 128) {
+    const done = [...requests].find(([, entry]) => Number.isFinite(entry.expires));
+    if (!done)
+      throw Object.assign(new Error("Too many running idempotent operations"), { statusCode: 429 });
+    requests.delete(done[0]);
+  }
   const promise = run();
   const entry = { fingerprint, promise, expires: Number.POSITIVE_INFINITY };
   requests.set(key, entry);
