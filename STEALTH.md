@@ -2098,3 +2098,135 @@ Every session released. The cheap quota responses cannot establish bandwidth
 acceptance for actual people pages. Both the 18/20 pass mark and the 50%
 bandwidth reduction remain unmet. Another valid acceptance set needs access
 that permits twenty people-page reads; the current free quota prevented it.
+
+## Phase 5 logged-in checks, 5 November 2026
+
+### Daily authenticated jobs
+
+Applications `f3af99a` and `ce6a7b6` deployed successfully. Before both pushes,
+Mosaic's status showed an empty pool, and the recent HTTP review found no external
+collector work. Railway's HTTP log query returned some older rows despite its
+`--since` filter, so the review also filtered their timestamps locally.
+
+The daily minute timer now reads the Ancestry tree dashboard, Newspapers.com
+Edit Profile and a Fold3 Project Blue Book search on `ancestry`. It enters no
+credentials. History records member markers, payload checks, sign-in prompts and
+device checks, with HTML sizes and residential byte deltas. Bodies and account
+values stay in memory. The admin-only `/v1/login-checks` route filters the history
+by time and returns a bounded metadata projection, including for legacy rows.
+
+The first version observed all three member markers and payloads without a
+prompt, but assigned failure because quiet navigation returns no HTTP response.
+That validator error was corrected in `ce6a7b6`. Version 2 reran the day's jobs;
+the earlier rows remain available and have no `readVersion:2` marker.
+
+| First version 2 job, UTC | Site | Result | HTML bytes | Residential bytes |
+| --- | --- | --- | ---: | ---: |
+| 06:00:25.849 | Ancestry | authenticated, no prompt or device check | 200,788 | 495,893 |
+| 06:00:30.250 | Newspapers.com | authenticated, no prompt or device check | 667,926 | 313,672 |
+| 06:00:37.143 | Fold3 | authenticated, no prompt or device check | 140,751 | 424,377 |
+
+All three used exit `71.214.129.141`. The observation window is 5–12 November UTC;
+seven daily jobs per site remain to be evaluated on or after 12 November. Daily
+jobs continue beyond that date. An identity still waits while busy or when fewer
+than two slots are free, and prior refused credentials or unanswered codes retain
+their scheduling guard. Google is excluded from automatic attempts.
+
+### Deploy and crash survival
+
+After `f3af99a`, separate read-only home-page checks found each site's member
+marker with no password field. Its daily reads also found each member payload
+without a sign-in prompt or device check. After `ce6a7b6`, admin read-only checks
+passed for all three, without submitting a login.
+
+The fault action SIGKILLed the main quiet Chrome process of one `ancestry` session.
+It returned in 0.286 client seconds with `endReason:chrome_exit`, zero remaining
+processes and zero zombies in that Chrome process group. Reopening the profile
+passed all three authenticated reads without a sign-in prompt or device check.
+The fault session settled 3,032,006 residential bytes; the reopen verification
+settled 1,705,036. The fault was used once.
+
+Quiet Chrome now owns its process group. Cleanup kills surviving group members,
+and diagnostics sum that group's RSS rather than reporting only the parent or
+JavaScript heap. SSH inspection of processes outside that group was unavailable
+because this machine has no Railway SSH key; the zero-process measurement covers
+the session's group.
+
+### TOTP and hand-off
+
+All six RFC 6238 Appendix B SHA-1 times passed in the service's six-digit format,
+using the published eight-digit results modulo one million. The synthetic seed
+is the RFC fixture. No account seed was enrolled. The initial four scoped files
+passed 38 tests; the Google/view changes then passed their 30 tests, and the
+additional route change passed its four tests. TypeScript passed after each code
+stage. Source: https://www.rfc-editor.org/rfc/rfc6238#appendix-B.
+
+An unprotected quiet identity returned its noVNC HTML with HTTP 200, upgraded the
+VNC WebSocket with HTTP 101 and supplied the RFB protocol greeting. A protected
+`ancestry` identity returned HTTP 403 for both paths. Protected display capture
+returned `Image capture is unavailable for protected identities`; no image was
+returned. Earlier builds served the protected HTML before rejecting its WebSocket;
+`ce6a7b6` rejects the HTML too. No request for human help was made.
+
+### HathiTrust
+
+A read-only visit to `/cgi/wayf` passed its Cloudflare challenge and displayed
+institutional providers. Its guest routes included Google, LinkedIn, Microsoft and
+a University of Michigan Friend account. The vault entry exposed field names
+`email` and `password`; it contains no separate institutional-provider field.
+Another route for this account was not established.
+
+The service made one bounded attempt on the new protected identity `hathitrust`,
+using `hathitrust-google`. It returned `failed / account_payload_missing` and
+settled 264,559 residential bytes. It did not validate a signed-in account or
+return a classified insecure-browser/code/device challenge. A subsequent read-only
+reopen showed only a blank tab, which did not recover the failed flow's final page.
+The exact failed stage is therefore unresolved. No second login was attempted.
+
+The one-attempt marker persists at `/data/hathitrust-google-attempt.json`.
+Subsequent login calls return `google_attempt_limit`. The flow stops on Google's
+insecure-browser message or an unsupported challenge, and its synthetic regression
+case confirms that a second invocation cannot enter credentials. No additional
+provider or security setting was changed.
+
+### Fold3 viewer measurement
+
+The finite runner is `mosaic/stealth_check.py fold3-soak OUTPUT_DIRECTORY`.
+It uses the collector's authenticated search API to select a Project Blue Book
+image and its native ArrowRight viewer flow. It records five-minute RSS/exit-IP
+observations and authenticated Fold3 search reads. The viewer has no account
+menu, so its own absent member marker is recorded separately from the successful
+search-page membership check. No source images are exported.
+
+The collector's full-page canvas readiness heuristic reports `partial` for the
+initial desktop viewport. That result is retained; it does not establish a
+fully painted source capture. The memory workload still includes the rendered
+viewer. An initial pilot stopped because it incorrectly required a member-menu
+marker on the viewer. A second pilot was stopped to correct IP-change and
+lifetime-renewal ordering; neither pilot counts toward three-hour acceptance.
+
+The measured run began on the viewer at 06:10:11 UTC. A chat interruption stopped
+its local sampler; the remote browser stayed live. The detached sampler resumed
+the same session before the first five-minute observation, preserving the
+original start time. Its explicit `--resume` option checks the recorded browser
+ID, live status and `ancestry` identity. Sampling resumes from the next numbered
+observation; a completed or released run cannot resume.
+
+The session renews after its 175-minute observation, before the service's
+three-hour lifetime cap. An IP change triggers a new session on the same identity
+before further site reads. Each new session checks the retained login. Results
+will be reconciled here when the finite run ends.
+
+That measured run stopped at 06:20:35 UTC after the auxiliary read-only membership
+endpoint returned HTTP 500 during the ten-minute observation. It had two complete
+samples, a peak sampled RSS of 1,624,866,816 bytes, unchanged exit IP and successful
+membership checks. The browser remained live until the runner released it, settling
+5,208,895 residential bytes. No Chrome crash or sign-in prompt was observed.
+
+Eight subsequent read-only Fold3 probes passed on the same identity; the HTTP
+500 did not reproduce. The earlier server logs retained no specific exception,
+so its precise cause remains unresolved. Fresh-tab reads now make up to three
+attempts on exceptions and expose `readAttempts`. They no longer consult the
+viewer's primary-page object. Prompts and device checks return immediately.
+The runner saves memory and exit-IP measurements before its auxiliary membership
+probe, preserving those observations if a later request fails.

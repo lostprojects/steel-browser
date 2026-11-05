@@ -214,7 +214,7 @@ Each phase ends with a check. The current service keeps running throughout as th
 | 2 | Google Chrome at a pinned version; one Xvfb display per session; noVNC | `/health` shows the version; fingerprint marks in `REVIEW.md` §6 met |
 | 3 | Quiet mode: Chrome started without Puppeteer; engine with isolated world and X11 input | Bot tests clean with a full snapshot and a click running; six routes at `REVIEW.md` §6 marks |
 | 4 | Proxy manager: exits, exit checks, metering, budgets, retry; the routing ladder and per-host table; per-host split at the forwarder; direct file fetch with session cookies | Timezone matches the exit in 20 of 20; budgets end a session; retry recovers Anna's Archive; each collector route settles on its cheapest rung with the same pass rate; residential bytes per route fall by at least half with no drop in pass rate |
-| 5 | Vault, login flows, TOTP, hand-off | Ancestry login from the vault; seven days of logged-in jobs with no new-device check |
+| 5 | Vault, login flows, TOTP, hand-off | Vault login passed 5 November 2026. Authenticated daily jobs observe the existing Ancestry identity from 5–12 November; seven-day acceptance awaits that window. Deploy/crash survival, viewer measurements and hand-off checks are recorded in STEALTH.md. |
 | 6 | MCP endpoint and `remote.py`; site registry; move the six collector callers one at a time | Each caller runs a week with under 10% failure |
 | 7 | Session log, failure video, canary; soak and fault tests | Every soak and fault mark in `REVIEW.md` §6 |
 

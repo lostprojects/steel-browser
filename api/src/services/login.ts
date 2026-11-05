@@ -187,7 +187,11 @@ export class LoginService {
               await this.record(session, site as LoginSite, outcome.status, outcome.check, agent);
             } else outcome = await this.login(session, site as LoginSite, agent);
           } catch {
-            /* Report only a stable classification, with no browser payload. */
+            outcome.check = session
+              ? identity === "ancestry"
+                ? "authenticated_read_failed"
+                : "login_check_failed"
+              : "session_unavailable";
           } finally {
             if (session) await pool.release(session.id, "daily_login_check");
           }
@@ -804,6 +808,7 @@ function historyMetadata(row: Record<string, unknown>) {
     "path",
     "durationMs",
     "readVersion",
+    "readAttempts",
   ];
   return Object.fromEntries(
     fields

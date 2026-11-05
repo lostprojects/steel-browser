@@ -1,5 +1,6 @@
 // Observes an existing login without input or password submission. Persist only
 // metadata; member HTML and account values must remain inside the service.
+import type { Page } from "puppeteer-core";
 import type { BrowserSession } from "./browser-session.js";
 export const memberReads = {
   ancestry: {
@@ -19,12 +20,29 @@ export async function observeMemberRead(session: BrowserSession, site: keyof typ
   const spec = memberReads[site];
   const before = (session.proxyServer?.rxBytes ?? 0) + (session.proxyServer?.txBytes ?? 0);
   const started = Date.now();
-  const page = await session.getPrimaryPage();
-  // Restored SSO callback tabs can close themselves. Use a fresh ordinary tab.
-  const old = page;
-  const fresh = await session.getBrowserInstance()!.newPage();
-  return await readPage(fresh).finally(() => fresh.close().catch(() => undefined));
-  async function readPage(page: typeof old) {
+  await session.prepareCommands();
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    let fresh: Page | undefined;
+    try {
+      fresh = await session.getBrowserInstance()!.newPage();
+      return { ...(await readPage(fresh)), readAttempts: attempt };
+    } catch (error) {
+      lastError = error;
+      // A SPA can replace its execution context while its first payload loads.
+      // Retry a fresh read on the same identity; no input or login is involved.
+      session
+        .getLogger("login-check")
+        .warn(
+          { site, attempt, errorType: error instanceof Error ? error.name : "unknown" },
+          "Authenticated read failed before observation",
+        );
+    } finally {
+      await fresh?.close().catch(() => undefined);
+    }
+  }
+  throw lastError;
+  async function readPage(page: Page) {
     session.lastNavigation = Date.now();
     const response = await page.goto(spec.url, { waitUntil: "domcontentloaded", timeout: 45000 });
     await new Promise((resolve) => setTimeout(resolve, 3000));

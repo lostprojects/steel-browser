@@ -1,6 +1,14 @@
 """Measure how the self-hosted Steel browser looks to anti-bot systems.
 
-Checks run against the deployed instance through the Evomi proxy:
+Checks run against the deployed instance through the Evomi proxy. These checks
+write measurement metadata, never corpus records. The logged-in soak must use
+only the known Ancestry identity, and must not enter credentials or save images:
+
+  stealth_check.py fold3-soak NEW_OUTPUT_DIRECTORY
+      Sample an authenticated Fold3 viewer for three hours, every five minutes.
+      Restart on an exit-IP change; renew the session before its lifetime cap.
+
+Other checks:
 
   stealth_check.py probe [SESSION_OPTIONS_JSON]
       Print the fingerprint signals a page can read (user agent, client hints,
@@ -820,9 +828,177 @@ def direct_soak(output, immediate=False, routes=('annas', 'udn', 'newspapers')):
           f"observations: {state_file}", flush=True)
 
 
+def fold3_soak(output, resume=False):
+    """Measure one known-device viewer for three hours; never log in or save images."""
+    import ast
+    import base64
+    import datetime
+    source = Path('/Users/moi/nosync.nosync/Mosaic/.claude/skills/collector/scripts/fold3_fetch.py')
+    tree = ast.parse(source.read_text())
+    canvas_check = next(ast.literal_eval(node.value) for node in tree.body
+                        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == '_CANVAS_READY_JS' for t in node.targets))
+    output = Path(output)
+    output.mkdir(parents=True, exist_ok=True)
+    file = output / 'fold3-soak.jsonl'
+    if file.exists() and not resume:
+        raise RuntimeError('Use a new output directory, or explicitly resume its existing browser')
+    previous = [json.loads(line) for line in file.read_text().splitlines() if line.strip()] if resume else []
+    if resume and (not previous or previous[-1].get('kind') in ('complete', 'release', 'failed')):
+        raise RuntimeError('The previous viewer is no longer resumable')
+    current = None
+    viewer = None
+    began = None
+    opened = 0
+    samples = []
+    restarts = []
+    def emit(row):
+        row = {'at': datetime.datetime.now(datetime.timezone.utc).isoformat(), **row}
+        with file.open('a') as out:
+            out.write(json.dumps(row) + '\n')
+        print(json.dumps(row), flush=True)
+    def run(items):
+        result = call('POST', f"/v1/sessions/{current['id']}/commands", {'commands': items})
+        while result.get('execution', {}).get('state') in ('running', 'queued'):
+            time.sleep(.5)
+            result = call('POST', f"/v1/sessions/{current['id']}/commands", {'commands': [{'command': 'status', 'execution': result['execution']['id']}]}, keyed=False)
+        if result.get('execution', {}).get('state') != 'completed':
+            raise RuntimeError('Viewer command failed; no browser payload saved')
+        return result['results']
+    def evaluate(script):
+        return run([{'command': 'eval', 'script': script}])[0].get('value')
+    def close():
+        nonlocal current
+        if current:
+            ended = call('POST', f"/v1/sessions/{current['id']}/release", {})
+            emit({'kind': 'release', 'sessionId': current['id'], 'endReason': ended.get('endReason'), 'proxyBytes': ended.get('proxyRxBytes', 0) + ended.get('proxyTxBytes', 0)})
+            current = None
+    def open_viewer(reason):
+        nonlocal current, viewer, opened
+        deadline = time.monotonic() + 1800
+        while True:
+            try:
+                current = call('POST', '/v1/sessions', {'sessionId': str(uuid.uuid4()), 'mode': 'quiet', 'identity': 'ancestry', 'residential': {'country': 'US'}, 'blockAds': False})
+                opened = time.monotonic()
+                emit({'kind': 'open', 'sessionId': current['id'], 'reason': reason, 'exitIp': current['exit']['ip'], 'timezone': current['exit']['timezone']})
+                break
+            except urllib.error.HTTPError as error:
+                if error.code not in (409, 429) or time.monotonic() > deadline:
+                    raise
+                emit({'kind': 'pool_wait', 'status': error.code})
+                time.sleep(15)
+        # Keep one viewer tab for a consistent memory measurement. The
+        # identity remains exclusive throughout this job.
+        tabs = run([{'command': 'tab', 'action': 'list'}])[0]['tabs']
+        for tab in tabs[1:]:
+            run([{'command': 'tab', 'action': 'close', 'tab': tab['tab']}])
+        run([{'command': 'navigate', 'url': 'https://www.fold3.com/search'}, {'command': 'wait', 'ms': 5000}])
+        marker = evaluate('!!document.querySelector(\'a[href="/signoff"],[data-cy="footer-sign-out"]\') && !document.querySelector(\'input[type="password"]\')')
+        if not marker:
+            raise RuntimeError('Fold3 retained login marker absent; no sign-in attempted')
+        if not viewer:
+            response = call('POST', f"/v1/sessions/{current['id']}/request", {'url': 'https://www.fold3.com/fold31-search/doc-search', 'method': 'POST', 'headers': {'content-type': 'application/json'}, 'data': json.dumps({'keywords': 'Project Blue Book', 'filters': [{'type': 'general.title.id', 'values': ['461']}], 'highlight': {'highlight': False}, 'maxCount': 10, 'from': 0})})
+            data = json.loads(base64.b64decode(response['body']))
+            for hit in data.get('hits', []):
+                doc = hit.get('doc', {})
+                kind = doc.get('id', {}).get('ct')
+                image = doc.get('im') if kind in ('SUB_IMAGE', 'FILE') else doc.get('id', {}).get('id') if kind == 'IMAGE' else None
+                if image and re.fullmatch(r'\d+', str(image)):
+                    viewer = 'https://www.fold3.com/image/' + str(image)
+                    break
+            if not viewer:
+                raise RuntimeError('Authenticated search returned no image viewer fixture')
+        run([{'command': 'navigate', 'url': viewer}, {'command': 'wait', 'ms': 8000}])
+        state = viewer_state()
+        # A viewer has no account menu. Verify retained membership on its
+        # separate authenticated search, and poll the collector's canvas check.
+        deadline = time.monotonic() + 40
+        while state['canvas'] != 'ready' and time.monotonic() < deadline and not state['prompt'] and not state['device']:
+            time.sleep(2)
+            state = viewer_state()
+        if state['prompt'] or state['device'] or state['canvas'] not in ('ready', 'partial'):
+            emit({'kind': 'viewer_unavailable', **state})
+            raise RuntimeError('Viewer failed its retained-login or painted-canvas check')
+        emit({'kind': 'viewer_ready', 'viewer': viewer, **state})
+    def viewer_state():
+        return evaluate('(() => ({viewerMemberMarker:!!document.querySelector(\'a[href="/signoff"],[data-cy="footer-sign-out"]\'),prompt:!!document.querySelector(\'input[type="password"]\')||/\\/(signin|login)(\\/|$)/.test(location.pathname)||/need a Fold3 membership/i.test(document.body.innerText),device:/verification code|new device|check your email/i.test(document.body.innerText),canvas:(' + canvas_check + ')(),image:location.pathname.match(/\\/image\\/(\\d+)/)?.[1]??null}))()')
+    try:
+        if resume:
+            latest = next(row for row in reversed(previous) if row.get('kind') == 'open')
+            current = call('GET', f"/v1/sessions/{latest['sessionId']}", keyed=False)
+            if current.get('status') != 'live' or current.get('identity') != 'ancestry':
+                raise RuntimeError('The original viewer session is unavailable')
+            opened = time.monotonic() - current['duration'] / 1000
+            samples.extend(row for row in previous if row.get('kind') == 'sample')
+            first = samples[0]
+            started = datetime.datetime.fromisoformat(first['at']).timestamp() - first['elapsedSeconds']
+            began = time.monotonic() - (time.time() - started)
+            restarts.extend(row['reason'] for row in previous if row.get('kind') == 'open' and row.get('reason') != 'initial')
+            state = viewer_state()
+            if not state.get('image'):
+                raise RuntimeError('The retained viewer page is unavailable')
+            viewer = 'https://www.fold3.com/image/' + state['image']
+            emit({'kind': 'resume', 'sessionId': current['id'], 'elapsedSeconds': round(time.monotonic() - began, 3)})
+        else:
+            open_viewer('initial')
+            began = time.monotonic()
+        for number in range(samples[-1]['sample'] + 1 if samples else 0, 37):
+            due = began + number * 300
+            while time.monotonic() < due:
+                time.sleep(min(30, due - time.monotonic()))
+            diagnostic = call('GET', f"/v1/sessions/{current['id']}/diagnostics", keyed=False)
+            response = call('POST', f"/v1/sessions/{current['id']}/request", {'url': 'https://ipwho.is/'})
+            address = json.loads(base64.b64decode(response['body']))
+            if not address.get('success') or not address.get('ip'):
+                raise RuntimeError('Exit lookup did not supply an address')
+            emit({'kind': 'measurement', 'sample': number, 'elapsedSeconds': round(time.monotonic() - began, 3), 'exitIp': address['ip'], 'exitTimezone': address.get('timezone', {}).get('id'), 'chromeRssBytes': diagnostic['chromeRssBytes'], 'chromeProcesses': diagnostic['chromeProcesses']})
+            changed = address['ip'] != current['exit']['ip']
+            if changed:
+                emit({'kind': 'ip_change', 'exitIp': address['ip'], 'previousExitIp': current['exit']['ip'], 'sample': number})
+                restarts.append('ip_changed')
+                close()
+                open_viewer('ip_changed')
+                diagnostic = call('GET', f"/v1/sessions/{current['id']}/diagnostics", keyed=False)
+            state = viewer_state()
+            member_read = call('POST', f"/v1/sessions/{current['id']}/login-check", {'site': 'fold3'})
+            state['member'] = member_read['status'] == 'ok'
+            state['memberReadBytes'] = member_read['readBytes']
+            state['prompt'] = state['prompt'] or member_read['signInPrompt']
+            state['device'] = state['device'] or member_read['deviceCheck']
+            row = {'kind': 'sample', 'sample': number, 'elapsedSeconds': round(time.monotonic() - began, 3), 'exitIp': address['ip'], 'exitTimezone': address.get('timezone', {}).get('id'), 'ipChanged': changed, 'chromeRssBytes': diagnostic['chromeRssBytes'], 'chromeProcesses': diagnostic['chromeProcesses'], **state}
+            samples.append(row)
+            emit(row)
+            if diagnostic['chromeRssBytes'] >= 2_000_000_000 or not diagnostic['chromeProcesses']:
+                raise RuntimeError('Chrome exceeded 2 GB or has no live processes')
+            if not state['member'] or state['prompt'] or state['device'] or state['canvas'] not in ('ready', 'partial'):
+                raise RuntimeError('Viewer lost authentication; no sign-in attempted')
+            if number < 36 and time.monotonic() - opened >= 175 * 60:
+                restarts.append('lifetime_renewal')
+                close()
+                open_viewer('lifetime_renewal')
+            if number < 36:
+                # Collector's next_image uses ArrowRight as its fallback. Keep
+                # real viewer work running between observations without capture.
+                run([{'command': 'press', 'key': 'ArrowRight'}, {'command': 'wait', 'ms': 3000}])
+                state = viewer_state()
+                if state.get('image'):
+                    viewer = 'https://www.fold3.com/image/' + state['image']
+        emit({'kind': 'complete', 'samples': len(samples), 'elapsedSeconds': round(time.monotonic() - began, 3), 'peakSampledRssBytes': max(s['chromeRssBytes'] for s in samples), 'canvasReadySamples': sum(s['canvas'] == 'ready' for s in samples), 'ipChanges': sum(s['ipChanged'] for s in samples), 'restarts': restarts})
+    except BaseException as error:
+        emit({'kind': 'failed', 'errorType': type(error).__name__, 'reason': str(error) if isinstance(error, RuntimeError) else 'Transport or service error; no browser payload saved', 'httpStatus': error.code if isinstance(error, urllib.error.HTTPError) else None})
+        raise
+    finally:
+        close()
+        print(f'Fold3 soak: {len(samples)} samples; metadata: {file}', flush=True)
+
+
 def main(argv):
-    if len(argv) < 2 or argv[1] not in ('probe', 'routes', 'fingerprints', 'quiet-probe', 'quiet-routes', 'direct-soak'):
+    if len(argv) < 2 or argv[1] not in ('probe', 'routes', 'fingerprints', 'quiet-probe', 'quiet-routes', 'direct-soak', 'fold3-soak'):
         sys.exit(__doc__)
+    if argv[1] == 'fold3-soak':
+        if len(argv) not in (3, 4) or (len(argv) == 4 and argv[3] != '--resume'):
+            sys.exit('fold3-soak requires an output directory and optional --resume')
+        fold3_soak(argv[2], resume='--resume' in argv[3:])
+        return
     if argv[1] == 'direct-soak':
         import argparse
         parser = argparse.ArgumentParser(description='Measure direct routes with bounded egress.')

@@ -126,7 +126,7 @@ Create a quiet session with identity `ancestry` or `mary-ferrell`, then call `PO
 
 Protected identities require access to their vault entry and use a fixed sticky residential allocation throughout. `/request` sends authenticated GET or POST requests over that same exit. Signed CDN downloads can try direct egress. Protected profile exports and image capture are refused because they can expose login details; text responses and CDP replies are scrubbed.
 
-Two-step outcomes remain explicit. Stored authenticator seeds generate TOTP codes at use. Email and SMS code fields issue a local code request; other device checks retain their classification. HathiTrust Google values are stored, but its flow returns `not_attempted` / `google_flow_unimplemented`. No Google challenge has been observed. The service does not request a manual login.
+Two-step outcomes remain explicit. Stored authenticator seeds generate TOTP codes at use. Email and SMS code fields issue a local code request; other device checks retain their classification. HathiTrust Google uses the protected identity `hathitrust` and vault entry `hathitrust-google`. The flow permits one attempt, preserved across deployment in `/data/hathitrust-google-attempt.json`. It stops on an insecure-browser response or unsupported challenge; later calls return `not_attempted` / `google_attempt_limit`. It does not try other identity providers or enroll a seed. The service does not request a manual login.
 
 Mosaic’s Mary Ferrell caller uses this API. The three Ancestry-family `login`
 commands and collection sessions use the `ancestry` identity. Sign in to these
@@ -148,4 +148,44 @@ The request belongs to the same agent, identity and session and expires after at
 
 Mosaic’s `scripts/browser/login_codes.py --session ID` reads only messages since that login attempt, within ten minutes, matching the configured service and account. It sends a unique code directly and reports status; no message or code is stored. See [Mosaic tooling](../Mosaic/.claude/tooling.md#local-login-codes) for local availability and future adapter requirements.
 
-This adds no mailbox watcher and gives Railway no access to local message history. The daily service check records an unanswered challenge when no local caller is present. Google’s login flow remains unimplemented; a code bridge does not complete that flow.
+This adds no mailbox watcher and gives Railway no access to local message history. The daily service check records an unanswered challenge when no local caller is present. Google’s flow uses the same code bridge only for a supported verification field in that single attempt.
+
+## Phase 5 observations and fault checks
+
+The daily timer runs every minute and checks each eligible site once per UTC day
+when two pool slots are free. On `ancestry`, it reads the tree dashboard,
+Newspapers.com Edit Profile and a Fold3 Project Blue Book search using the retained
+login. It enters no credentials and records any sign-in prompt or device check.
+HTML remains in memory; the history contains flags, byte counts and timestamps.
+The observation window is 5–12 November 2026 UTC. Other eligible identities retain
+their login checks; refused credentials and unanswered checks suspend attempts.
+Google is excluded from automated login checks.
+
+Admin `GET /v1/login-checks?from=2026-11-05T00:00:00Z&to=2026-11-12T00:00:00Z&limit=1000`
+returns metadata, oldest first, bounded to the latest matching rows. The end time
+is exclusive. Legacy code requests and account payloads are removed from responses.
+`readVersion:2` identifies the corrected quiet-navigation validator. Quiet mode
+validates the DOM and does not report an invented HTTP status.
+
+Admin `POST /v1/sessions/{id}/login-check {"site":"fold3"}` performs the same
+read-only observation on `ancestry`, without consuming the daily job or writing
+a login. Read exceptions get up to three fresh-tab attempts on the same browser;
+`readAttempts` reports the count. An observed sign-in prompt is returned immediately. Admin `GET /v1/sessions/{id}/diagnostics` reports Chrome process-group
+RSS and process counts without command arguments.
+
+Admin `POST /v1/sessions/{id}/fault/chrome-kill {}` sends SIGKILL to that session's
+quiet Chrome. Use an idempotency key. It ends the session, cleans its process group
+and returns remaining process/zombie counts. The named profile stays on the volume.
+
+Unprotected noVNC views require API authentication. Protected identities refuse
+both the HTML view and the VNC WebSocket with 403; screenshot and CDP image methods
+are also refused. Requesting human help still requires the owner's agreement.
+
+The finite viewer check runs with `mosaic/stealth_check.py fold3-soak OUTPUT_DIR`.
+It samples RSS and exit IP every five minutes for three hours, checks an
+authenticated search and advances the viewer through native input. It renews
+after the 175-minute sample and restarts earlier if the exit IP changes.
+`--resume` continues only the recorded live `ancestry` session, preserving the
+original time and sample numbers. Run the local sampler detached when it must
+survive chat interruptions. Keep its metadata path and PID in Mosaic's
+infrastructure register until it releases the browser.
