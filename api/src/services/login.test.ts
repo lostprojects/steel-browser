@@ -261,7 +261,7 @@ test.each(["eligible", "refused", "code", "never", "checked", "busy", "capacity"
     if (condition === "checked")
       await writeFile(
         path.join(p, "login-daily.json"),
-        JSON.stringify({ "ancestry/ancestry": "2026-11-05:read-v1" }),
+        JSON.stringify({ "ancestry/ancestry": "2026-11-05:read-v2" }),
       );
     const login = new LoginService(p);
     const loginCall = vi.spyOn(login, "login").mockResolvedValue({ status: "ok" } as any);
@@ -283,7 +283,7 @@ test.each(["eligible", "refused", "code", "never", "checked", "busy", "capacity"
       expect(observeMemberRead).toHaveBeenCalledTimes(1);
       expect(
         JSON.parse(await readFile(path.join(p, "login-daily.json"), "utf8"))["ancestry/ancestry"],
-      ).toBe("2026-11-05:read-v1");
+      ).toBe("2026-11-05:read-v2");
       await vi.advanceTimersByTimeAsync(60000);
       await tick();
       expect(loginCall).not.toHaveBeenCalled();
@@ -377,4 +377,28 @@ test("history drops account payloads and code requests from legacy rows", async 
     1,
   );
   expect(result.checks).toEqual([{ at: "2026-11-05T00:00:00Z", site: "ancestry", readBytes: 123 }]);
+});
+
+test("Google stops on an insecure-browser response and cannot attempt again", async () => {
+  const { login, session } = await fixture(
+    "about:blank",
+    "",
+    {
+      "https://babel.hathitrust.org/Shibboleth.sso/Login?entityID=https://google.cirrusidentity.com/gateway&target=https://babel.hathitrust.org":
+        [
+          "https://accounts.google.com/signin/rejected",
+          "<p>This browser or app may not be secure</p>",
+        ],
+    },
+    "hathitrust",
+  );
+  expect(await finish(login.login(session, "hathitrust-google", agent))).toMatchObject({
+    status: "check_required",
+    check: "google_browser_insecure",
+  });
+  expect(await finish(login.login(session, "hathitrust-google", agent))).toMatchObject({
+    status: "not_attempted",
+    check: "google_attempt_limit",
+  });
+  expect(native.text).not.toHaveBeenCalled();
 });

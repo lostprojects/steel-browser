@@ -49,8 +49,9 @@ export const loginSites = {
   },
   "hathitrust-google": {
     vault: "hathitrust-google",
-    url: "https://babel.hathitrust.org/",
-    hosts: ["babel.hathitrust.org", "accounts.google.com"],
+    url: "https://babel.hathitrust.org/Shibboleth.sso/Login?entityID=https://google.cirrusidentity.com/gateway&target=https://babel.hathitrust.org",
+    hosts: ["babel.hathitrust.org", "accounts.google.com", "google.cirrusidentity.com"],
+    signedIn: 'a[href*="Logout"],a[href*="logout"]',
   },
 } as const;
 export type LoginSite = keyof typeof loginSites;
@@ -151,17 +152,18 @@ export class LoginService {
           // repeating either from the server looks like account takeover to the site,
           // and only the Mac can read emailed codes. Leave one slot for collectors.
           if (
+            site === "hathitrust-google" ||
             !record.last_login_ok ||
             record.status === "check_required" ||
             record.check === "credentials_rejected" ||
-            checked[key] === (identity === "ancestry" ? today + ":read-v1" : today) ||
+            checked[key] === (identity === "ancestry" ? today + ":read-v2" : today) ||
             pool.identityBusy(identity) ||
             pool.size > pool.maxSessions - 2 ||
             pool.draining
           )
             continue;
           // Persist before opening a session so a restart cannot repeat a code request.
-          const stamp = identity === "ancestry" ? today + ":read-v1" : today;
+          const stamp = identity === "ancestry" ? today + ":read-v2" : today;
           checked[key] = stamp;
           await this.updateDaily((stored) => {
             stored[key] = stamp;
@@ -195,6 +197,7 @@ export class LoginService {
               at: new Date().toISOString(),
               ...historyMetadata(outcome),
               kind: identity === "ancestry" ? "authenticated_read" : "login",
+              ...(identity === "ancestry" ? { readVersion: 2 } : {}),
               deviceCheck: [
                 "email_mailbox_missing",
                 "email",
@@ -466,6 +469,11 @@ export class LoginService {
               /incorrect password|invalid password|password is incorrect|invalid username|couldn.t sign you in|wrong password/i.test(
                 lower,
               ),
+            googleUnsafe: /this browser or app may not be secure/i.test(text),
+            googleChallenge:
+              /captcha|verify it.s you|account recovery|use your passkey|check your (?:phone|device)|security key/i.test(
+                text,
+              ),
             codeRejected:
               /incorrect code|invalid code|code (?:has )?expired|code is incorrect/i.test(text),
             consent: [...document.querySelectorAll("button,a")].some(
@@ -564,8 +572,23 @@ export class LoginService {
       if (!s.signedOut && s.check === "none")
         return { identity: session.options.identity, site, status: "unchecked", check: "none" };
     }
-    if (site === "hathitrust-google")
-      return this.record(session, site, "not_attempted", "google_flow_unimplemented", agent);
+    if (site === "hathitrust-google" && !resume) {
+      if (session.options.identity !== "hathitrust")
+        return this.record(session, site, "not_attempted", "google_identity_required", agent);
+      // One attempt survives retries, releases and deploys. Further attempts need
+      // a separately authorized code change; no reset endpoint is exposed.
+      await mkdir(this.root, { recursive: true, mode: 0o700 });
+      try {
+        await writeFile(
+          path.join(this.root, "hathitrust-google-attempt.json"),
+          JSON.stringify({ at: new Date().toISOString(), identity: "hathitrust" }),
+          { mode: 0o600, flag: "wx" },
+        );
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        return this.record(session, site, "not_attempted", "google_attempt_limit", agent);
+      }
+    }
     // Newspapers.com and Fold3 sign in through Ancestry. Settle Ancestry first in
     // the main tab, where its new-device code page is visible; their SSO then
     // completes without input. Fold3's SSO popup would otherwise hide that page.
@@ -619,6 +642,14 @@ export class LoginService {
         await go(spec.home);
         continue;
       }
+      if (site === "hathitrust-google" && (s.googleUnsafe || s.googleChallenge))
+        return this.record(
+          session,
+          site,
+          "check_required",
+          s.googleUnsafe ? "google_browser_insecure" : "google_challenge",
+          agent,
+        );
       if (s.rejected) return this.record(session, site, "failed", "credentials_rejected", agent);
       if (otpUsed && s.codeRejected)
         return this.record(session, site, "failed", "code_rejected", agent);
@@ -714,10 +745,12 @@ export class LoginService {
         if (spec.vault === "ancestry" && s.host !== "www.ancestry.com")
           return this.record(session, site, "failed", "ancestry_oauth_missing", agent);
         if (!formFilled) {
-          const usernameEntered = await type(
-            'input[type="email"],input[name="username"],input#username,input[name="email"],input#email,input[name="userId"]',
-            fields.username || fields.email,
-          );
+          const usernameEntered =
+            !s.username ||
+            (await type(
+              'input[type="email"],input[name="username"],input#username,input[name="email"],input#email,input[name="userId"]',
+              fields.username || fields.email,
+            ));
           const passwordEntered =
             !s.password || (await type('input[type="password"]', fields.password));
           if (!usernameEntered || !passwordEntered)
@@ -733,7 +766,8 @@ export class LoginService {
           await pause(2000);
           continue;
         }
-        if (!(await click('button[type="submit"],input[type="submit"],#submit_button')))
+        if (site === "hathitrust-google") await click("#identifierNext,#passwordNext");
+        else if (!(await click('button[type="submit"],input[type="submit"],#submit_button')))
           await click("button", "^(sign in|log in|continue|next)$");
         submissions++;
         submittedPassword = s.password;
@@ -769,6 +803,7 @@ function historyMetadata(row: Record<string, unknown>) {
     "memberPayload",
     "path",
     "durationMs",
+    "readVersion",
   ];
   return Object.fromEntries(
     fields

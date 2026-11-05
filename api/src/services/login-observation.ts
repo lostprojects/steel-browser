@@ -72,7 +72,7 @@ export async function observeMemberRead(session: BrowserSession, site: keyof typ
       observed.memberPayload &&
       !observed.signInPrompt &&
       !observed.deviceCheck &&
-      (response?.status() ?? 500) < 400;
+      (!response || response.status() < 400);
     return {
       ...observed,
       status: ok ? "ok" : "failed",

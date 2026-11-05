@@ -98,3 +98,8 @@ test("fault and process metadata require an admin", async () => {
     chromeRssBytes: 1024,
   });
 });
+
+test("protected identities refuse the noVNC HTML page", async () => {
+  const { app } = await fixture();
+  expect((await app.inject("/v1/sessions/one/view")).statusCode).toBe(403);
+});

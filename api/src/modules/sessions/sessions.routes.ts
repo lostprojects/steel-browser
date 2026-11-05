@@ -31,6 +31,8 @@ export default async function routes(server: FastifyInstance) {
   });
   server.get("/sessions/:sessionId/view", async (req, reply) => {
     const session = selectedSession(server, req);
+    if (identityVault(session.options.identity))
+      throw Object.assign(new Error("Protected identity view unavailable"), { statusCode: 403 });
     if (!session.display.name)
       return reply.code(409).send({ error: "X display unavailable on this host" });
     return reply

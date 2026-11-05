@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import path from "node:path";
 import { vault, protect } from "../../services/vault.js";
+import { observeMemberRead } from "../../services/login-observation.js";
 import { LoginService } from "../../services/login.js";
 import { agentFor } from "../../utils/api-key.js";
 import { selectedSession } from "./sessions.controller.js";
@@ -57,6 +58,20 @@ export default async function routes(server: FastifyInstance) {
       .regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/)
       .parse(req.params.identity);
     return server.sessionPool.deleteIdentity(identity, () => login.forget(identity));
+  });
+  server.post("/sessions/:sessionId/login-check", async (req) => {
+    if (!agentFor(req.raw)?.admin)
+      throw Object.assign(new Error("Admin key required"), { statusCode: 403 });
+    const { site } = z
+      .object({ site: z.enum(["ancestry", "newspapers", "fold3"]) })
+      .strict()
+      .parse(req.body);
+    const session = selectedSession(server, req);
+    if (session.options.identity !== "ancestry")
+      throw Object.assign(new Error("Ancestry family requires its known identity"), {
+        statusCode: 403,
+      });
+    return idempotent(req, () => observeMemberRead(session, site));
   });
   server.post("/sessions/:sessionId/login", async (req) => {
     const { site, current } = z
