@@ -27,7 +27,8 @@ next start. The source identity's local storage is imported during migration.
 An administrator can delete an idle identity with `DELETE /v1/identities/{name}`.
 It removes the profile, stored sticky allocation and login records, including for
 protected identities. A busy identity returns 409; deletion holds its lock until
-all removals finish. Vault entries and metered spend remain.
+all removals finish. Vault entries and metered spend remain. Clients sending
+a JSON content type should include `{}` as the DELETE body.
 
 A fourth session waits up to five seconds, then gets HTTP 429. Mosaic currently
 uses Browserbase after that response. Three simultaneous Mosaic callers and the

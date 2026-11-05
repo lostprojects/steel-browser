@@ -1945,7 +1945,7 @@ home before opening the sign-in form, preserving an existing authenticated sessi
 A later old-build fixture attempt reproduced `account_payload_missing` (82,254
 bytes); the following login passed (101,996 bytes).
 
-TypeScript passed. The final full suite passed 242 tests with 237 skipped across
+TypeScript passed. The full suite at this stage passed 242 tests with 237 skipped across
 38 passing files and one skipped file. New focused cases cover idempotency eviction,
 cookie lifetimes without values and domain boundaries, daily-check guards and
 forgetting, scoped login deletion, member markers, Newspapers' callback and the
@@ -1992,3 +1992,109 @@ contained Google advertising and tracking hosts, so the final policy adds those
 existing refused-host classes and `analytics.google.com` for Bizapedia only.
 The pilot was interrupted during its fifth page; its context manager released
 that session. It is separate from the final twenty-page acceptance set below.
+
+### Mary Ferrell final acceptance, 5 November 2026
+
+Application `1b0b0b3` passed initial vault sign-in and all four required checks.
+The current-page and reopen checks each required the authenticated DOM marker
+before invoking login; neither could silently substitute a fresh sign-in.
+
+| Check | Result | Residential bytes |
+| --- | --- | ---: |
+| `current:true` on signed-in `/home` | ok | 14,143 route bytes |
+| Confirmed logout, then vault sign-in | ok | 50,423 route bytes |
+| Release, reopen, marker present, then `current:true` | ok | 36,715 route bytes |
+| `maryferrell.py` authenticated PDF retrieval | FOUND | 2,147,177 settled session bytes |
+
+The initial sign-in, current-page and logout/re-login session settled 179,546
+bytes; the reopen session settled 77,524. Route deltas exclude the initial proxy
+preflight and other traffic outside that operation. All three sessions released.
+
+The PDF fixture was `/xdoc/pdf/242657`, selected through the existing caller.
+`get_document` verified its `%PDF` signature and returned 2,024,790 body bytes,
+61 physical PDF pages and 60 viewer pages. The body used the identity's session
+exit. The temporary verification copy is removed after measurement.
+
+### Identity and local-state cleanup
+
+The dependency search over Mosaic `scripts`, `.claude` and this repository found
+no references to the fifteen disposable identities. The live routing table also
+named none. Admin deletion removed their profile directories, sticky allocations
+and login/daily-check records under the pool identity lock. The fifteen names were
+`ancestry-diag`, `ancestry-accept`, `ancestry-np1` through `ancestry-np3`,
+`ancestry-final1` through `ancestry-final6`, `ancestry-phase5`, `mary-ferrell-phase5`,
+`bizapedia-pilot` and `bizapedia-http-pilot`.
+
+The identity list afterward contained exactly `residential-US`, `ancestry`,
+`mary-ferrell`, `bizapedia` and `nuforc`. Their stored allocations remain. Vault
+entries and usage totals were preserved. An initial deletion sent an empty JSON
+body with a JSON content type and received 400 before the handler; supplying `{}`
+completed the calls. All fifteen allocations were present before deletion.
+
+No code read the old local `steel-contexts/residential-US.json`; the search found
+only its stale documentation reference. That file was removed. It was the only
+entry in that directory, which is now empty. The old deployment worker had exited
+with `expired_without_deploy`; its temporary directory and infrastructure row were
+removed. Browserbase's fallback was left in place.
+
+The final code typecheck passed, and the full suite passed 244 tests with 237
+skipped. Railway confirmed successful deployment, health was ok, and no rollback
+was required. Both code pushes followed an empty pool and a timestamp-filtered
+review showing no external collector traffic in the preceding ten minutes.
+
+### Bizapedia final acceptance, 5 November 2026
+
+The final policy refuses AdThrive, GumGum, btloader and PrivacyManager hosts,
+plus the existing advertising/tracking host classes and `analytics.google.com`,
+only for identity `bizapedia`. It keeps Cloudflare challenge hosts residential.
+Service-wide browser ad blocking remains off; the forwarder handles refusal.
+
+The `companies_fetch.py` people-page caller completed twenty recorded attempts
+on identity `bizapedia`, exit `98.159.24.143`, timezone `America/Chicago`, with
+Google Chrome 156.0.8078.79. Six passed with 51 payload links each. The remaining
+fourteen redirected to `/pro-search-subscription.aspx`. An isolated snapshot
+explicitly reported the site's daily free-activity limit and a Pro Search offer.
+That page's checkbox caused the ordinary challenge guard to wait unnecessarily.
+
+The first twelve attempts used the ordinary caller and challenge guard. After
+confirming the quota page, the last eight used the same caller, identity and
+URL with automatic challenge handling disabled. Each reported the quota page
+and zero payloads; none counts as a pass. One interrupted allocation between
+these groups settled 142,584 bytes and is additional to the twenty rows below.
+
+| Attempt | Payloads | Result | Settled residential bytes | Client seconds |
+| --- | ---: | --- | ---: | ---: |
+| 1 | 51 | pass | 1,913,991 | 12.648 |
+| 2 | 51 | pass | 1,906,343 | 8.389 |
+| 3 | 51 | pass | 1,903,952 | 14.247 |
+| 4 | 51 | pass | 1,909,227 | 13.083 |
+| 5 | 51 | pass | 1,908,168 | 12.333 |
+| 6 | 51 | pass | 1,899,961 | 12.922 |
+| 7 | 0 | daily quota redirect | 645,231 | 66.603 |
+| 8 | 0 | daily quota redirect | 154,606 | 67.090 |
+| 9 | 0 | daily quota redirect | 154,541 | 65.319 |
+| 10 | 0 | daily quota redirect | 176,462 | 64.148 |
+| 11 | 0 | daily quota redirect | 153,121 | 65.671 |
+| 12 | 0 | daily quota redirect | 163,770 | 68.865 |
+| 13 | 0 | daily quota redirect | 140,559 | 5.488 |
+| 14 | 0 | daily quota redirect | 138,692 | 6.247 |
+| 15 | 0 | daily quota redirect | 140,551 | 5.277 |
+| 16 | 0 | daily quota redirect | 140,454 | 7.536 |
+| 17 | 0 | daily quota redirect | 140,499 | 6.121 |
+| 18 | 0 | daily quota redirect | 141,161 | 14.505 |
+| 19 | 0 | daily quota redirect | 140,928 | 9.861 |
+| 20 | 0 | daily quota redirect | 138,012 | 6.949 |
+
+The twenty attempts settled 14,010,229 bytes. The six successful pages used
+11,441,642 bytes, averaging 1,906,940 bytes each. This is a 36.3% reduction
+from the phase 3 baseline of 2,993,425 bytes per page, and exceeds the
+1,496,713-byte half-baseline target. Cloudflare alone averaged 1,815,603
+bytes on successful pages. Targeted ad/tracking hosts transferred zero
+metered residential bytes across the final set.
+
+The five-session pilot used 9,831,259 bytes, including its interrupted page.
+Total settled Bizapedia traffic for this follow-up was 23,984,072 bytes.
+Every session released. The cheap quota responses cannot establish bandwidth
+acceptance for actual people pages. Both the 18/20 pass mark and the 50%
+bandwidth reduction remain unmet. Another valid acceptance set needs access
+that permits twenty people-page reads; the current free quota prevented it.
