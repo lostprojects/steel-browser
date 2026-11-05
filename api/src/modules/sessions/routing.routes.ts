@@ -8,6 +8,7 @@ import { downloadFile, httpFetch } from "../../services/http-fetch.js";
 import { selectedSession } from "./sessions.controller.js";
 import { idempotent } from "../../utils/idempotency.js";
 import { QuietInput } from "../../services/quiet-input.js";
+import { createHash, randomUUID } from "node:crypto";
 
 const name = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/);
 const httpUrl = z
@@ -23,6 +24,8 @@ const fetchBody = z
     site: z.string().min(1).max(2048).optional(),
     caller: callerTag.optional(),
     outcomeAttemptId: z.string().uuid().optional(),
+    requestId: z.string().uuid().optional(),
+    timeoutMs: z.number().int().min(1000).max(300_000).default(180_000),
     route: z.enum(["annas", "bizapedia", "udn", "ancestry", "newspapers", "fold3"]).optional(),
     startRung: z.number().int().min(1).max(3).optional(),
     identity: name.optional(),
@@ -132,14 +135,45 @@ export default async function routes(server: FastifyInstance) {
     await routing.policy(host, split, startRung, ttlSeconds, site);
     return { host, ...policy };
   });
-  server.post("/fetch", async (req) => {
+  server.post<{ Params: { requestId: string } }>("/fetch/:requestId/cancel", async (req) => {
+    const requestId = z.string().uuid().parse(req.params.requestId);
+    return routing.cancel(requestId, agentFor(req.raw)!);
+  });
+  server.post("/fetch", async (req, reply) => {
     const options = fetchBody.parse(req.body);
     const agent = agentFor(req.raw)!;
+    if (!options.outcomeAttemptId && !options.requestId) {
+      const key = req.headers["idempotency-key"];
+      if (typeof key === "string") {
+        const hash = createHash("sha256").update(key).digest("hex");
+        options.requestId = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(
+          13,
+          16,
+        )}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+      } else options.requestId = randomUUID();
+    }
     if (options.splitTraffic !== undefined && !agent.admin)
       throw Object.assign(new Error("Admin key required for unmeasured policies"), {
         statusCode: 403,
       });
-    return idempotent(req, () => routing.fetch(options, agent));
+    try {
+      return await idempotent(req, () => routing.fetch(options, agent));
+    } catch (error) {
+      const stopped = error as { statusCode?: number; requestId?: string; reason?: string };
+      if (
+        stopped.statusCode === 408 &&
+        ["fetch_timeout", "fetch_cancelled"].includes(stopped.reason ?? "")
+      )
+        return reply
+          .code(408)
+          .send({
+            status: "failed",
+            requestId: stopped.requestId,
+            reason: stopped.reason,
+            error: stopped.reason,
+          });
+      throw error;
+    }
   });
   server.post("/sessions/:sessionId/challenge", async (req) => {
     const options = z

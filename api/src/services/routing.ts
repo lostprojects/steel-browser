@@ -193,10 +193,167 @@ type Entry = {
   ttlSeconds?: number;
 } & Partial<Site>;
 const initialRungs: Record<string, number> = { annas: 2, udn: 2, newspapers: 1 };
+export type FetchOptions = {
+  url: string;
+  site?: string;
+  caller?: string;
+  outcomeAttemptId?: string;
+  requestId?: string;
+  timeoutMs?: number;
+  route?: string;
+  startRung?: number;
+  identity?: string;
+  country?: string;
+  retry?: boolean;
+  retain?: boolean;
+  splitTraffic?: boolean;
+  maxRung?: number;
+  forceDirectFailure?: boolean;
+};
+class FetchStopped extends Error {
+  readonly statusCode = 408;
+  constructor(
+    readonly reason: "fetch_timeout" | "fetch_cancelled",
+    readonly requestId: string,
+  ) {
+    super(reason === "fetch_timeout" ? "Fetch deadline exceeded" : "Fetch cancelled");
+  }
+}
+function fetchFailure(event: string, requestId: string, error: unknown, sessionId?: string) {
+  const value = error as { name?: unknown; code?: unknown; statusCode?: unknown } | null;
+  const kinds = new Set([
+    "Error",
+    "TypeError",
+    "RangeError",
+    "SyntaxError",
+    "ReferenceError",
+    "AbortError",
+    "TimeoutError",
+    "PoolError",
+  ]);
+  const errorType = typeof value?.name === "string" && kinds.has(value.name) ? value.name : "Error";
+  const code =
+    typeof value?.code === "string" && /^(?:E[A-Z0-9_]{1,31}|ERR_[A-Z0-9_]{1,48})$/.test(value.code)
+      ? value.code
+      : undefined;
+  const statusCode =
+    typeof value?.statusCode === "number" && Number.isInteger(value.statusCode)
+      ? value.statusCode
+      : undefined;
+  console.error(JSON.stringify({ event, requestId, sessionId, errorType, code, statusCode }));
+}
+
+// A cancelled await must not resume the ladder when its underlying operation
+// eventually completes. Keep late launches attached to this job for cleanup.
+class FetchJob {
+  readonly controller = new AbortController();
+  readonly active = new Set<string>();
+  readonly pending = new Set<string>();
+  readonly deadline: number;
+  private readonly stopped: Promise<never>;
+  private rejectStopped!: (error: FetchStopped) => void;
+  private timer: NodeJS.Timeout;
+  private releases = new Map<string, Promise<unknown>>();
+  private finished = false;
+  error?: FetchStopped;
+  constructor(
+    readonly id: string,
+    timeoutMs: number,
+    private pool: SessionPool,
+  ) {
+    this.deadline = Date.now() + timeoutMs;
+    this.stopped = new Promise<never>((_resolve, reject) => {
+      this.rejectStopped = reject;
+    });
+    void this.stopped.catch(() => undefined);
+    this.timer = setTimeout(() => this.stop("fetch_timeout"), timeoutMs);
+    this.timer.unref();
+  }
+  check() {
+    if (!this.error && !this.finished && Date.now() >= this.deadline) this.stop("fetch_timeout");
+    if (this.error) throw this.error;
+    if (this.finished) throw new Error("Fetch job has finished");
+  }
+  remaining(cap = Number.POSITIVE_INFINITY) {
+    this.check();
+    return Math.max(1, Math.min(cap, this.deadline - Date.now()));
+  }
+  async run<T>(operation: () => Promise<T>): Promise<T> {
+    this.check();
+    const value = await Promise.race([operation(), this.stopped]);
+    this.check();
+    return value;
+  }
+  stop(reason: "fetch_timeout" | "fetch_cancelled") {
+    if (this.finished || this.error) return;
+    this.error = new FetchStopped(reason, this.id);
+    this.controller.abort(this.error);
+    this.rejectStopped(this.error);
+    this.cleanup(reason);
+  }
+  release(id: string, reason = "released") {
+    const existing = this.releases.get(id);
+    if (existing) return existing;
+    const work = this.pool
+      .release(id, this.error?.reason ?? reason)
+      .then((info) => {
+        this.active.delete(id);
+        return info;
+      })
+      .catch((error) => {
+        fetchFailure("fetch_cleanup_failed", this.id, error, id);
+        throw error;
+      })
+      .finally(() => this.releases.delete(id));
+    this.releases.set(id, work);
+    void work.catch(() => undefined);
+    return work;
+  }
+  cleanup(reason: string) {
+    for (const id of new Set([...this.active, ...this.pending])) {
+      if (this.active.has(id) || this.pool.sessions?.has(id))
+        void this.release(id, reason).catch(() => undefined);
+    }
+  }
+  async create(options: Parameters<SessionPool["create"]>[0], agent: Agent) {
+    this.check();
+    const id = randomUUID();
+    this.pending.add(id);
+    const creation = this.pool
+      .create({ ...(options as object), sessionId: id }, agent, true)
+      .then(async (session) => {
+        this.pending.delete(id);
+        this.active.add(session.id);
+        if (this.error || this.finished) {
+          await this.release(session.id, this.error?.reason ?? "fetch_cancelled");
+          throw this.error ?? new FetchStopped("fetch_cancelled", this.id);
+        }
+        return session;
+      })
+      .finally(() => this.pending.delete(id));
+    // Attach rejection handling even when the launch outlives the deadline race.
+    void creation.catch((error) => {
+      if (this.error && !(error instanceof FetchStopped))
+        fetchFailure("fetch_late_launch_failed", this.id, error, id);
+    });
+    return this.run(() => creation);
+  }
+  finish(retainedId?: string) {
+    if (retainedId) this.active.delete(retainedId);
+    this.finished = true;
+    clearTimeout(this.timer);
+  }
+}
+
 export class Routing {
   private entries: Record<string, Entry> = {};
   private ready: Promise<void>;
   private writes: Promise<unknown> = Promise.resolve();
+  private jobs = new Map<string, { fingerprint: string; job: FetchJob; promise: Promise<any> }>();
+  private stoppedJobs = new Map<
+    string,
+    { fingerprint?: string; error: FetchStopped; expires: number }
+  >();
   constructor(
     private pool: SessionPool,
     private root: string,
@@ -342,27 +499,76 @@ export class Routing {
     };
     await this.save();
   }
-  async fetch(
-    options: {
-      url: string;
-      site?: string;
-      caller?: string;
-      outcomeAttemptId?: string;
-      route?: string;
-      startRung?: number;
-      identity?: string;
-      country?: string;
-      retry?: boolean;
-      retain?: boolean;
-      splitTraffic?: boolean;
-      maxRung?: number;
-      forceDirectFailure?: boolean;
-    },
-    agent: Agent,
-  ) {
-    await this.ready;
-    const spec = await this.resolve(options.site ?? options.url);
-    if (spec) {
+  cancel(requestId: string, agent: Agent) {
+    const key = `${agent.name}:${requestId}`;
+    const entry = this.jobs.get(key);
+    if (!entry) {
+      // A lost POST may arrive after its client's cancellation. Remember that
+      // request ID without exposing whether another agent is using the same ID.
+      this.stoppedJobs.set(key, {
+        error: new FetchStopped("fetch_cancelled", requestId),
+        expires: Date.now() + 600_000,
+      });
+      while (this.stoppedJobs.size > 512)
+        this.stoppedJobs.delete(this.stoppedJobs.keys().next().value!);
+      return { status: "not_running", requestId };
+    }
+    entry.job.stop("fetch_cancelled");
+    return {
+      status: "cancelled",
+      requestId,
+      activeSessions: entry.job.active.size,
+      pendingSessions: entry.job.pending.size,
+    };
+  }
+  async fetch(options: FetchOptions, agent: Agent) {
+    const requestId = options.outcomeAttemptId ?? options.requestId ?? randomUUID();
+    if (
+      options.outcomeAttemptId &&
+      options.requestId &&
+      options.outcomeAttemptId !== options.requestId
+    )
+      throw Object.assign(new Error("Fetch request IDs must agree"), { statusCode: 400 });
+    const timeoutMs = options.timeoutMs ?? 180_000;
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 300_000)
+      throw Object.assign(new Error("Fetch timeout must be 1000–300000 milliseconds"), {
+        statusCode: 400,
+      });
+    const key = `${agent.name}:${requestId}`;
+    const fingerprint = JSON.stringify(options);
+    for (const [id, entry] of this.stoppedJobs)
+      if (entry.expires <= Date.now()) this.stoppedJobs.delete(id);
+    const stopped = this.stoppedJobs.get(key);
+    const existing = this.jobs.get(key);
+    if (
+      (stopped?.fingerprint && stopped.fingerprint !== fingerprint) ||
+      (existing && existing.fingerprint !== fingerprint)
+    )
+      throw Object.assign(new Error("Fetch request ID reused with different arguments"), {
+        statusCode: 409,
+      });
+    if (stopped) throw stopped.error;
+    if (existing) return existing.promise;
+    const job = new FetchJob(requestId, timeoutMs, this.pool);
+    const promise = this.runFetch(options, agent, job).finally(() => {
+      job.finish();
+      this.jobs.delete(key);
+      if (job.error) {
+        this.stoppedJobs.set(key, { fingerprint, error: job.error, expires: Date.now() + 600_000 });
+        while (this.stoppedJobs.size > 512)
+          this.stoppedJobs.delete(this.stoppedJobs.keys().next().value!);
+      }
+    });
+    this.jobs.set(key, { fingerprint, job, promise });
+    return promise;
+  }
+  private async runFetch(options: FetchOptions, agent: Agent, job: FetchJob) {
+    let retainedId: string | undefined;
+    let normalizedSite: string | undefined;
+    try {
+      await job.run(() => this.ready);
+      const spec = await job.run(() => this.resolve(options.site ?? options.url));
+      normalizedSite = spec.site;
       if (new URL(options.url).hostname !== spec.host)
         throw Object.assign(new Error("Site does not match target host"), { statusCode: 400 });
       if (spec.identity === "ancestry" && options.identity && options.identity !== "ancestry")
@@ -375,70 +581,61 @@ export class Routing {
         identity: options.identity ?? spec.identity ?? undefined,
         country: options.country ?? spec.country ?? undefined,
       };
-    }
-    const attemptId = randomUUID();
-    let result;
-    try {
-      result = await this.fetchRoute(options, agent);
-    } catch (error) {
+      const result = await job.run(() => this.fetchRoute(options, agent, job));
+      retainedId = (result as { session?: { id: string } }).session?.id;
       if (!options.outcomeAttemptId)
-        await this.pool.outcomes?.result(
-          {
-            attemptId,
-            caller: options.caller ?? "unattributed",
-            site: spec?.site ?? new URL(options.url).hostname,
-            backend: "steel",
-            outcome: "failure",
-            reason: "unavailable",
-            fallback: false,
-          },
-          agent.name,
+        await job.run(
+          async () =>
+            this.pool.outcomes?.result(
+              {
+                attemptId: job.id,
+                caller: options.caller ?? "unattributed",
+                site: spec.site,
+                backend: "steel",
+                outcome: result.status === "ok" ? "success" : "failure",
+                reason:
+                  result.status === "ok"
+                    ? "completed"
+                    : result.status === "challenge_required"
+                    ? "challenge_required"
+                    : "payload_missing",
+                fallback: false,
+              },
+              agent.name,
+            ),
         );
-      throw error;
-    }
-    try {
-      if (!options.outcomeAttemptId)
-        await this.pool.outcomes?.result(
-          {
-            attemptId,
-            caller: options.caller ?? "unattributed",
-            site: spec?.site ?? new URL(options.url).hostname,
-            backend: "steel",
-            outcome: result.status === "ok" ? "success" : "failure",
-            reason:
-              result.status === "ok"
-                ? "completed"
-                : result.status === "challenge_required"
-                ? "challenge_required"
-                : "payload_missing",
-            fallback: false,
-          },
-          agent.name,
-        );
-      return result;
+      job.check();
+      job.finish(retainedId);
+      return { ...result, requestId: job.id };
     } catch (error) {
-      const retainedId = (result as { session?: { id: string } }).session?.id;
-      if (retainedId) await this.pool.release(retainedId, "outcome_failed");
-      throw error;
+      // A rejection can beat the timer callback after the wall-clock deadline.
+      try {
+        job.check();
+      } catch {
+        /* Keep the classified stop below. */
+      }
+      // Reporting cannot prolong a cancelled request or prevent Chrome cleanup.
+      if (!options.outcomeAttemptId)
+        void this.pool.outcomes
+          ?.result(
+            {
+              attemptId: job.id,
+              caller: options.caller ?? "unattributed",
+              site: normalizedSite ?? new URL(options.url).hostname,
+              backend: "steel",
+              outcome: "failure",
+              reason: "unavailable",
+              fallback: false,
+            },
+            agent.name,
+          )
+          .catch((reportError) => fetchFailure("fetch_outcome_failed", job.id, reportError));
+      job.cleanup(job.error?.reason ?? "fetch_failed");
+      throw job.error ?? error;
     }
   }
-  private async fetchRoute(
-    options: {
-      url: string;
-      site?: string;
-      caller?: string;
-      route?: string;
-      startRung?: number;
-      identity?: string;
-      country?: string;
-      retry?: boolean;
-      retain?: boolean;
-      splitTraffic?: boolean;
-      maxRung?: number;
-      forceDirectFailure?: boolean;
-    },
-    agent: Agent,
-  ) {
+  private async fetchRoute(options: FetchOptions, agent: Agent, job: FetchJob) {
+    job.check();
     const host = new URL(options.url).hostname;
     const route =
       options.route ??
@@ -468,6 +665,7 @@ export class Routing {
       : options.startRung ?? (known && known.expires > Date.now() ? known.rung : baseline);
     const attempts: any[] = [];
     for (let rung = start; rung <= (options.maxRung ?? 3); rung++) {
+      job.check();
       if (rung < 3 && options.forceDirectFailure) {
         attempts.push({
           rung,
@@ -477,13 +675,19 @@ export class Routing {
           seconds: 0,
         });
         this.entries[host] = nextEntry(rung + 1);
-        await this.save();
+        await job.run(() => this.save());
         continue;
       }
       if (rung === 1) {
         const began = Date.now();
         try {
-          const response = await httpFetch({ url: options.url });
+          const response = await job.run(() =>
+            httpFetch({
+              url: options.url,
+              timeout: job.remaining(30_000) / 1000,
+              signal: job.controller.signal,
+            }),
+          );
           const html = Buffer.from(response.body, "base64").toString();
           const validation = validPayload(
             html,
@@ -499,9 +703,10 @@ export class Routing {
             bytes: 0,
             directBytes: Buffer.byteLength(html),
           });
+          job.check();
           if (validation.pass) {
             this.entries[host] = nextEntry(rung);
-            await this.save();
+            await job.run(() => this.save());
             return {
               status: "ok",
               rung,
@@ -512,6 +717,7 @@ export class Routing {
             };
           }
         } catch {
+          job.check();
           attempts.push({
             rung,
             pass: false,
@@ -523,10 +729,11 @@ export class Routing {
       } else {
         const maxAttempts = rung === 3 && options.retry !== false && !options.identity ? 2 : 1;
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          job.check();
           const began = Date.now();
-          let session;
+          let session: Awaited<ReturnType<SessionPool["create"]>>;
           try {
-            session = await this.pool.create(
+            session = await job.create(
               {
                 mode: rung === 3 ? "quiet" : "agent",
                 ...(rung === 3 ? { residential: { country: options.country ?? "US" } } : {}),
@@ -537,9 +744,9 @@ export class Routing {
                 splitTraffic: rung === 3 && (options.splitTraffic ?? known?.split ?? false),
               },
               agent,
-              true,
             );
           } catch (error) {
+            job.check();
             attempts.push({
               rung,
               retry: attempt > 0,
@@ -556,35 +763,47 @@ export class Routing {
           let retained = false;
           let retrying = false;
           try {
-            const page = await session.getPrimaryPage();
+            const page = await job.run(() => session.getPrimaryPage());
             session.lastNavigation = Date.now();
             try {
-              await page.goto(options.url, { waitUntil: "domcontentloaded", timeout: 45_000 });
+              await job.run(() =>
+                page.goto(options.url, {
+                  waitUntil: "domcontentloaded",
+                  timeout: job.remaining(45_000),
+                }),
+              );
             } catch {
+              job.check();
               /* Validation below records the first attempt, including navigation failure. */
             }
             let html = "";
             let validation = { pass: false, payloads: 0, title: "" };
             let challenge: Awaited<ReturnType<typeof clearChallenge>> | undefined;
             const challengeActions: string[] = [];
-            const deadline = Date.now() + 60_000;
+            const deadline = Date.now() + job.remaining(60_000);
             while (Date.now() < deadline && session.status === "live") {
+              job.check();
               try {
-                html = await page.evaluate(() => document.documentElement.outerHTML);
+                html = await job.run(() => page.evaluate(() => document.documentElement.outerHTML));
                 validation = validPayload(html, 200, {}, route, page.url());
+                job.check();
                 if (validation.pass) break;
                 // A redirect can insert a challenge after an earlier clear
                 // observation. Recheck until the actual payload arrives.
                 if (!challenge || challenge.status === "cleared") {
-                  challenge = await clearChallenge(session, undefined, 45_000);
+                  challenge = await job.run(() =>
+                    clearChallenge(session, undefined, job.remaining(45_000)),
+                  );
                   challengeActions.push(...challenge.actions);
                   if (challenge.status === "challenge_required") break;
                 }
               } catch {
+                job.check();
                 /* A challenge redirect may replace the document. */
               }
-              await new Promise((r) => setTimeout(r, 1000));
+              await job.run(() => new Promise((r) => setTimeout(r, job.remaining(1000))));
             }
+            job.check();
             const after = session.info();
             attempts.push({
               rung,
@@ -600,25 +819,26 @@ export class Routing {
             });
             if (validation.pass) {
               this.entries[host] = nextEntry(rung);
-              await this.save();
+              await job.run(() => this.save());
               if (options.retain) {
                 retained = true;
                 return { status: "ok", rung, attempts, html, session: session.info() };
               }
-              const settled = await this.pool.release(session.id);
+              const settled = await job.run(() => job.release(session.id));
               released = true;
               return { status: "ok", rung, attempts, html, settled };
             }
-            if (session.exit) await this.pool.proxies?.markBad(host, session.exit.ip);
+            if (session.exit)
+              await job.run(async () => this.pool.proxies?.markBad(host, session.exit!.ip));
             if (rung === 3 && attempt + 1 === maxAttempts) {
-              challenge ??= await clearChallenge(session, undefined, 1);
+              challenge ??= await job.run(() => clearChallenge(session, undefined, 1));
               if (challenge.status === "cleared") {
-                const settled = await this.pool.release(session.id, "payload_missing");
+                const settled = await job.run(() => job.release(session.id, "payload_missing"));
                 released = true;
                 return { status: "failed", rung, attempts, settled };
               }
               if (!options.retain) {
-                const settled = await this.pool.release(session.id, "challenge_required");
+                const settled = await job.run(() => job.release(session.id, "challenge_required"));
                 released = true;
                 return { status: "challenge_required", rung, attempts, settled };
               }
@@ -633,14 +853,20 @@ export class Routing {
             }
             retrying = attempt + 1 < maxAttempts;
           } finally {
-            if (!released && !retained)
-              await this.pool.release(session.id, retrying ? "challenge_retry" : "payload_missing");
+            if (!released && !retained) {
+              const cleanup = job.release(
+                session.id,
+                retrying ? "challenge_retry" : "payload_missing",
+              );
+              if (!job.error) await job.run(() => cleanup);
+            }
           }
         }
       }
       this.entries[host] = nextEntry(Math.min(3, rung + 1));
-      await this.save();
+      await job.run(() => this.save());
     }
+    job.check();
     return { status: "failed", attempts };
   }
 }

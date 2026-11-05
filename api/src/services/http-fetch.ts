@@ -21,11 +21,14 @@ export function httpFetch(options: {
   referer?: string;
   maxBytes?: number;
   timeout?: number;
+  signal?: AbortSignal;
 }): Promise<HttpResult> {
   const url = new URL(options.url);
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
     throw new Error("Invalid HTTP URL");
   return new Promise((resolve, reject) => {
+    if (options.signal?.aborted)
+      return reject(options.signal.reason ?? new Error("HTTP read aborted"));
     const child = spawn(
       process.env.FETCH_PYTHON ?? "/opt/browser-fetch/bin/python",
       [fileURLToPath(new URL("../../fetch.py", import.meta.url))],
@@ -34,17 +37,26 @@ export function httpFetch(options: {
     const chunks: Buffer[] = [];
     let size = 0;
     const timer = setTimeout(() => child.kill("SIGKILL"), ((options.timeout ?? 30) + 5) * 1000);
+    const aborted = () => child.kill("SIGKILL");
+    options.signal?.addEventListener("abort", aborted, { once: true });
+    // The signal remains local; it is never passed to the Python subprocess.
+    const cleanup = () => {
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", aborted);
+    };
     child.stdout.on("data", (chunk: Buffer) => {
       size += chunk.length;
       if (size > (options.maxBytes ?? 2_000_000) * 1.4 + 100_000) child.kill("SIGKILL");
       else chunks.push(chunk);
     });
     child.once("error", (error) => {
-      clearTimeout(timer);
+      cleanup();
       reject(error);
     });
     child.once("close", (code) => {
-      clearTimeout(timer);
+      cleanup();
+      if (options.signal?.aborted)
+        return reject(options.signal.reason ?? new Error("HTTP read aborted"));
       if (code !== 0) return reject(new Error("HTTP read failed or exceeded its limit"));
       try {
         resolve(JSON.parse(Buffer.concat(chunks).toString()));
@@ -53,7 +65,8 @@ export function httpFetch(options: {
       }
     });
     child.stdin.on("error", () => undefined);
-    child.stdin.end(JSON.stringify(options));
+    const { signal: _signal, ...request } = options;
+    child.stdin.end(JSON.stringify(request));
   });
 }
 

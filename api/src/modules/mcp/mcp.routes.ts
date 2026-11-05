@@ -112,6 +112,8 @@ const schemas = {
       site: siteName.optional(),
       residential: z.union([z.boolean(), z.object({ country }).strict()]).optional(),
       caller: callerTag.default("mcp-fetch"),
+      requestId: z.string().uuid().optional(),
+      timeoutMs: z.number().int().min(1000).max(300_000).optional(),
     })
     .strict(),
 };
@@ -248,7 +250,12 @@ export default async function mcpRoutes(server: FastifyInstance) {
       if (response.statusCode >= 400)
         throw Object.assign(
           new Error(data.message ?? data.error ?? `Browser API HTTP ${response.statusCode}`),
-          { statusCode: response.statusCode },
+          {
+            statusCode: response.statusCode,
+            ...(response.statusCode === 408
+              ? { requestId: data.requestId, reason: data.reason }
+              : {}),
+          },
         );
       return data;
     };
@@ -370,6 +377,8 @@ export default async function mcpRoutes(server: FastifyInstance) {
                   url: args.url,
                   ...(args.site ? { site: args.site } : {}),
                   caller: args.caller,
+                  requestId: args.requestId ?? outcomeId,
+                  timeoutMs: args.timeoutMs ?? 180_000,
                   retain: false,
                   ...(args.residential === false ? { maxRung: 2 } : {}),
                   ...(args.residential
@@ -613,7 +622,16 @@ export default async function mcpRoutes(server: FastifyInstance) {
             error instanceof z.ZodError
               ? error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")
               : (error as Error).message;
-          return textResult({ error: message, statusCode: (error as any).statusCode ?? 400 }, true);
+          return textResult(
+            {
+              error: message,
+              statusCode: (error as any).statusCode ?? 400,
+              ...((error as any).statusCode === 408
+                ? { requestId: (error as any).requestId, reason: (error as any).reason }
+                : {}),
+            },
+            true,
+          );
         }
       };
       const result = await run();
