@@ -4,7 +4,7 @@
 }
 :{$PORT:8080} {
 	encode zstd gzip
-	handle /web-health {
+	handle /healthz {
 		respond "ok" 200
 	}
 	# This service is private. The existing public API authenticates dashboard

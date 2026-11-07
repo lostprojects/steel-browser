@@ -46,7 +46,7 @@ A new service's preview uses an ID placeholder until creation returns its real I
    GitHub code would replace the newer uploaded release. Record a current compatible
    rollback image and follow the backup/session checks in `DEPLOYMENT.md`.
 2. Create private `Toolstack web`, apply its profile and connect the reviewed source.
-   It needs only `PORT=8080`. Confirm its internal DNS name and `/web-health`.
+   It needs only `PORT=8080`. Confirm its internal DNS name and `/healthz`.
 3. Configure the existing owner service with `STEEL_IMAGE=browser` and
    `TOOLSTACK_UI_ORIGIN=http://toolstack-web.railway.internal:8080`. Preserve its
    current `PORT`, public domain, `DOMAIN`, role, keys, volume and session capacity.
