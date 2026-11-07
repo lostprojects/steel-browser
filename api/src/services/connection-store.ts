@@ -3,7 +3,7 @@
 import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import type { Agent } from "./proxy-manager.js";
+import type { Agent } from "./proxy/service.js";
 import { storeName } from "./shared-store.js";
 import { PublicError } from "../utils/public-error.js";
 

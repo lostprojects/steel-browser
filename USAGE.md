@@ -22,10 +22,12 @@ bytes). The day changes at midnight UTC. Direct traffic does not use that budget
 
 Create a direct session with `POST /v1/sessions {"mode":"agent"}`. For a managed
 residential exit, send `{"mode":"quiet","residential":{"country":"US"}}`.
-The service allocates a Core sticky exit, looks up its IP and timezone through
+The service allocates a Core lease, verifies its IP, country and timezone through
 that exit with ipwho.is, then starts Chrome with the returned timezone.
-For a custom `proxyUrl`, also supply the matching `timezone`; the old
-`TIMEZONE_SERVICE_URL` setting has been removed.
+Use `proxyProfile` for another permitted provider profile or `proxyLeaseId` to
+reuse a standalone lease. [PROXIES.md](PROXIES.md) documents management, shared
+HTTP requests, targeting, fallback and accounting. Per-action proxy overrides
+are unavailable; actions inherit the session route.
 
 Add a named `identity` to keep a profile on `/data/profiles`. Ancestry,
 Newspapers.com and Fold3 use `identity: "ancestry"` for both login and collection.

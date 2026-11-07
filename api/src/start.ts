@@ -1,5 +1,7 @@
 import "./load-env.js";
-if (process.env.STEEL_ROLE === "gateway") {
+if (process.env.STEEL_ROLE === "executor") {
+  await import("./services/jobs/worker.js");
+} else if (process.env.STEEL_ROLE === "gateway") {
   const { startGateway } = await import("./gateway/server.js");
   await startGateway();
 } else {

@@ -24,11 +24,11 @@ import { RailIcon } from "./icons";
 import { ToolRunner } from "./tool-runner";
 import { CopyButton } from "./copy-button";
 
-export type View = "toolkits" | "library" | "connections" | "activity" | "browser";
+export type View = "toolkits" | "library" | "jobs" | "connections" | "activity" | "browser";
 export function useView() {
   const read = (): View => {
     const value = window.location.hash.replace(/^#\/?/, "").split("/")[0] ?? "";
-    return ["toolkits", "library", "connections", "activity", "browser"].includes(value)
+    return ["toolkits", "library", "jobs", "connections", "activity", "browser"].includes(value)
       ? (value as View)
       : "toolkits";
   };
@@ -98,7 +98,7 @@ export function Capabilities({
   onToggleRail,
   onOpenBrowser,
 }: {
-  view: Exclude<View, "browser" | "library">;
+  view: Exclude<View, "browser" | "library" | "jobs">;
   railOpen: boolean;
   onToggleRail: () => void;
   onOpenBrowser: (id: string) => void;

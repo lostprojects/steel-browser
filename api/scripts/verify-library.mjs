@@ -45,7 +45,8 @@ delete process.env.STEEL_SHARED_URL;
 delete process.env.STEEL_SHARED_KEY;
 delete process.env.TOOLSTACK_DATABASE_URL;
 const admin = postgres(url, { max: 1, onnotice: () => {} });
-let app, browser, gateway, library, sql;
+let app, browser, gateway, library, sql, jobs;
+const queueSchema = schema + "_queue";
 const workers = [];
 const objects = new Map();
 const output = process.env.TOOLSTACK_QA_OUTPUT;
@@ -67,17 +68,25 @@ try {
     import("../build/gateway/store.js"),
     import("../build/gateway/server.js"),
   ]);
-  library = new ContentLibrary(sql, {
+  const storage = {
     put: async (k, b) => objects.set(k, Buffer.from(b)),
     get: async (k) => objects.get(k),
     remove: async (k) => objects.delete(k),
     close: () => {},
+  };
+  library = new ContentLibrary(sql, storage);
+  const { JobService } = await import("../build/services/jobs/service.js");
+  await admin.unsafe(`CREATE SCHEMA ${queueSchema}`);
+  jobs = new JobService(sql, library, storage, async () => true, {
+    schema: queueSchema,
+    supervise: true,
   });
+  await jobs.ready;
   app = Fastify({ logger: false });
   app.addHook("onRequest", async (req, reply) => {
     if (!auth.isAuthorized(req.raw)) return reply.code(401).send({ error: "Unauthorized" });
   });
-  await app.register(plugin, { contentLibrary: library });
+  await app.register(plugin, { contentLibrary: library, jobs });
   await app.register(ui, {
     uiDistPath: fileURLToPath(new URL("../../ui/dist", import.meta.url)),
     uiPrefix: "/ui/",
@@ -305,6 +314,54 @@ try {
   await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "dark" }]);
   if (output)
     await page.screenshot({ path: path.join(output, "library-dark.png"), fullPage: true });
+  await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
+  await page.setViewport({ width: 1440, height: 1000 });
+  await click("Export saved version");
+  await page.waitForSelector(".job-detail");
+  await page.waitForFunction(() =>
+    document.querySelector(".job-detail")?.textContent.includes("Waiting for a worker"),
+  );
+  const jobId = page.url().split("/").pop();
+  await page.reload({ waitUntil: "networkidle0" });
+  await page.waitForFunction(() =>
+    document.querySelector(".job-detail")?.textContent.includes("Waiting for a worker"),
+  );
+  await click("Cancel job");
+  await page.waitForSelector("dialog[open]");
+  await click("Cancel job", "dialog");
+  await page.waitForFunction(() =>
+    document.querySelector(".job-detail")?.textContent.includes("Cancelled"),
+  );
+  assert.equal((await jobs.get(organizationMember("alice"), jobId)).state, "cancelled");
+  await page.goto(origin + "/ui/#/library", { waitUntil: "networkidle0" });
+  await page.waitForSelector(".library-package");
+  await page.click(".library-package");
+  await page.waitForSelector(".library-instructions");
+  await click("Export saved version");
+  await page.waitForSelector(".job-detail");
+  await jobs.work();
+  await page.waitForSelector('a[href$="/result"]');
+  const link = await page.$eval('a[href$="/result"]', (a) => a.getAttribute("href"));
+  const downloaded = await fetch(new URL(link, origin), {
+    headers: { authorization: `Bearer ${key}` },
+  });
+  assert.equal(downloaded.status, 200);
+  assert.equal(
+    Buffer.from(await downloaded.arrayBuffer())
+      .subarray(0, 2)
+      .toString(),
+    "PK",
+  );
+  for (const width of [1440, 390]) {
+    await page.setViewport({ width, height: 1000 });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    if (output)
+      await page.screenshot({ path: path.join(output, `jobs-${width}.png`), fullPage: true });
+  }
+  await click("Remove result");
+  await page.waitForSelector("dialog[open]");
+  await click("Remove result", "dialog");
+  await page.waitForFunction(() => !document.querySelector('a[href$="/result"]'));
   assert.deepEqual(errors, []);
   const count = await sql`SELECT count(*)::integer AS count FROM toolstack_package_versions`;
   console.log(
@@ -312,6 +369,12 @@ try {
       {
         passed: true,
         checks: [
+          "durable-job-submission-reload",
+          "queued-cancellation",
+          "job-progress",
+          "verified-ZIP-result",
+          "job-result-removal",
+          "jobs-mobile-overflow",
           "UI-create-save",
           "private-default",
           "Unicode-file-upload",
@@ -344,6 +407,7 @@ try {
   await Promise.all(workers.map((worker) => new Promise((resolve) => worker.close(resolve))));
   await app?.close();
   if (sql) await sql.end({ timeout: 2 });
+  await admin.unsafe(`DROP SCHEMA IF EXISTS ${queueSchema} CASCADE`);
   await admin.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
   await admin.end({ timeout: 2 });
   await rm(root, { recursive: true, force: true });

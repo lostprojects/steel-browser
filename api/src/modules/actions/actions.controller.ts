@@ -1,8 +1,7 @@
 import { FastifyReply } from "fastify";
-import { BrowserContext, Page, HTTPResponse } from "puppeteer-core";
+import { Page, HTTPResponse } from "puppeteer-core";
 import { BrowserSession } from "../../services/browser-session.js";
 interface ActionProxySource {
-  proxyFactory(url: string): IProxyServer | Promise<IProxyServer>;
   proxyServer?: IProxyServer;
 }
 import { ScrapeFormat } from "../../types/enums.js";
@@ -28,16 +27,8 @@ export const PRIMARY_PAGE_RESET_TIMEOUT_MS = 5_000;
 export const PAGE_SETUP_TIMEOUT_MS = 3_000;
 export const PAGE_LOAD_TIMEOUT_MS = 30_000;
 
-async function closeEphemeralContext(context: BrowserContext | null): Promise<void> {
-  if (!context) return;
-  await context.close().catch(() => {});
-}
-
-function pageProxyUrl(
-  sessionService: ActionProxySource,
-  proxy: IProxyServer | null,
-): string | undefined {
-  return proxy?.url ?? sessionService.proxyServer?.url;
+function pageProxyUrl(sessionService: ActionProxySource): string | undefined {
+  return sessionService.proxyServer?.url;
 }
 
 export function pageLoadTimeLeft(navigationMs: number): number {
@@ -81,19 +72,15 @@ export const handleScrape = async (
   request: ScrapeRequest,
   reply: FastifyReply,
 ) => {
+  if (request.body.proxyUrl)
+    return reply
+      .code(400)
+      .send({ message: "Select a proxy profile or lease when opening the session" });
   const startTime = Date.now();
   let times: Record<string, number> = {};
-  const { url, format, screenshot, pdf, proxyUrl, logUrl, delay, removeBase64Images } =
-    request.body;
-
-  let proxy: IProxyServer | null = null;
-  let context: BrowserContext | null = null;
+  const { url, format, screenshot, pdf, logUrl, delay, removeBase64Images } = request.body;
 
   try {
-    if (proxyUrl) {
-      proxy = await sessionService.proxyFactory(proxyUrl);
-      await proxy.listen();
-    }
     times.proxyTime = Date.now() - startTime;
 
     let page: Page;
@@ -104,14 +91,8 @@ export const handleScrape = async (
       await browserService.launch();
     }
 
-    if (proxy) {
-      context = await browserService.createBrowserContext(proxy.url);
-      page = await context.newPage();
-      times.proxyPageTime = Date.now() - startTime - times.proxyTime;
-    } else {
-      page = await browserService.getPrimaryPage();
-      times.pageTime = Date.now() - startTime - times.proxyTime;
-    }
+    page = await browserService.getPrimaryPage();
+    times.pageTime = Date.now() - startTime - times.proxyTime;
     await waitForPageSetup(browserService, page);
 
     // PDF retrieval will use node fetch with session cookies; removed CDP tracking
@@ -152,7 +133,7 @@ export const handleScrape = async (
     if (isPdf || contentType.includes("application/pdf")) {
       const targetUrl = normalizedUrl || url!;
       const download = await fetchPdf(page, (pdfResponse ?? response)?.url() || targetUrl, {
-        proxyUrl: pageProxyUrl(sessionService, proxy),
+        proxyUrl: pageProxyUrl(sessionService),
         timeoutMs: pageLoadTimeLeft(navigationMs),
       });
       const pdfBuffer = download.buffer;
@@ -364,15 +345,10 @@ export const handleScrape = async (
       await updateLog(logUrl, { times, response: { browserError: error } });
     }
 
-    if (url && !proxyUrl) {
+    if (url) {
       await resetPrimaryPage(browserService);
     }
     return reply.code(500).send({ message: error });
-  } finally {
-    await closeEphemeralContext(context);
-    if (proxy) {
-      await proxy.close(true).catch(() => {});
-    }
   }
 };
 
@@ -382,18 +358,15 @@ export const handleSearch = async (
   request: SearchRequest,
   reply: FastifyReply,
 ) => {
+  if (request.body.proxyUrl)
+    return reply
+      .code(400)
+      .send({ message: "Select a proxy profile or lease when opening the session" });
   const startTime = Date.now();
   let times: Record<string, number> = {};
-  const { query, proxyUrl, logUrl } = request.body;
-
-  let proxy: IProxyServer | null = null;
-  let context: BrowserContext | null = null;
+  const { query, logUrl } = request.body;
 
   try {
-    if (proxyUrl) {
-      proxy = await sessionService.proxyFactory(proxyUrl);
-      await proxy.listen();
-    }
     times.proxyTime = Date.now() - startTime;
 
     let page: Page;
@@ -402,16 +375,8 @@ export const handleSearch = async (
       await browserService.launch();
     }
 
-    if (proxy) {
-      // If a proxy is used, we proceed with browser navigation; implementing proxy-aware Node fetch
-      // would require an HTTP agent and is outside current scope.
-      context = await browserService.createBrowserContext(proxy.url);
-      page = await context.newPage();
-      times.proxyPageTime = Date.now() - startTime - times.proxyTime;
-    } else {
-      page = await browserService.getPrimaryPage();
-      times.pageTime = Date.now() - startTime - times.proxyTime;
-    }
+    page = await browserService.getPrimaryPage();
+    times.pageTime = Date.now() - startTime - times.proxyTime;
 
     await page.evaluate(() => {
       (window as any).__name = (func: Function) => func;
@@ -479,11 +444,6 @@ export const handleSearch = async (
     }
 
     return reply.code(500).send({ message: error });
-  } finally {
-    await closeEphemeralContext(context);
-    if (proxy) {
-      await proxy.close(true).catch(() => {});
-    }
   }
 };
 
@@ -493,35 +453,25 @@ export const handleScreenshot = async (
   request: ScreenshotRequest,
   reply: FastifyReply,
 ) => {
+  if (request.body.proxyUrl)
+    return reply
+      .code(400)
+      .send({ message: "Select a proxy profile or lease when opening the session" });
   const startTime = Date.now();
   let times: Record<string, number> = {};
-  const { url, logUrl, proxyUrl, delay, fullPage } = request.body;
-
-  let proxy: IProxyServer | null = null;
-  let context: BrowserContext | null = null;
+  const { url, logUrl, delay, fullPage } = request.body;
 
   if (!browserService.isRunning()) {
     await browserService.launch();
   }
 
   try {
-    if (proxyUrl) {
-      proxy = await sessionService.proxyFactory(proxyUrl);
-      await proxy.listen();
-    }
-
     times.proxyTime = Date.now() - startTime;
 
     let page: Page;
 
-    if (proxy) {
-      context = await browserService.createBrowserContext(proxy.url);
-      page = await context.newPage();
-      times.proxyPageTime = Date.now() - startTime - times.proxyTime;
-    } else {
-      page = await browserService.getPrimaryPage();
-      times.pageTime = Date.now() - startTime;
-    }
+    page = await browserService.getPrimaryPage();
+    times.pageTime = Date.now() - startTime;
     await waitForPageSetup(browserService, page);
 
     let pdfDocument: Buffer | null = null;
@@ -538,7 +488,7 @@ export const handleScreenshot = async (
       });
       if (navigation.isPdf) {
         const download = await fetchPdf(page, navigation.pdfResponse?.url() || normalizedUrl, {
-          proxyUrl: pageProxyUrl(sessionService, proxy),
+          proxyUrl: pageProxyUrl(sessionService),
           timeoutMs: pageLoadTimeLeft(Date.now() - navigationStart),
         });
         pdfDocument = download.buffer;
@@ -568,16 +518,11 @@ export const handleScreenshot = async (
       await updateLog(logUrl, { times, response: { browserError: error } });
     }
 
-    if (url && !proxyUrl) {
+    if (url) {
       await resetPrimaryPage(browserService);
     }
 
     return reply.code(500).send({ message: error });
-  } finally {
-    await closeEphemeralContext(context);
-    if (proxy) {
-      await proxy.close(true).catch(() => {});
-    }
   }
 };
 
@@ -587,35 +532,25 @@ export const handlePDF = async (
   request: PDFRequest,
   reply: FastifyReply,
 ) => {
+  if (request.body.proxyUrl)
+    return reply
+      .code(400)
+      .send({ message: "Select a proxy profile or lease when opening the session" });
   const startTime = Date.now();
   let times: Record<string, number> = {};
-  const { url, logUrl, proxyUrl, delay } = request.body;
-
-  let proxy: IProxyServer | null = null;
-  let context: BrowserContext | null = null;
+  const { url, logUrl, delay } = request.body;
 
   if (!browserService.isRunning()) {
     await browserService.launch();
   }
 
   try {
-    if (proxyUrl) {
-      proxy = await sessionService.proxyFactory(proxyUrl);
-      await proxy.listen();
-    }
-
     times.proxyTime = Date.now() - startTime;
 
     let page: Page;
 
-    if (proxy) {
-      context = await browserService.createBrowserContext(proxy.url);
-      page = await context.newPage();
-      times.proxyPageTime = Date.now() - startTime - times.proxyTime;
-    } else {
-      page = await browserService.getPrimaryPage();
-      times.pageTime = Date.now() - startTime;
-    }
+    page = await browserService.getPrimaryPage();
+    times.pageTime = Date.now() - startTime;
     await waitForPageSetup(browserService, page);
 
     let pdfDocument: Buffer | null = null;
@@ -632,7 +567,7 @@ export const handlePDF = async (
       });
       if (navigation.isPdf) {
         const download = await fetchPdf(page, navigation.pdfResponse?.url() || normalizedUrl, {
-          proxyUrl: pageProxyUrl(sessionService, proxy),
+          proxyUrl: pageProxyUrl(sessionService),
           timeoutMs: pageLoadTimeLeft(Date.now() - navigationStart),
         });
         pdfDocument = download.buffer;
@@ -659,15 +594,10 @@ export const handlePDF = async (
       await updateLog(logUrl, { times, response: { browserError: error } });
     }
 
-    if (url && !proxyUrl) {
+    if (url) {
       await resetPrimaryPage(browserService);
     }
 
     return reply.code(500).send({ message: error });
-  } finally {
-    await closeEphemeralContext(context);
-    if (proxy) {
-      await proxy.close(true).catch(() => {});
-    }
   }
 };

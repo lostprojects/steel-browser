@@ -5,13 +5,19 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const output = path.resolve(root, "../build/gateway-runtime");
+const role = process.argv.includes("--jobs") ? "jobs" : "gateway";
+const output = path.resolve(root, `../build/${role}-runtime`);
 const modules = path.resolve(root, "../node_modules");
 const api = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 
 await rm(output, { recursive: true, force: true });
 await mkdir(path.join(output, "services"), { recursive: true });
-await cp(path.join(root, "build/gateway"), path.join(output, "gateway"), { recursive: true });
+if (role === "gateway")
+  await cp(path.join(root, "build/gateway"), path.join(output, "gateway"), { recursive: true });
+else
+  await cp(path.join(root, "build/services/jobs"), path.join(output, "services/jobs"), {
+    recursive: true,
+  });
 await cp(
   path.join(root, "build/services/shared-store.js"),
   path.join(output, "services/shared-store.js"),
@@ -65,19 +71,15 @@ async function include(name, from) {
   return pkg;
 }
 const dependencies = {};
-for (const name of [
-  "zod",
-  "express",
-  "@modelcontextprotocol/sdk",
-  "postgres",
-  "@aws-sdk/client-s3",
-])
+for (const name of role === "gateway"
+  ? ["zod", "express", "@modelcontextprotocol/sdk", "postgres", "@aws-sdk/client-s3"]
+  : ["zod", "postgres", "pg-boss", "archiver", "@aws-sdk/client-s3"])
   dependencies[name] = (await include(name, root)).manifest.version;
 await writeFile(
   path.join(output, "package.json"),
   JSON.stringify(
     {
-      name: "@toolstack/gateway",
+      name: `@toolstack/${role}`,
       version: api.version,
       private: true,
       type: "module",
@@ -88,5 +90,5 @@ await writeFile(
   ) + "\n",
 );
 console.log(
-  `Packaged ${(await readdir(path.join(output, "gateway"))).filter((name) => name.endsWith(".js")).length} gateway modules and ${copied.size} installed runtime packages at ${output}`,
+  `Packaged ${(await readdir(path.join(output, role === "gateway" ? "gateway" : "services/jobs"))).filter((name) => name.endsWith(".js")).length} ${role} modules and ${copied.size} installed runtime packages at ${output}`,
 );

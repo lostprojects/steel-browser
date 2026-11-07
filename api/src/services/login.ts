@@ -8,7 +8,7 @@ import { createInterface } from "node:readline";
 import { observeMemberRead } from "./login-observation.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { BrowserSession } from "./browser-session.js";
-import type { Agent } from "./proxy-manager.js";
+import type { Agent } from "./proxy/service.js";
 import { vault, totp, protect } from "./vault.js";
 import { QuietInput } from "./quiet-input.js";
 import { clearChallenge } from "./challenge-service.js";

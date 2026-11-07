@@ -58,7 +58,9 @@ organization ID, content key and vault key through deployment and restoration.
 | `STEEL_API_KEY` | Required admin secret; absent or blank values stop startup |
 | `STEEL_AGENT_KEYS` | JSON named-key configuration; production includes `mosaic` |
 | `VAULT_KEY` | 32 random bytes encoded as 64 hexadecimal characters |
-| `EVOMI_RESIDENTIAL_PROXY_URL` | Service-owned Evomi Core credentials |
+| `EVOMI_RESIDENTIAL_PROXY_URL` | Core consumption credentials |
+| `EVOMI_PREMIUM_PROXY_URL`, `EVOMI_MOBILE_PROXY_URL`, `EVOMI_DATACENTER_PROXY_URL` | Optional consumption credentials for additional profiles |
+| `TOOLSTACK_PROXY_*` | Optional custom gateway credentials, referenced by profile |
 | `RESIDENTIAL_DAILY_BUDGET_BYTES` | `1000000000` per named key, reset at midnight UTC |
 | `MAX_SESSIONS` | `3` for new workers; preserve `12` on the existing owner worker |
 | `MAX_HTTP_FETCHES` | Optional concurrency override, 1–64; default is four helpers per detected CPU, capped at 64 |
@@ -68,6 +70,8 @@ organization ID, content key and vault key through deployment and restoration.
 | `ENABLE_COMMANDS_API` | `true` |
 | `CAPTURE_CONSOLE_EVENTS` | `false`; avoids Runtime/Log console subscriptions |
 | `ENABLE_PDF_VIEWER` | `true` |
+
+For local Evomi account management, credential verification and consumption keys in the shared environment, see [PROXIES.md](PROXIES.md). Deploy consumption URLs only for products enabled on that worker; account-management credentials stay local. Proxy state migrates in place to version 2: back up `/data/routing/proxy-state.json` before deploying. Rollback needs a compatible image or a matching state backup; do not let old code overwrite the new ledger.
 
 The Dockerfile pins Chrome's package version and SHA-256. Update both together and repeat the relevant browser checks before deployment. Chrome's launcher limits its process group to eight available CPUs. Python HTTP fetching uses pinned `curl_cffi` in `/opt/browser-fetch`.
 

@@ -26,7 +26,7 @@ rollout status and acceptance requirements live in [the Toolstack plan](TOOLSTAC
 
 Mosaic's remote browser service runs on Railway with a configurable pool of independent browsers. Agent mode supports instrumented browsing; quiet mode uses a Linux display and native input for sites that resist automation.
 
-Named profiles preserve login state on a volume. The service owns residential proxy allocations and an encrypted login vault; callers use named API keys with daily byte budgets.
+Named profiles preserve login state on a volume. The service owns [proxy profiles and reusable leases](PROXIES.md), plus an encrypted login vault; callers have separate daily byte budgets.
 
 This is a fork of [steel-dev/steel-browser](https://github.com/steel-dev/steel-browser). The root guides describe this implementation; Git history retains the former upstream documentation.
 

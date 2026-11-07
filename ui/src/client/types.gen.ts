@@ -15,6 +15,8 @@ export type CreateSession = {
     country?: string;
   };
   targetUrl?: string;
+  proxyProfile?: string;
+  proxyLeaseId?: string;
   splitTraffic?: boolean;
   budgetBytes?: number;
   mode?: "agent" | "quiet";
@@ -190,6 +192,10 @@ export type SessionDetails = {
    * Named persistent profile, when requested
    */
   identity?: string;
+  /**
+   * Managed proxy lease; contains no provider credentials
+   */
+  proxyLeaseId?: string;
   site?: string;
   caller?: string;
   last_login_ok?: string;
@@ -319,6 +325,10 @@ export type MultipleSessions = {
      * Named persistent profile, when requested
      */
     identity?: string;
+    /**
+     * Managed proxy lease; contains no provider credentials
+     */
+    proxyLeaseId?: string;
     site?: string;
     caller?: string;
     last_login_ok?: string;
@@ -448,6 +458,10 @@ export type ReleaseSession = {
    * Named persistent profile, when requested
    */
   identity?: string;
+  /**
+   * Managed proxy lease; contains no provider credentials
+   */
+  proxyLeaseId?: string;
   site?: string;
   caller?: string;
   last_login_ok?: string;

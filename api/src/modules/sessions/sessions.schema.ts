@@ -26,6 +26,7 @@ const SessionDetails = z.object({
     })
     .describe("Browser operations supported before command execution"),
   identity: z.string().optional().describe("Named persistent profile, when requested"),
+  proxyLeaseId: z.string().uuid().optional().describe("Managed proxy lease; contains no provider credentials"),
   site: z.string().optional(),
   caller: z.string().optional(),
   last_login_ok: z.string().optional(),

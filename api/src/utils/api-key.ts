@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import { env } from "../env.js";
-import { DAILY_BUDGET, type Agent } from "../services/proxy-manager.js";
+import { DAILY_BUDGET, type Agent } from "../services/proxy/service.js";
 import { protect } from "../services/vault.js";
 import { getBaseUrl } from "./url.js";
 import { principalHeader, verifyPrincipal } from "../services/gateway-principal.js";

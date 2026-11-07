@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { RailIcon } from "./icons";
+import { exportPackage } from "../jobs";
 import { request } from "../api";
 import { CopyButton } from "./copy-button";
 import {
@@ -52,6 +53,16 @@ export function Library({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [jobsEnabled, setJobsEnabled] = useState(false);
+  const exportKey = useRef<{ fingerprint: string; id: string } | undefined>(undefined);
+  useEffect(() => {
+    const c = new AbortController();
+    void fetch("/v1/health", { signal: c.signal })
+      .then((r) => r.json())
+      .then((v) => setJobsEnabled(v.capabilities?.includes("durable_jobs") === true))
+      .catch(() => {});
+    return () => c.abort();
+  }, []);
   const [visibility, setVisibility] = useState<ContentPackage["visibility"]>("private");
   const [assignedTo, setAssignedTo] = useState("");
   const [history, setHistory] =
@@ -233,6 +244,23 @@ export function Library({
       );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to upload file.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function startExport() {
+    if (!document || dirty) return;
+    setBusy(true);
+    setError("");
+    const fingerprint = `${document.id}:${document.version}`;
+    if (exportKey.current?.fingerprint !== fingerprint)
+      exportKey.current = { fingerprint, id: crypto.randomUUID() };
+    try {
+      const job = await exportPackage(document.id, document.version, exportKey.current.id);
+      exportKey.current = undefined;
+      window.location.hash = `/jobs/${job.id}`;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to queue the export");
     } finally {
       setBusy(false);
     }
@@ -557,6 +585,18 @@ export function Library({
                   </div>
                 )}
               </form>
+              {document && jobsEnabled && document.canEdit && (
+                <div className="library-actions">
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={busy || dirty}
+                    onClick={() => void startExport()}
+                  >
+                    Export saved version
+                  </button>
+                </div>
+              )}
               {document && (
                 <>
                   <section className="library-section">

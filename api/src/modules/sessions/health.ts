@@ -52,6 +52,7 @@ export async function healthRoutes(server: FastifyInstance) {
                 "vault",
                 "login",
                 ...(server.contentLibrary ? ["content_library"] : []),
+                ...(server.jobs ? ["durable_jobs"] : []),
               ],
             },
       ),

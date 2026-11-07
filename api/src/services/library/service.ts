@@ -70,14 +70,16 @@ export function configuredLibrary(): LibraryService | undefined {
   if (!database && names.every((name) => !process.env[name])) return;
   if (!database || names.some((name) => !process.env[name]))
     throw new Error("Configure Toolstack Postgres, Wasabi and the content encryption key together");
-  const objects = new WasabiObjects(
+  return new ContentLibrary(libraryDatabase(database), configuredObjects());
+}
+export function configuredObjects() {
+  return new WasabiObjects(
     process.env.TOOLSTACK_WASABI_BUCKET!,
     process.env.TOOLSTACK_WASABI_REGION!,
     process.env.TOOLSTACK_WASABI_ACCESS_KEY!,
     process.env.TOOLSTACK_WASABI_SECRET_KEY!,
     process.env.TOOLSTACK_CONTENT_KEY!,
   );
-  return new ContentLibrary(libraryDatabase(database), objects);
 }
 export function requireLibrary(service: LibraryService | undefined): LibraryService {
   if (!service)

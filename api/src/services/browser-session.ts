@@ -24,7 +24,7 @@ import {
   groupSessionStorageByOrigin,
   injectStorageOnNewDocument,
 } from "../utils/context.js";
-import { ProxyServer, type IProxyServer } from "../utils/proxy.js";
+import type { IProxyServer } from "../utils/proxy.js";
 import { getBaseUrl, getUrl } from "../utils/url.js";
 import { FileService } from "./file.service.js";
 import { FileTransfers } from "./file-transfers.js";
@@ -48,7 +48,7 @@ import {
 } from "./browser-control.js";
 import { QuietBrowser } from "./quiet-browser.js";
 import { QuietInput } from "./quiet-input.js";
-import type { Exit } from "./proxy-manager.js";
+import type { Exit } from "./proxy/service.js";
 import { scopeClientFiles } from "./commands/policy.js";
 import { beginSessionOperation } from "./session-access.js";
 import { runCleanup } from "../utils/cleanup.js";
@@ -127,7 +127,6 @@ export class BrowserSession extends EventEmitter {
       await client.detach().catch(() => undefined);
     }
   }
-  proxyFactory = (url: string): IProxyServer => new ProxyServer(url);
 
   constructor(
     readonly id: string,
@@ -172,10 +171,8 @@ export class BrowserSession extends EventEmitter {
     await mkdir(path.join(this.profilePath, "Default"), { recursive: true });
     await mkdir(this.filesPath, { recursive: true });
     await this.storage.initialize();
-    if (this.options.proxyUrl && !this.proxyServer) {
-      this.proxyServer = this.proxyFactory(this.options.proxyUrl);
-      await this.proxyServer.listen();
-    }
+    if ((this.options.proxyUrl || this.options.residential || this.options.proxyProfile || this.options.proxyLeaseId) && !this.proxyServer)
+      throw new Error("A proxy lease must be prepared before launching Chrome");
     const timezone = this.options.timezone ?? env.DEFAULT_TIMEZONE ?? "UTC";
     Intl.DateTimeFormat("en-US", { timeZone: timezone });
     this.launchConfig = {
@@ -560,10 +557,6 @@ export class BrowserSession extends EventEmitter {
     this.primary = page;
     if (old && !old.isClosed()) await old.close();
   }
-  async createBrowserContext(proxyUrl: string) {
-    if (!this.browser) throw new Error("Browser is not running");
-    return this.browser.createBrowserContext({ proxyServer: proxyUrl });
-  }
   async getCookies() {
     await this.prepareCommands();
     const browser = this.control;
@@ -764,6 +757,7 @@ export class BrowserSession extends EventEmitter {
       display: this.display.name,
       noVncUrl: getUrl(`v1/sessions/${this.id}/view`),
       exit: this.exit,
+      proxyLeaseId: this.options.proxyLeaseId,
       challenge: this.challenge,
       proxyTxBytes: this.priorProxyTxBytes + (this.proxyServer?.txBytes ?? 0),
       proxyRxBytes: this.priorProxyRxBytes + (this.proxyServer?.rxBytes ?? 0),

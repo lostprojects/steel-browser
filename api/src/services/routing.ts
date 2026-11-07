@@ -5,7 +5,7 @@ import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { load } from "cheerio";
 import type { SessionPool } from "./session-pool.js";
-import type { Agent } from "./proxy-manager.js";
+import type { Agent } from "./proxy/service.js";
 import { httpFetch, HttpFetchError } from "./http-fetch.js";
 import { clearChallenge, challengeMarker } from "./challenge-service.js";
 import { randomUUID } from "node:crypto";
@@ -463,7 +463,7 @@ export class Routing {
       targetUrl: site.url,
       mode: site.mode,
       ...(site.identity ? { identity: site.identity } : {}),
-      ...(site.country ? { residential: { country: site.country } } : {}),
+      ...(site.country && !supplied.proxyProfile && !supplied.proxyLeaseId ? { residential: { country: site.country } } : {}),
       ...supplied,
       site: site.site,
     };

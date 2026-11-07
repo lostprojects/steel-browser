@@ -4,7 +4,7 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { SessionPool } from "./session-pool.js";
-import type { Agent } from "./proxy-manager.js";
+import type { Agent } from "./proxy/service.js";
 import { LoginService } from "./login.js";
 import { callerTag, outcomeBody } from "./caller-outcomes.js";
 import { TransferRequest } from "../modules/files/files.schema.js";

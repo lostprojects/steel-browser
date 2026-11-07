@@ -37,7 +37,6 @@ const envSchema = z.object({
     .transform((val) => val !== "false" && val !== "0")
     .prefault("true"),
   DEFAULT_TIMEZONE: z.string().optional(),
-  PROXY_INTERNAL_BYPASS: z.string().optional(),
   ENABLE_COMMANDS_API: z
     .string()
     .optional()

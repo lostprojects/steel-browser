@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { quickAction, quickActionsDone } from "./commands.guard.js";
 
 function fixture() {
@@ -44,18 +44,19 @@ describe("quick action tracking", () => {
     expect(result).toBe("done");
   });
 
-  test("does not hold commands for a quick action in its own context", async () => {
-    const { engine, server, reply, changes } = fixture();
-    let finish = () => {};
-    const running = quickAction(
+  test("rejects per-action proxy overrides before running", async () => {
+    const { server, changes } = fixture();
+    const reply = { code: vi.fn(), send: vi.fn() };
+    reply.code.mockReturnValue(reply);
+    const run = vi.fn();
+    await quickAction(
       server,
       { body: { proxyUrl: "http://proxy.test:8080" } },
-      reply,
-      () => new Promise<void>((resolve) => (finish = resolve)),
+      reply as unknown as FastifyReply,
+      run,
     );
-    await quickActionsDone(engine);
-    finish();
-    await running;
+    expect(reply.code).toHaveBeenCalledWith(400);
+    expect(run).not.toHaveBeenCalled();
     expect(changes()).toBe(0);
   });
 });

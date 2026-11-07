@@ -4,7 +4,7 @@ import { createCipheriv, createDecipheriv, randomBytes, createHmac } from "node:
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import type { Agent } from "./proxy-manager.js";
+import type { Agent } from "./proxy/service.js";
 import { readSharedStore, storeName } from "./shared-store.js";
 
 const name = storeName;

@@ -11,7 +11,7 @@ import { z } from "zod";
 import { BrowserSession } from "./browser-session.js";
 import { SessionContextSchema } from "./context/types.js";
 import { releaseStaleProfileLock } from "./cdp/utils/profile-lock.js";
-import { ProxyManager, DAILY_BUDGET, type Agent } from "./proxy-manager.js";
+import { ProxyService, DAILY_BUDGET, proxyAdmin, type Agent } from "./proxy/service.js";
 import { Routing } from "./routing.js";
 import { CallerOutcomes, callerTag } from "./caller-outcomes.js";
 import { runCleanup } from "../utils/cleanup.js";
@@ -34,6 +34,8 @@ export const sessionOptions = z
       })
       .optional(),
     targetUrl: z.string().url().optional(),
+    proxyProfile: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/).optional(),
+    proxyLeaseId: z.string().uuid().optional(),
     splitTraffic: z.boolean().default(false),
     budgetBytes: z.number().int().min(1).max(1_000_000_000).optional(),
     mode: z.enum(["agent", "quiet"]).default("agent"),
@@ -80,6 +82,10 @@ export const sessionOptions = z
   })
   .strict()
   .superRefine((options, ctx) => {
+    if (options.proxyLeaseId && (options.proxyProfile || options.proxyUrl || options.residential || options.budgetBytes || options.splitTraffic))
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["proxyLeaseId"], message: "A leased route cannot be overridden" });
+    if (options.proxyUrl && (options.proxyProfile || options.residential))
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["proxyUrl"], message: "Choose one proxy route" });
     if (options.mode === "quiet" && options.headless)
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -138,7 +144,7 @@ type QueuedSlot = {
 export class SessionPool {
   readonly routing: Routing;
   readonly outcomes: CallerOutcomes;
-  readonly proxies?: ProxyManager;
+  readonly proxies?: ProxyService;
   private entries = new Map<string, SessionEntry>();
   owner(id: string) {
     return (
@@ -201,7 +207,10 @@ export class SessionPool {
     this.routing = new Routing(this, routingRoot);
     this.outcomes = new CallerOutcomes(routingRoot);
     if (!options.factory)
-      this.proxies = new ProxyManager(path.join(path.dirname(this.profilesRoot), "routing"));
+      this.proxies = new ProxyService(routingRoot, {
+        authorize: assertAgentCurrent,
+        authorizeIdentity: (identity, agent) => this.connectionStore.assertProfile(identity, agent),
+      });
     this.timer = setInterval(
       () => void this.expire().catch(() => logger.error("Session expiry cleanup failed")),
       1000,
@@ -292,8 +301,8 @@ export class SessionPool {
         parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
       );
     const options = parsed.data;
-    if (!agent.admin && options.proxyUrl) throw new PoolError(403, "Use managed residential exits");
-    if (!agent.admin && options.splitTraffic && !measuredPolicy)
+    if (!proxyAdmin(agent) && options.proxyUrl) throw new PoolError(403, "Use managed proxy profiles");
+    if (!proxyAdmin(agent) && options.splitTraffic && !measuredPolicy)
       throw new PoolError(403, "Traffic policy requires measured site approval");
     if (options.identity && options.profile && options.identity !== options.profile)
       throw new PoolError(400, "identity and profile must agree");
@@ -304,7 +313,7 @@ export class SessionPool {
     if (credential) {
       if (!(await vault.list(agent, credential)).length)
         throw new PoolError(403, "Identity unavailable for this agent");
-      if (options.proxyUrl || options.sessionContext || options.headless)
+      if (options.proxyUrl || options.proxyProfile || options.proxyLeaseId || options.sessionContext || options.headless)
         throw new PoolError(403, "Protected identities use their managed exit and profile");
       options.mode = "quiet";
       options.residential = { country: "US" };
@@ -554,6 +563,7 @@ export class SessionPool {
             );
         },
         () => this.routing.table(false),
+        () => this.proxies?.close(),
         () => this.outcomes.summary(),
       ],
       "Service drain failed",

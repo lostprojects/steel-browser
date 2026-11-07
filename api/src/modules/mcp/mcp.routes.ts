@@ -30,11 +30,13 @@ import type { ToolName } from "./tools.js";
 import { commandResult, deliveryResult, scrubToolMetadata } from "./output.js";
 import { connectionToolkit } from "./connections.js";
 import { apiToolkit } from "./api.js";
+import { proxyToolkit } from "../../services/toolkits/proxies.js";
 import { builtInApiToolkits } from "../../services/toolkits/builtins.js";
 import { nativeApiToolkit } from "../../services/toolkits/native-api.js";
 import { applicationRoutes } from "../application/application.routes.js";
 import { workflowToolkit } from "./workflows.js";
 import { verifyConnection } from "../../services/toolkits/verify-connection.js";
+import { jobsToolkit } from "./jobs.js";
 import { libraryToolkit } from "./library.js";
 
 interface BrowserToolContext extends ToolContext {
@@ -192,6 +194,8 @@ export default async function mcpRoutes(server: FastifyInstance) {
             caller: args.caller,
             ...(args.identity ? { identity: args.identity } : {}),
             ...(args.mode ? { mode: args.mode } : {}),
+            ...(args.proxyProfile ? { proxyProfile: args.proxyProfile } : {}),
+            ...(args.proxyLeaseId ? { proxyLeaseId: args.proxyLeaseId } : {}),
             ...(args.residential === false
               ? { residential: false }
               : args.residential
@@ -320,8 +324,8 @@ export default async function mcpRoutes(server: FastifyInstance) {
             endReason: ended.endReason,
             residentialBytes,
             directBytes: ended.directBytes ?? 0,
-            estimatedResidentialUSD: residentialBytes / 1_000_000_000,
-            costBasis: "Evomi Core estimate at USD 1 per GB; Railway compute excluded",
+            proxyLeaseId: ended.proxyLeaseId,
+            costBasis: "Observed proxy bytes; provider product billing and compute are separate",
           });
         }
         if (tool === "browser_download" && args.transfer) {
@@ -587,8 +591,10 @@ export default async function mcpRoutes(server: FastifyInstance) {
         verifyConnection(registry, application.connections, id, context as BrowserToolContext),
     ),
     apiToolkit(() => application.api),
+    proxyToolkit(server.sessionPool),
     workflowToolkit(() => registry as unknown as ToolRegistry),
     libraryToolkit(() => server.contentLibrary),
+    jobsToolkit(server),
     ...[...builtInApiToolkits(), ...(server.steelBrowserConfig?.apiToolkits ?? [])].map(
       (definition) => nativeApiToolkit(definition, () => application.api),
     ),
@@ -615,7 +621,7 @@ export default async function mcpRoutes(server: FastifyInstance) {
       {
         capabilities: { tools: {} },
         instructions:
-          "This connection is bound to one organization and private membership workspace. Global sharing applies only within that organization. library_list returns your organization context. Use library_list to find your owned skills and content explicitly assigned to you or published globally, then library_get to read the applicable instructions. Content sharing grants no account access; uploaded scripts require a registered execution runtime. Use connections_list to discover permitted accounts and pass a browser connection ID to browser_open. Discover native API tools for the selected api: connection; api_usage reads allowances and private history. Use workflows_list and workflows_get to fetch versioned working methods, and workflows_reference for declared reference material. Check the verification estimate before connections_verify; it consumes the normal allowance. Reuse the same idempotencyKey on API transport retries; unknown provider outcomes retain their reservation. Use tools_search to discover registered tools and tools_describe for exact schemas. tools_execute runs a discovered tool with the same permissions and results as its direct name. Use fetch for one-page reads. browser_open starts navigation with an initial snapshot; reuse its session and pass next as after. Reuse idempotencyKey when retrying an open, action or reference download. Every command-based tool can return a queued/running execution; inspect or cancel it through browser_act status/cancel. Batch actions with observe to read changes in one call. Failed batches retain partial results and effects; inspect them before retrying. Continue long reads at results[0].nextOffset. Ready downloads return webUri links for ordinary browser downloads without a local installer. These handoffs expire thirty minutes after publication and survive remote browser closure; wait for ready before closing. Binary URI and checksum remain available for optional automated receivers. Use browser_sessions to resume your work and close sessions in finally. Use vault login for credentials. A human hand-off requires the owner's agreement.",
+          "This connection is bound to one organization and private membership workspace. Global sharing applies only within that organization. library_list returns your organization context. Use jobs_submit for an exact saved package export, jobs_get to inspect progress, jobs_cancel to cancel and jobs_result for a completed download. Background jobs survive browser disconnects. Use library_list to find your owned skills and content explicitly assigned to you or published globally, then library_get to read the applicable instructions. Content sharing grants no account access; uploaded scripts require a registered execution runtime. Use connections_list to discover permitted accounts and pass a browser connection ID to browser_open. Discover native API tools for the selected api: connection; api_usage reads allowances and private history. Use workflows_list and workflows_get to fetch versioned working methods, and workflows_reference for declared reference material. Check the verification estimate before connections_verify; it consumes the normal allowance. Reuse the same idempotencyKey on API transport retries; unknown provider outcomes retain their reservation. Use tools_search to discover registered tools and tools_describe for exact schemas. tools_execute runs a discovered tool with the same permissions and results as its direct name. Use fetch for one-page reads. browser_open starts navigation with an initial snapshot; reuse its session and pass next as after. Reuse idempotencyKey when retrying an open, action or reference download. Every command-based tool can return a queued/running execution; inspect or cancel it through browser_act status/cancel. Batch actions with observe to read changes in one call. Failed batches retain partial results and effects; inspect them before retrying. Continue long reads at results[0].nextOffset. Ready downloads return webUri links for ordinary browser downloads without a local installer. These handoffs expire thirty minutes after publication and survive remote browser closure; wait for ready before closing. Binary URI and checksum remain available for optional automated receivers. Use browser_sessions to resume your work and close sessions in finally. Use vault login for credentials. A human hand-off requires the owner's agreement.",
       },
     );
     protocol.setRequestHandler(ListToolsRequestSchema, async () => ({

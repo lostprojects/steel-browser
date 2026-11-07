@@ -18,6 +18,7 @@ import { actionsRoutes, cdpRoutes, filesRoutes, logsRoutes, sessionsRoutes } fro
 import { fileURLToPath } from "node:url";
 import ejs from "ejs";
 import routingRoutes from "./modules/sessions/routing.routes.js";
+import proxyRoutes from "./modules/sessions/proxy.routes.js";
 import mcpRoutes from "./modules/mcp/mcp.routes.js";
 import downloadPages from "./modules/files/download-page.js";
 import { WebSocketHandler } from "./types/websocket.js";
@@ -28,6 +29,9 @@ import connectionRoutes from "./modules/sessions/connections.routes.js";
 import { browserApplication } from "./services/browser-application.js";
 import { configuredLibrary } from "./services/library/service.js";
 import type { LibraryService } from "./services/library/contracts.js";
+import { configuredJobs } from "./services/jobs/configuration.js";
+import type { JobService } from "./services/jobs/service.js";
+import { jobsRoutes } from "./modules/application/jobs.routes.js";
 import { libraryRoutes } from "./modules/application/library.routes.js";
 export type { Toolkit, ToolkitTool, ToolContext } from "./services/toolkits/registry.js";
 export { PublicError } from "./utils/public-error.js";
@@ -50,6 +54,7 @@ declare module "fastify" {
   interface FastifyInstance {
     steelBrowserConfig: ToolstackConfig;
     contentLibrary?: LibraryService;
+    jobs?: JobService;
   }
 
   interface LogStorageInterface extends LogStorage {}
@@ -60,6 +65,7 @@ export interface ToolstackConfig {
   toolkits?: readonly Toolkit[];
   apiToolkits?: readonly NativeApiToolkit[];
   contentLibrary?: LibraryService;
+  jobs?: JobService;
   mcpToolExposure?: "all" | "discovery";
   fileStorage?: {
     maxSizePerSession?: number;
@@ -79,6 +85,10 @@ const toolstackPlugin: FastifyPluginAsync<ToolstackConfig> = async (fastify, opt
   await library?.ready;
   fastify.decorate("contentLibrary", library);
   if (library) fastify.addHook("onClose", async () => library.close());
+  const jobs = opts.jobs ?? configuredJobs(library);
+  await jobs?.ready;
+  fastify.decorate("jobs", jobs);
+  if (jobs) fastify.addHook("onClose", async () => jobs.close());
   await vault.ready;
   fastify.addHook("preSerialization", async (_req, _reply, payload) => scrubObject(payload));
   fastify.addHook("onSend", async (_req, reply, payload) => {
@@ -118,9 +128,11 @@ const toolstackPlugin: FastifyPluginAsync<ToolstackConfig> = async (fastify, opt
   await fastify.register(actionsRoutes, { prefix: "/v1" });
   await fastify.register(sessionsRoutes, { prefix: "/v1" });
   await fastify.register(routingRoutes, { prefix: "/v1" });
+  await fastify.register(proxyRoutes, { prefix: "/v1" });
   await fastify.register(vaultRoutes, { prefix: "/v1" });
   await fastify.register(connectionRoutes, { prefix: "/v1" });
   await libraryRoutes(fastify);
+  await jobsRoutes(fastify);
   await fastify.register(cdpRoutes, { prefix: "/v1" });
   await fastify.register(filesRoutes, { prefix: "/v1" });
   await fastify.register(downloadPages);

@@ -1,4 +1,4 @@
-import type { Agent } from "./proxy-manager.js";
+import type { Agent } from "./proxy/service.js";
 import { PublicError } from "../utils/public-error.js";
 import { sharedStoreConnection } from "./shared-store.js";
 import { assertOrganizationMember, currentOrganization } from "./organization.js";

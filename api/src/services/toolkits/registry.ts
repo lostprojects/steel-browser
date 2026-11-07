@@ -2,7 +2,7 @@
 // checks; client arguments must never supply the authenticated execution context.
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import type { Agent } from "../proxy-manager.js";
+import type { Agent } from "../proxy/service.js";
 import { PublicError } from "../../utils/public-error.js";
 import { storeName } from "../shared-store.js";
 import type { ApiConnectionSettings } from "../connection-store.js";

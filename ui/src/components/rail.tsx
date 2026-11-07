@@ -88,6 +88,7 @@ export function Rail({
               [
                 ["toolkits", "Toolkits", "⌘"],
                 ["library", "Library", "▤"],
+                ["jobs", "Jobs", "◴"],
                 ["connections", "Connections", "◇"],
                 ["activity", "Activity", "◷"],
                 ["browser", "Browser", "↗"],

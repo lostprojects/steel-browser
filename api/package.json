@@ -59,7 +59,9 @@
     "configure:library": "node scripts/configure-library.mjs",
     "cleanup:library": "node scripts/cleanup-library.mjs",
     "verify:library": "node scripts/test-library.mjs --ui",
-    "verify:cloud-library": "node scripts/verify-cloud-library.mjs"
+    "verify:cloud-library": "node scripts/verify-cloud-library.mjs",
+    "test:jobs": "node scripts/test-library.mjs --jobs",
+    "package:jobs": "node scripts/package-gateway.mjs --jobs"
   },
   "author": "Nasr Mohamed",
   "devDependencies": {
@@ -93,6 +95,7 @@
     "fastify-plugin": "^6.0.1",
     "mime-types": "^3.0.2",
     "mupdf": "^1.28.1",
+    "pg-boss": "12.38.1",
     "postgres": "^4.1.0",
     "proxy-chain": "^3.0.1",
     "puppeteer-core": "npm:rebrowser-puppeteer-core@25.16.0",

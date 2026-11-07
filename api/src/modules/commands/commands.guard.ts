@@ -13,13 +13,17 @@ export function heldByCommands(
   reply: FastifyReply,
 ): boolean {
   const engine = server.commandEngine;
-  if (!engine || request.body?.proxyUrl) {
+  if (request.body?.proxyUrl) {
+    reply.code(400).send({ message: "Select a proxy profile or lease when opening the session" });
+    return true;
+  }
+  if (!engine) {
     return false;
   }
   if (engine.busy()) {
     reply.code(409).send({
       message:
-        "Commands are running in this session. Try again when they finish, or pass proxyUrl to work in a separate browser context.",
+        "Commands are running in this session. Try again when they finish, or open another leased session.",
     });
     return true;
   }
@@ -35,7 +39,7 @@ export async function quickAction(
   if (heldByCommands(server, request, reply)) {
     return reply;
   }
-  if (!server.commandEngine || request.body?.proxyUrl) {
+  if (!server.commandEngine) {
     return run();
   }
   const engine = server.commandEngine;

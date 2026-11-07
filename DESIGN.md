@@ -23,7 +23,7 @@ History and browser state belong to the authenticated user for every session. Se
 | --- | --- |
 | `SessionPool` | Capacity, identity locks, session ownership and shutdown draining |
 | `BrowserSession` | Chrome, display, profile, command engine and browser event storage |
-| `ProxyManager` | Evomi Core allocations, exit/timezone checks and durable byte budgets |
+| `ProxyService` | Provider profiles, verified reusable leases, identity continuity, forwarding and durable byte budgets |
 | `OperationRunner` | Deadlines, cancellation, retry identities and shared/exclusive resource access |
 | `Routing` | Site defaults, validated escalation and cleanup of late browser launches |
 | `LoginService` and vault | Agent-scoped credentials, service-owned input and verification outcomes |
@@ -126,7 +126,7 @@ API authentication is required at startup. Browser requests use the configured s
 
 Anonymous reads can escalate from HTTP with Chrome TLS to a direct agent browser, then to a quiet residential browser. A response passes only after payload validation. Explicit empty results must be validated as carefully as nonempty results.
 
-Authenticated traffic stays on its identity's allocation. Throwaway quiet retries may use one fresh exit; protected identities retain their sticky allocation. Managed sessions resolve the exit timezone before Chrome starts. A custom proxy requires the caller to supply its matching timezone.
+Authenticated traffic stays on its identity's allocation. Throwaway quiet retries may use one fresh exit; protected identities retain their sticky allocation. Managed leases resolve the exit timezone before Chrome starts. Browsers and HTTP consumers share the service-owned listener and ledger. [PROXIES.md](PROXIES.md) describes permissions, lifecycle and migration.
 
 Measured policies can send selected static hosts directly and refuse selected advertising hosts. Unknown and challenge hosts retain the residential route. Signed CDN downloads may use direct fetching with residential fallback under the existing download policy.
 

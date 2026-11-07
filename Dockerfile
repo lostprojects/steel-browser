@@ -37,7 +37,7 @@ COPY --link api/ ./api/
 RUN npm ci --include=dev --workspace=api
 
 # Build the API package
-RUN npm run build -w api && npm run package:gateway -w api
+RUN npm run build -w api && npm run package:gateway -w api && node api/scripts/package-gateway.mjs --jobs
 
 # Prune dev dependencies
 RUN npm prune --omit=dev -w api && mkdir -p api/node_modules
@@ -51,6 +51,15 @@ RUN node --input-type=module -e "await import('./gateway/server.js')"
 ENV STEEL_ROLE=gateway
 EXPOSE 3000
 CMD ["node", "gateway/start.js"]
+
+# Dedicated durable executor. This image needs no Chrome, X display or UI.
+FROM base AS jobs
+COPY --from=api-build /app/build/jobs-runtime /app/
+COPY --link LICENSE /app/LICENSE
+ENV STEEL_ROLE=executor NODE_OPTIONS="--max-old-space-size=256"
+USER node
+EXPOSE 8080
+CMD ["node", "services/jobs/worker.js"]
 
 # Browser worker and standalone runtime.
 FROM base AS browser

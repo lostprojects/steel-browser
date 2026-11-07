@@ -214,11 +214,7 @@ function fixture() {
     getPrimaryPage: vi.fn().mockRejectedValue(new Error("Primary page failed")),
     refreshPrimaryPage: vi.fn().mockResolvedValue(undefined),
   };
-  const proxy = {
-    listen: vi.fn().mockRejectedValue(new Error("Proxy failed")),
-    close: vi.fn().mockResolvedValue(undefined),
-  };
-  const sessionService = { proxyFactory: vi.fn().mockResolvedValue(proxy) };
+  const sessionService = {};
   const reply = { code: vi.fn(), send: vi.fn() };
   reply.code.mockReturnValue(reply);
   return {
@@ -237,13 +233,13 @@ const handlers = [
 ] as const;
 
 describe("quick action failures", () => {
-  it.each(handlers)("%s keeps the primary page when it ran with a proxy", async (_, handle) => {
+  it.each(handlers)("%s rejects per-action proxy overrides", async (_, handle) => {
     const { browserService, refresh, sessionService, reply, status } = fixture();
     const request = { body: { url: "https://example.com", proxyUrl: "http://proxy.test:8080" } };
 
     await handle(sessionService, browserService, request as never, reply);
 
-    expect(status).toHaveBeenCalledWith(500);
+    expect(status).toHaveBeenCalledWith(400);
     expect(refresh).not.toHaveBeenCalled();
   });
 

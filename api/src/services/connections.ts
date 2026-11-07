@@ -4,7 +4,7 @@ import { lstat, readdir } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import type { SessionPool } from "./session-pool.js";
-import type { Agent } from "./proxy-manager.js";
+import type { Agent } from "./proxy/service.js";
 import type { LoginService } from "./login.js";
 import { identityVault, loginSites } from "./login.js";
 import { vault, type Vault } from "./vault.js";

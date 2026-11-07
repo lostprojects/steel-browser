@@ -7,6 +7,7 @@ import { TopBar } from "./components/top-bar";
 import { Downloads } from "./components/downloads";
 import { useSessions, useShortcutKeys, useStoredToggle } from "./hooks";
 import { Capabilities, useView } from "./components/capabilities";
+import { Jobs } from "./components/jobs";
 import { Library } from "./components/library";
 
 export function App() {
@@ -47,15 +48,19 @@ export function App() {
       </a>
       {railOpen && <Rail status={status} onCollapse={toggleRail} view={view} />}
       <nav className="mobile-nav" aria-label="Workspace">
-        {(["toolkits", "library", "connections", "activity", "browser"] as const).map((item) => (
-          <a key={item} href={`#/${item}`} aria-current={view === item ? "page" : undefined}>
-            {item[0]!.toUpperCase() + item.slice(1)}
-          </a>
-        ))}
+        {(["toolkits", "library", "jobs", "connections", "activity", "browser"] as const).map(
+          (item) => (
+            <a key={item} href={`#/${item}`} aria-current={view === item ? "page" : undefined}>
+              {item[0]!.toUpperCase() + item.slice(1)}
+            </a>
+          ),
+        )}
       </nav>
       <div className="body">
         <main className="panel" id="main-content" tabIndex={-1}>
-          {view === "library" ? (
+          {view === "jobs" ? (
+            <Jobs railOpen={railOpen} onToggleRail={toggleRail} />
+          ) : view === "library" ? (
             <Library railOpen={railOpen} onToggleRail={toggleRail} />
           ) : view !== "browser" ? (
             <Capabilities

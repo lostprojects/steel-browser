@@ -2,7 +2,7 @@
 // process; registered execution runtimes remain a separate application boundary.
 import { z } from "zod";
 import { storeName } from "../shared-store.js";
-import type { Agent } from "../proxy-manager.js";
+import type { Agent } from "../proxy/service.js";
 import type { ConnectedPrincipal } from "../gateway-principal.js";
 import { organizationMember, type MembershipIdentity } from "../organization.js";
 

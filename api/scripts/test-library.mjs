@@ -95,7 +95,13 @@ try {
     process.execPath,
     process.argv.includes("--ui")
       ? ["scripts/verify-library.mjs"]
-      : ["../node_modules/vitest/vitest.mjs", "run", "src/services/library/library.test.ts"],
+      : [
+          "../node_modules/vitest/vitest.mjs",
+          "run",
+          process.argv.includes("--jobs")
+            ? "src/services/jobs/jobs.test.ts"
+            : "src/services/library/library.test.ts",
+        ],
     {
       env: {
         ...process.env,

@@ -17,6 +17,8 @@ import {
   browserOriginAllowed,
 } from "./utils/api-key.js";
 
+import { jobWorkerAuthorized } from "./services/jobs/access.js";
+
 const HOST = process.env.HOST ?? "0.0.0.0";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const SHUTDOWN_TIMEOUT_MS =
@@ -38,7 +40,7 @@ const setupServer = async () => {
     if (!browserOriginAllowed(request.raw))
       return reply.code(403).send({ error: "Origin is not allowed" });
     if (request.method === "OPTIONS") return;
-    if (!isAuthorized(request.raw)) {
+    if (!isAuthorized(request.raw) && !jobWorkerAuthorized(request.raw)) {
       return reply.code(401).send({ error: "Unauthorized" });
     }
     // Opening the UI with ?apiKey= stores the key so its own calls carry it

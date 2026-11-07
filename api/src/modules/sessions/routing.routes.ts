@@ -9,6 +9,7 @@ import { selectedSession } from "./sessions.controller.js";
 import { idempotent, retryKey } from "../../utils/idempotency.js";
 import { QuietInput } from "../../services/quiet-input.js";
 import { withSessionOperation } from "../../services/session-access.js";
+import { actor, proxyAdmin } from "../../services/proxy/types.js";
 
 const name = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/);
 const httpUrl = z
@@ -26,7 +27,7 @@ export default async function routes(server: FastifyInstance) {
     idempotencyKey: retryKey(req.headers),
   });
   const admin = (req: FastifyRequest) => {
-    if (!agentFor(req.raw)?.admin)
+    if (!agentFor(req.raw) || !proxyAdmin(agentFor(req.raw)!))
       throw Object.assign(new Error("Admin key required"), { statusCode: 403 });
   };
   server.get("/routing", () => routing.table());
@@ -48,13 +49,13 @@ export default async function routes(server: FastifyInstance) {
   server.get("/usage", async (req) => {
     const totals = await server.sessionPool.proxies!.totals();
     const agent = agentFor(req.raw)!;
-    return agent.admin
+    return proxyAdmin(agent)
       ? { ...totals, http: httpCapacity() }
       : {
           date: totals.date,
           agent: agent.name,
-          residentialBytes: totals.agents[agent.name] ?? 0,
-          totalResidentialBytes: totals.totalByAgent[agent.name] ?? 0,
+          residentialBytes: totals.agents[actor(agent)] ?? 0,
+          totalResidentialBytes: totals.totalByAgent[actor(agent)] ?? 0,
           dailyBudgetBytes: agent.dailyBudgetBytes,
         };
   });

@@ -50,6 +50,8 @@ export const schemas = {
       identity: name.optional(),
       mode: z.enum(["agent", "quiet"]).optional(),
       residential: residential.optional(),
+      proxyProfile: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/).optional(),
+      proxyLeaseId: z.string().uuid().optional(),
       caller: callerTag.default("mcp"),
       idempotencyKey,
       observe: publishedRequestSchema.shape.observe.default({ mode: "snapshot", compact: true }),
@@ -171,7 +173,7 @@ export const descriptions: Record<ToolName, string> = {
     "Return a noVNC link only after an admin records the owner's explicit agreement for this session and reason. Without approval, returns owner_agreement_required.",
   browser_network:
     "Read recent request metadata in agent mode. Request bodies, headers and URL queries are omitted.",
-  browser_close: "Release the browser and report settled bytes and estimated residential cost.",
+  browser_close: "Release the browser and report its proxy lease and observed bytes.",
   fetch:
     "Read one page as markdown using the routing ladder, then release its browser. Returns up to 20,000 code points by default (limit up to 100,000). Continue with the returned requestId and nextOffset as offset, keeping other arguments unchanged. The source response is reused for ten minutes while retained.",
 };
