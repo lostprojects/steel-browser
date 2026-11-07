@@ -1,4 +1,4 @@
-import type { Protocol } from "puppeteer-core";
+import type { Protocol } from "devtools-protocol";
 
 export type AXNode = Protocol.Accessibility.AXNode;
 

@@ -4,6 +4,8 @@ import { env } from "../env.js";
 import { DAILY_BUDGET, type Agent } from "../services/proxy-manager.js";
 import { protect } from "../services/vault.js";
 import { getBaseUrl } from "./url.js";
+import { principalHeader, verifyPrincipal } from "../services/gateway-principal.js";
+import { currentOrganization } from "../services/organization.js";
 
 export const API_KEY_HEADER = "steel-api-key";
 export const API_KEY_COOKIE = "steel_api_key";
@@ -91,12 +93,27 @@ export function isAuthorized(req: IncomingMessage): boolean {
 }
 
 export function agentFor(req: IncomingMessage): Agent | undefined {
+  const selectedOrganization = req.headers["x-toolstack-org-id"];
+  if (selectedOrganization !== undefined && selectedOrganization !== currentOrganization().id)
+    return;
   if (!env.STEEL_API_KEY?.trim()) return undefined;
   const key = suppliedKey(req).key;
   const dailyBudgetBytes = Number(process.env.RESIDENTIAL_DAILY_BUDGET_BYTES ?? DAILY_BUDGET);
   if (!Number.isSafeInteger(dailyBudgetBytes) || dailyBudgetBytes < 1)
     throw new Error("Invalid residential budget");
-  if (matches(key, env.STEEL_API_KEY)) return { name: "admin", admin: true, dailyBudgetBytes };
+  if (matches(key, env.STEEL_API_KEY)) {
+    const identity = req.headers[principalHeader];
+    if (process.env.STEEL_ROLE === "worker" && identity !== undefined) {
+      const connectedApp = verifyPrincipal(
+        identity,
+        env.STEEL_API_KEY!,
+        process.env.STEEL_USER_ID ?? "",
+      );
+      if (!connectedApp) return;
+      return { name: "admin", admin: true, dailyBudgetBytes, connectedApp };
+    }
+    return { name: "admin", admin: true, dailyBudgetBytes };
+  }
   const entries = agentKeys();
   const entry = entries.find((v) => matches(key, v.key));
   if (!entry) return undefined;

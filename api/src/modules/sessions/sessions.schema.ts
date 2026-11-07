@@ -1,36 +1,47 @@
 import { sessionOptions } from "../../services/session-pool.js";
-import { FastifyRequest } from "fastify";
 import { z } from "zod";
-import {
-  ScrapeRequestBody,
-  ScreenshotRequestBody,
-  PDFRequestBody,
-} from "../actions/actions.schema.js";
 import { SessionContextSchema } from "../../services/context/types.js";
+import { connectionId } from "../../services/connection-store.js";
 
-export type CredentialsOptions = z.infer<typeof SessionCredentials>;
-export const SessionCredentials = z
-  .object({
-    autoSubmit: z.union([z.boolean(), z.never()]),
-    blurFields: z.union([z.boolean(), z.never()]),
-    exactOrigin: z.union([z.boolean(), z.never()]),
-  })
-  .partial()
-  .optional()
-  .describe("Configuration for session credentials");
-
-const CreateSession = sessionOptions;
+const CreateSession = sessionOptions.safeExtend({ connection: connectionId.optional() });
 
 const SessionDetails = z.object({
+  deliveryVersion: z
+    .literal(1)
+    .optional()
+    .describe("Verified binary delivery protocol supported by this session"),
   id: z.string().uuid().describe("Unique identifier for the session"),
   createdAt: z.string().datetime().describe("Timestamp when the session started"),
   status: z.enum(["starting", "live", "released", "failed"]).describe("Status of the session"),
   mode: z.enum(["agent", "quiet"]),
+  browserCapabilities: z
+    .object({
+      input: z.enum(["native", "cdp"]),
+      capture: z.enum(["display", "page"]),
+      fullPageCapture: z.boolean(),
+      elementCapture: z.boolean(),
+      captureQuality: z.boolean(),
+      pdf: z.boolean(),
+      networkIdle: z.boolean(),
+    })
+    .describe("Browser operations supported before command execution"),
   identity: z.string().optional().describe("Named persistent profile, when requested"),
+  site: z.string().optional(),
+  caller: z.string().optional(),
+  last_login_ok: z.string().optional(),
+  viewAvailable: z.boolean().describe("Whether this identity permits a live browser view"),
+  exit: z
+    .object({ ip: z.string(), timezone: z.string(), country: z.string(), region: z.string() })
+    .optional(),
+  challenge: z.object({ status: z.string(), kind: z.string(), url: z.string() }).optional(),
+  directBytes: z.number().nonnegative(),
   endReason: z.string().optional(),
   temporaryProfileRemoved: z.boolean(),
   duration: z.number().int().describe("Duration of the session in milliseconds"),
-  eventCount: z.number().int().describe("Number of events processed in the session"),
+  eventCount: z
+    .number()
+    .int()
+    .describe("Legacy compatibility field; use /v1/logs/stats for event counts"),
   dimensions: z
     .object({
       width: z.number(),
@@ -38,10 +49,13 @@ const SessionDetails = z.object({
     })
     .describe("Dimensions used for the session"),
   timeout: z.number().int().describe("Session timeout duration in milliseconds"),
-  creditsUsed: z.number().int().describe("Amount of credits consumed by the session"),
+  creditsUsed: z
+    .number()
+    .int()
+    .describe("Legacy compatibility field; this service meters proxy bytes"),
   websocketUrl: z.string().describe("URL for the session's WebSocket connection"),
   debugUrl: z.string().describe("URL for a viewing the live browser instance for the session"),
-  debuggerUrl: z.string().describe("URL for debugging the session"),
+  debuggerUrl: z.string().describe("Legacy alias for the session viewer URL"),
   sessionViewerUrl: z.string().describe("URL to view session details"),
   noVncUrl: z.string().describe("Authenticated live display view"),
   display: z.string().optional(),
@@ -72,34 +86,9 @@ const ReleaseSession = SessionDetails.merge(
   z.object({ success: z.boolean().describe("Indicates if the session was successfully released") }),
 );
 
-const SessionLiveDetailsResponse = SessionDetails.extend({
-  pages: z.array(
-    z.object({
-      id: z.string(),
-      url: z.string(),
-      title: z.string(),
-      favicon: z.string().nullable(),
-    }),
-  ),
-});
-
 const MultipleSessions = z.object({
   sessions: z.array(SessionDetails),
 });
-
-export type SessionsScrapeRequestBody = Omit<ScrapeRequestBody, "url">;
-export type SessionsScrapeRequest = FastifyRequest<{ Body: SessionsScrapeRequestBody }>;
-
-export type SessionsScreenshotRequestBody = Omit<ScreenshotRequestBody, "url">;
-export type SessionsScreenshotRequest = FastifyRequest<{ Body: SessionsScreenshotRequestBody }>;
-
-export type SessionsPDFRequestBody = Omit<PDFRequestBody, "url">;
-export type SessionsPDFRequest = FastifyRequest<{ Body: SessionsPDFRequestBody }>;
-
-export type CreateSessionBody = z.infer<typeof CreateSession>;
-export type CreateSessionRequest = FastifyRequest<{ Body: CreateSessionBody }>;
-export type SessionDetails = z.infer<typeof SessionDetails>;
-export type MultipleSessions = z.infer<typeof MultipleSessions>;
 
 export const browserSchemas = {
   CreateSession,
@@ -107,7 +96,6 @@ export const browserSchemas = {
   MultipleSessions,
   SessionContextSchema,
   ReleaseSession,
-  SessionLiveDetailsResponse,
 };
 
 export default browserSchemas;

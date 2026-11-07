@@ -57,6 +57,20 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 describe("session pool", () => {
+  test("rechecks profile grants after capacity admission and refuses revoked queued work", async () => {
+    const pool = await fixture({ maxSessions: 1, queueMs: 2000 });
+    const admin = { name: "admin", admin: true, dailyBudgetBytes: 1000 };
+    await pool.connectionStore.configure("queued-account", { allowedAgents: ["admin"] }, admin);
+    const held = await pool.create({ identity: "held" });
+    const waiting = pool.create({ identity: "queued-account" });
+    const refused = expect(waiting).rejects.toMatchObject({ code: "connection_disabled" });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await pool.connectionStore.access("browser:queued-account", admin, false);
+    await pool.release(held.id);
+    await refused;
+    expect(pool.identityBusy("queued-account")).toBe(false);
+    expect(pool.size).toBe(0);
+  });
   test("deletes an idle profile and holds its identity lock through metadata removal", async () => {
     const pool = await fixture();
     const session = await pool.create({ identity: "account" });

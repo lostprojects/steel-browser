@@ -3,17 +3,19 @@ import { Duplex } from "stream";
 import { WebSocket } from "ws";
 import { EmitEvent } from "../../../types/enums.js";
 import { WebSocketHandler, WebSocketHandlerContext } from "../../../types/websocket.js";
+import { scrubObject } from "../../../services/vault.js";
 
 function handleLogsWebSocket(context: WebSocketHandlerContext, ws: WebSocket) {
   const { fastify } = context;
+  const logger = context.session.getInstrumentationLogger();
 
-  const messageHandler = (payload: { pageId: string }) => {
+  const messageHandler = (payload: unknown, metadata: Record<string, unknown>) => {
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify([payload]));
+      ws.send(JSON.stringify([scrubObject({ ...metadata, ...(payload as object) })]));
     }
   };
 
-  context.session.on(EmitEvent.Log, messageHandler);
+  logger.on?.(EmitEvent.Log, messageHandler);
 
   ws.on("error", (err) => {
     fastify.log.error({ err }, "Logs WebSocket error");
@@ -21,7 +23,7 @@ function handleLogsWebSocket(context: WebSocketHandlerContext, ws: WebSocket) {
 
   ws.on("close", () => {
     fastify.log.info("Logs WebSocket connection closed");
-    context.session.removeListener(EmitEvent.Log, messageHandler);
+    logger.off?.(EmitEvent.Log, messageHandler);
   });
 }
 

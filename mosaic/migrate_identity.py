@@ -30,7 +30,7 @@ def main():
         storage_count = 0
         if context.get('localStorage'):
             with sync_playwright() as pw:
-                browser = pw.chromium.connect_over_cdp(info['websocketUrl'] + '?apiKey=' + KEY)
+                browser = pw.chromium.connect_over_cdp(info['websocketUrl'], headers={'steel-api-key': KEY})
                 page = browser.contexts[0].pages[0]
                 # Materialize each origin without a site request. The temporary
                 # import session permits interception; quiet sessions do not.

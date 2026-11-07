@@ -2,17 +2,31 @@
 // instrument page scripts, pause new targets, or send synthetic CDP input.
 import { EventEmitter } from "node:events";
 import WebSocket from "ws";
-import { CDPSessionEvent, type Browser, type Page, type Protocol } from "puppeteer-core";
+import type { Protocol } from "devtools-protocol";
+import {
+  QUIET_CAPABILITIES,
+  BrowserProtocolError,
+  type BrowserControl,
+  type BrowserConnection,
+  type BrowserTarget,
+  type PageRead,
+  type ControlSession,
+} from "./browser-control.js";
 import { QuietInput } from "./quiet-input.js";
 
 type Fields = Record<string, any>;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export class QuietConnection extends EventEmitter {
+export class QuietConnection extends EventEmitter implements BrowserConnection {
   private sequence = 0;
   private pending = new Map<
     number,
-    { resolve: (value: any) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }
+    {
+      sessionId: string;
+      resolve: (value: any) => void;
+      reject: (error: Error) => void;
+      timer: NodeJS.Timeout;
+    }
   >();
   private sessions = new Map<string, QuietSession>();
   readonly root: QuietSession;
@@ -31,7 +45,7 @@ export class QuietConnection extends EventEmitter {
         if (!pending) return;
         clearTimeout(pending.timer);
         this.pending.delete(message.id);
-        if (message.error) pending.reject(new Error(message.error.message));
+        if (message.error) pending.reject(new BrowserProtocolError(message.error.message));
         else pending.resolve(message.result ?? {});
         return;
       }
@@ -39,34 +53,60 @@ export class QuietConnection extends EventEmitter {
       if (message.method === "Target.attachedToTarget") {
         const child = this.add(message.params.sessionId, message.params.targetInfo.targetId);
         child.parent = session;
-        this.emit(CDPSessionEvent.SessionAttached, child);
+        this.emit("sessionattached", child);
       }
       session?.emit(message.method, message.params);
+      if (message.method === "Inspector.targetCrashed" && session?.targetId)
+        this.emit("targetcrashed", session.targetId);
+      if (message.method === "Target.targetCrashed")
+        this.emit("targetcrashed", message.params.targetId);
       if (message.method === "Target.detachedFromTarget") {
         const child = this.sessions.get(message.params.sessionId);
         this.sessions.delete(message.params.sessionId);
+        this.rejectPending(new Error("Quiet CDP session detached"), message.params.sessionId);
         child?.emit("disconnected");
-        if (child) this.emit(CDPSessionEvent.SessionDetached, child);
+        if (child) this.emit("sessiondetached", child);
       }
     });
     ws.on("close", () => {
-      for (const pending of this.pending.values()) {
-        clearTimeout(pending.timer);
-        pending.reject(new Error("Quiet CDP connection closed"));
-      }
-      this.pending.clear();
+      this.rejectPending(new Error("Quiet CDP connection closed"));
       for (const session of this.sessions.values()) session.emit("disconnected");
+      this.sessions.clear();
       this.emit("disconnected");
     });
     ws.on("error", () => ws.close());
   }
 
+  private rejectPending(error: Error, sessionId?: string) {
+    for (const [id, pending] of this.pending) {
+      if (sessionId !== undefined && pending.sessionId !== sessionId) continue;
+      clearTimeout(pending.timer);
+      this.pending.delete(id);
+      pending.reject(error);
+    }
+  }
+
   static async connect(endpoint: string, input: QuietInput) {
-    const ws = new WebSocket(endpoint);
+    const ws = new WebSocket(endpoint, { handshakeTimeout: 10_000 });
     const connection = new QuietConnection(ws, input);
     await new Promise<void>((resolve, reject) => {
-      ws.once("open", resolve);
-      ws.once("error", reject);
+      const cleanup = () => {
+        ws.off("open", opened);
+        ws.off("error", failed);
+        ws.off("close", closed);
+      };
+      const opened = () => {
+        cleanup();
+        resolve();
+      };
+      const failed = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+      const closed = () => failed(new Error("Quiet CDP connection closed before opening"));
+      ws.once("open", opened);
+      ws.once("error", failed);
+      ws.once("close", closed);
     });
     return connection;
   }
@@ -88,6 +128,10 @@ export class QuietConnection extends EventEmitter {
     const { sessionId } = await this.send("Target.attachToTarget", { targetId, flatten: true });
     return this.add(sessionId, targetId);
   }
+  async attachBrowser() {
+    const { sessionId } = await this.send("Target.attachToBrowserTarget");
+    return this.add(sessionId, "");
+  }
   send(method: string, params: Fields = {}) {
     return this.root.send(method, params);
   }
@@ -100,7 +144,7 @@ export class QuietConnection extends EventEmitter {
         this.pending.delete(id);
         reject(new Error(`CDP timeout: ${method}`));
       }, 30_000);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { sessionId, resolve, reject, timer });
       this.ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
     });
   }
@@ -109,8 +153,9 @@ export class QuietConnection extends EventEmitter {
   }
 }
 
-export class QuietSession extends EventEmitter {
+export class QuietSession extends EventEmitter implements ControlSession {
   parent?: QuietSession;
+  private disconnected = false;
   private worlds = new Map<number, string>();
   private objects = new Map<string, { group: string; contextId: number }>();
   constructor(
@@ -126,6 +171,11 @@ export class QuietSession extends EventEmitter {
       } else this.invalidateFrame(frame.id);
     });
     this.on("Page.frameDetached", ({ frameId }) => this.invalidateFrame(frameId));
+    this.once("disconnected", () => {
+      this.disconnected = true;
+      this.worlds.clear();
+      this.objects.clear();
+    });
   }
   private invalidateFrame(frameId: string) {
     for (const [contextId, owner] of this.worlds)
@@ -136,10 +186,11 @@ export class QuietSession extends EventEmitter {
   id() {
     return this.sessionId;
   }
-  connection() {
-    return this.conn;
+  childSession(id: string) {
+    return this.conn.session(id);
   }
   private raw(method: string, params: Fields = {}) {
+    if (this.disconnected) return Promise.reject(new Error("Quiet CDP session detached"));
     return this.conn.wire(method, params, this.sessionId);
   }
   async detach() {
@@ -190,7 +241,18 @@ export class QuietSession extends EventEmitter {
     });
     return this.conn.input.mouse({ ...params, x, y }, result.value);
   }
+  readonly input = {
+    mouse: (params: Protocol.Input.DispatchMouseEventRequest) => this.pointer(params),
+    key: (params: Protocol.Input.DispatchKeyEventRequest) => this.conn.input.key(params),
+    text: (text: string) => this.conn.input.text(text),
+  };
+  async capture(options: Protocol.Page.CaptureScreenshotRequest) {
+    if (options.clip || options.captureBeyondViewport || options.quality !== undefined)
+      throw new Error("Quiet capture supports the visible display at its native quality");
+    return this.conn.input.screenshot(options.format);
+  }
   async send(method: string, original: Fields = {}): Promise<any> {
+    if (this.disconnected) throw new Error("Quiet CDP session detached");
     const params = { ...original };
     if (
       !/^(Page|DOM|Accessibility|Runtime|Target|Browser|Storage)\./.test(method) ||
@@ -202,11 +264,9 @@ export class QuietSession extends EventEmitter {
         "Page.setBypassCSP",
         "Page.startScreencast",
         "Page.printToPDF",
+        "Page.captureScreenshot",
       ].includes(method)
     ) {
-      if (method === "Input.dispatchMouseEvent") return this.pointer(params);
-      if (method === "Input.dispatchKeyEvent") return this.conn.input.key(params);
-      if (method === "Input.insertText") return this.conn.input.text(String(params.text));
       throw new Error(`Quiet policy refuses ${method}`);
     }
     if (
@@ -214,13 +274,6 @@ export class QuietSession extends EventEmitter {
       (params.waitForDebuggerOnStart || !params.filter?.every((f: Fields) => f.type === "iframe"))
     )
       throw new Error("Quiet sessions may attach only to unpaused iframe targets");
-    if (method === "Page.captureScreenshot") {
-      if (params.clip || params.captureBeyondViewport)
-        throw new Error(
-          "Quiet screenshots capture the visible display; full-page and element crops are unavailable",
-        );
-      return this.conn.input.screenshot(params.format);
-    }
     if (method === "Runtime.evaluate") {
       if (params.contextId === undefined)
         for (let attempt = 0; attempt < 3; attempt++) {
@@ -267,44 +320,32 @@ export class QuietSession extends EventEmitter {
   }
 }
 
-class QuietTarget {
+class QuietTarget implements BrowserTarget {
   private pageValue?: QuietPage;
   private opening?: Promise<QuietPage>;
   constructor(
     readonly owner: QuietBrowser,
-    private info: Protocol.Target.TargetInfo,
+    public info: Protocol.Target.TargetInfo,
   ) {}
-  get _targetId() {
+  get id() {
     return this.info.targetId;
   }
-  _getTargetInfo() {
-    return this.info;
+  get client() {
+    return this.pageValue?.client;
   }
-  _session() {
-    return this.pageValue?._client();
+  get defaultContext() {
+    return true;
   }
   update(info: Protocol.Target.TargetInfo) {
     this.info = info;
   }
-  type() {
-    return this.info.type;
-  }
-  url() {
-    return this.info.url;
-  }
-  browserContext() {
-    return this.owner.defaultBrowserContext();
-  }
-  opener() {
-    return this.info.openerId ? this.owner.find(this.info.openerId) : undefined;
-  }
-  async createCDPSession() {
-    return this.owner.connection.attach(this._targetId);
+  async createSession() {
+    return this.owner.connection.attach(this.id);
   }
   async page() {
-    if (this.type() !== "page") return null;
+    if (this.info.type !== "page") return null;
     this.opening ??= (async () => {
-      const client = await this.createCDPSession();
+      const client = await this.createSession();
       const page = new QuietPage(this, client);
       await client.send("Page.enable");
       await client.send("Page.setLifecycleEventsEnabled", { enabled: true });
@@ -315,40 +356,34 @@ class QuietTarget {
   }
 }
 
-class QuietPage {
+class QuietPage implements PageRead {
   private closed = false;
   constructor(
     private targetValue: QuietTarget,
-    private client: QuietSession,
+    readonly client: QuietSession,
   ) {
     client.on("disconnected", () => {
       this.closed = true;
     });
   }
-  _client() {
-    return this.client;
+  get targetId() {
+    return this.targetValue.id;
   }
-  target() {
-    return this.targetValue;
-  }
+  async ready() {}
   url() {
-    return this.targetValue.url();
+    return this.targetValue.info.url;
   }
   isClosed() {
     return this.closed;
   }
-  createCDPSession() {
-    return this.targetValue.createCDPSession();
+  createSession() {
+    return this.targetValue.createSession();
   }
-  async title() {
-    return (await this.evaluate(() => document.title)) as string;
-  }
-  async bringToFront() {
-    await this.client.send("Page.bringToFront");
-  }
-  async evaluate(fn: Function | string, ...args: unknown[]): Promise<any> {
-    const expression =
-      typeof fn === "string" ? fn : `(${fn.toString()})(...${JSON.stringify(args)})`;
+  async evaluate<Args extends unknown[], Result>(
+    fn: (...args: Args) => Result,
+    ...args: Args
+  ): Promise<Awaited<Result>> {
+    const expression = `(${fn.toString()})(...${JSON.stringify(args)})`;
     const result = await this.client.send("Runtime.evaluate", {
       expression,
       returnByValue: true,
@@ -357,54 +392,75 @@ class QuietPage {
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
     return result.result.value;
   }
-  waitForNavigation(options: { timeout?: number; waitUntil?: string } = {}) {
+  waitForNavigation(options: { timeout?: number; waitUntil?: string } = {}, signal?: AbortSignal) {
     const event =
       options.waitUntil === "domcontentloaded"
         ? "Page.domContentEventFired"
         : "Page.loadEventFired";
     return new Promise<null>((resolve, reject) => {
-      const done = () => {
+      const cleanup = () => {
         clearTimeout(timer);
         this.client.off(event, done);
-        resolve(null);
+        this.client.off("disconnected", closed);
+        signal?.removeEventListener("abort", aborted);
       };
-      const timer = setTimeout(() => {
-        this.client.off(event, done);
-        reject(new Error("Navigation timeout"));
-      }, options.timeout ?? 30_000);
+      const finish = (error?: Error) => {
+        cleanup();
+        if (error) reject(error);
+        else resolve(null);
+      };
+      const done = () => finish();
+      const closed = () => finish(new Error("Quiet page closed during navigation"));
+      const aborted = () => finish(new Error("Navigation wait stopped"));
+      const timer = setTimeout(
+        () => finish(new Error("Navigation timeout")),
+        options.timeout ?? 30_000,
+      );
       this.client.once(event, done);
+      this.client.once("disconnected", closed);
+      signal?.addEventListener("abort", aborted, { once: true });
+      if (this.closed) closed();
+      else if (signal?.aborted) aborted();
     });
   }
   async goto(url: string, options: { timeout?: number; waitUntil?: string } = {}) {
-    const waiting = this.waitForNavigation(options);
+    const controller = new AbortController();
+    const waiting = this.waitForNavigation(options, controller.signal);
     waiting.catch(() => undefined);
-    const result = await this.client.send("Page.navigate", { url });
-    if (result.errorText) throw new Error(result.errorText);
-    if (!result.loaderId) return null;
-    return waiting;
+    try {
+      const result = await this.client.send("Page.navigate", { url });
+      if (result.errorText) throw new Error(result.errorText);
+      if (!result.loaderId) return null;
+      return await waiting;
+    } finally {
+      controller.abort();
+    }
   }
   async reload(options: { timeout?: number; waitUntil?: string } = {}) {
-    const waiting = this.waitForNavigation(options);
+    const controller = new AbortController();
+    const waiting = this.waitForNavigation(options, controller.signal);
     waiting.catch(() => undefined);
-    await this.client.send("Page.reload");
-    return waiting;
+    try {
+      await this.client.send("Page.reload");
+      return await waiting;
+    } finally {
+      controller.abort();
+    }
   }
   async close() {
     await this.targetValue.owner.connection.send("Target.closeTarget", {
-      targetId: this.targetValue._targetId,
+      targetId: this.targetValue.id,
     });
     this.closed = true;
   }
 }
 
-export class QuietBrowser extends EventEmitter {
+export class QuietBrowser extends EventEmitter implements BrowserControl {
+  readonly capabilities = QUIET_CAPABILITIES;
   private items = new Map<string, QuietTarget>();
-  private readonly context = {};
-  private constructor(
-    readonly connection: QuietConnection,
-    private metadata: Fields,
-  ) {
+  private constructor(readonly connection: QuietConnection) {
     super();
+    connection.on("targetcrashed", (targetId: string) => this.emit("targetcrashed", targetId));
     connection.root.on("Target.targetCreated", ({ targetInfo }) => this.update(targetInfo, true));
     connection.root.on("Target.targetInfoChanged", ({ targetInfo }) =>
       this.update(targetInfo, false),
@@ -418,17 +474,17 @@ export class QuietBrowser extends EventEmitter {
   }
   static async connect(endpoint: string, input: QuietInput) {
     const connection = await QuietConnection.connect(endpoint, input);
-    const browser = new QuietBrowser(connection, await connection.send("Browser.getVersion"));
-    await connection.send("Target.setDiscoverTargets", { discover: true });
-    const { targetInfos } = await connection.send("Target.getTargets");
-    for (const info of targetInfos) browser.update(info, false);
-    await browser.pages();
-    return browser;
-  }
-  // The legacy engine uses Puppeteer types for this small browser/page surface.
-  // No Puppeteer connection is created; unsupported action routes reject quiet mode.
-  asBrowser(): Browser {
-    return this as unknown as Browser;
+    try {
+      const browser = new QuietBrowser(connection);
+      await connection.send("Target.setDiscoverTargets", { discover: true });
+      const { targetInfos } = await connection.send("Target.getTargets");
+      for (const info of targetInfos) browser.update(info, false);
+      await browser.pages();
+      return browser;
+    } catch (error) {
+      connection.close();
+      throw error;
+    }
   }
   get connected() {
     return this.connection.connected;
@@ -450,31 +506,20 @@ export class QuietBrowser extends EventEmitter {
   targets() {
     return [...this.items.values()];
   }
-  defaultBrowserContext() {
-    return this.context;
+  async controlSession() {
+    // A browser-scoped session with independent lifetime, like the agent backend.
+    return this.connection.attachBrowser();
   }
-  target() {
-    return { createCDPSession: async () => this.connection.root };
-  }
-  async pages(): Promise<Page[]> {
+  async pages(): Promise<PageRead[]> {
     const pages = await Promise.all(this.targets().map((target) => target.page()));
-    return pages.filter(Boolean) as unknown as Page[];
+    return pages.filter((page): page is QuietPage => page !== null);
   }
-  async newPage(): Promise<Page> {
+  async newPage(): Promise<PageRead> {
     const { targetId } = await this.connection.send("Target.createTarget", { url: "about:blank" });
     for (let i = 0; i < 100 && !this.find(targetId); i++) await sleep(10);
     const page = await this.find(targetId)?.page();
     if (!page) throw new Error("Quiet tab did not open");
-    return page as unknown as Page;
-  }
-  version() {
-    return Promise.resolve(this.metadata.product as string);
-  }
-  userAgent() {
-    return Promise.resolve(this.metadata.userAgent as string);
-  }
-  process() {
-    return null;
+    return page;
   }
   async close() {
     await this.connection.send("Browser.close").catch(() => undefined);

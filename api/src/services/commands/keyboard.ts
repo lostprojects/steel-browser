@@ -1,4 +1,5 @@
-import type { CDPSession, Protocol } from "puppeteer-core";
+import type { Protocol } from "devtools-protocol";
+import type { ControlSession } from "../browser-control.js";
 import { _keyDefinitions, type KeyInput } from "puppeteer-core/internal/common/USKeyboardLayout.js";
 import { CommandError } from "./errors.js";
 import { sendOrDialog, type InputContext } from "./pointer.js";
@@ -119,50 +120,53 @@ export function strokeEvent(
 
 export function sendKey(
   context: InputContext,
-  session: CDPSession,
+  session: ControlSession,
   params: Protocol.Input.DispatchKeyEventRequest,
 ): Promise<boolean> {
   context.touch();
-  return send(context, session, "Input.dispatchKeyEvent", { ...params });
+  return send(context, session.input.key({ ...params }));
 }
 
 export async function press(
   context: InputContext,
-  session: CDPSession,
+  session: ControlSession,
   chord: string,
 ): Promise<boolean> {
   const { stroke, modifiers } = chordStroke(chord, context.modifiers());
   const common = strokeEvent(stroke, modifiers);
   const up: Protocol.Input.DispatchKeyEventRequest = { ...common, type: "keyUp" };
   context.touch();
-  const down = await send(context, session, "Input.dispatchKeyEvent", {
-    ...common,
-    ...(stroke.text === undefined
-      ? { type: "rawKeyDown" }
-      : { type: "keyDown", text: stroke.text, unmodifiedText: stroke.text }),
-  }).catch((error: unknown) => {
-    void session.send("Input.dispatchKeyEvent", up).catch(() => undefined);
+  const down = await send(
+    context,
+    session.input.key({
+      ...common,
+      ...(stroke.text === undefined
+        ? { type: "rawKeyDown" }
+        : { type: "keyDown", text: stroke.text, unmodifiedText: stroke.text }),
+    }),
+  ).catch((error: unknown) => {
+    void session.input.key(up).catch(() => undefined);
     throw error;
   });
   if (down) {
     context.holdKey({ session, keyUp: up });
     return true;
   }
-  return send(context, session, "Input.dispatchKeyEvent", { ...up });
+  return send(context, session.input.key({ ...up }));
 }
 
 export function insertText(
   context: InputContext,
-  session: CDPSession,
+  session: ControlSession,
   text: string,
 ): Promise<boolean> {
   context.touch();
-  return send(context, session, "Input.insertText", { text });
+  return send(context, session.input.text(text));
 }
 
 export async function typeText(
   context: InputContext,
-  session: CDPSession,
+  session: ControlSession,
   text: string,
   delay = 0,
 ): Promise<boolean> {
@@ -197,15 +201,10 @@ export async function typeText(
   return false;
 }
 
-function send(
-  context: InputContext,
-  session: CDPSession,
-  method: "Input.dispatchKeyEvent" | "Input.insertText",
-  params: Record<string, unknown>,
-): Promise<boolean> {
+function send(context: InputContext, action: Promise<unknown>): Promise<boolean> {
   return sendOrDialog(
     context,
-    session.send(method, params as never),
+    action,
     () =>
       new CommandError(
         "timeout",

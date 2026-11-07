@@ -1,5 +1,5 @@
 services:
-  steel:
+  toolstack:
     build: .
     platform: linux/amd64
     ports:
@@ -9,7 +9,7 @@ services:
     environment:
       DOMAIN: localhost:3000
       USE_SSL: "false"
-      STEEL_API_KEY: ${STEEL_API_KEY:?Set STEEL_API_KEY before starting Steel}
+      STEEL_API_KEY: ${STEEL_API_KEY:?Set STEEL_API_KEY before starting Toolstack}
       CHROME_HEADLESS: "false"
       ENABLE_COMMANDS_API: "true"
       CAPTURE_CONSOLE_EVENTS: "false"

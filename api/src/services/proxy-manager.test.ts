@@ -3,18 +3,19 @@ import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 const seen = vi.hoisted(() => ({ urls: [] as string[] }));
-vi.mock("axios", () => ({
-  default: {
-    get: vi.fn(async () => ({
-      data: {
+vi.mock("./http-fetch.js", () => ({
+  httpFetch: vi.fn(async () => ({
+    status: 200,
+    body: Buffer.from(
+      JSON.stringify({
         success: true,
         ip: "203.0.113.4",
         country_code: "US",
         region: "New York",
         timezone: { id: "America/New_York" },
-      },
-    })),
-  },
+      }),
+    ).toString("base64"),
+  })),
 }));
 vi.mock("../utils/proxy.js", () => ({
   ProxyServer: class {

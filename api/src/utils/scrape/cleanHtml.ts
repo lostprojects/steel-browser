@@ -1,4 +1,4 @@
-import { JSDOM } from "jsdom";
+import { load } from "cheerio";
 
 export const cleanHtml = (html: string): string => {
   const blacklistedElements = new Set([
@@ -29,38 +29,35 @@ export const cleanHtml = (html: string): string => {
     "onerror",
   ];
 
-  const dom = new JSDOM(html);
-  const document = dom.window.document;
+  const $ = load(html, { scriptingEnabled: false });
 
   // Remove blacklisted elements
   blacklistedElements.forEach((tag) => {
-    const elements = document.querySelectorAll(tag);
-    elements.forEach((element) => {
-      element.remove();
-    });
+    $(tag).remove();
   });
 
   // Remove blacklisted attributes
-  const elements = document.querySelectorAll("*");
-  elements.forEach((element) => {
+  const elements = $("*");
+  elements.each((_index, element) => {
     blacklistedAttributes.forEach((attrPattern) => {
       const regex = new RegExp(`^${attrPattern}$`);
-      Array.from(element.attributes).forEach((attr: any) => {
-        if (regex.test(attr.name)) {
-          element.removeAttribute(attr.name);
+      Object.keys($(element).attr() ?? {}).forEach((name) => {
+        if (regex.test(name)) {
+          $(element).removeAttr(name);
         }
       });
     });
   });
 
   // Remove empty elements
-  elements.forEach((element) => {
-    if (!element.hasAttributes() && element.textContent?.trim() === "") {
-      element.remove();
+  elements.each((_index, element) => {
+    if (
+      !Object.keys($(element).attr() ?? {}).length &&
+      $(element).prop("textContent")?.trim() === ""
+    ) {
+      $(element).remove();
     }
   });
 
-  const sourceCode = document.documentElement.outerHTML;
-
-  return sourceCode;
+  return $("html").toString();
 };

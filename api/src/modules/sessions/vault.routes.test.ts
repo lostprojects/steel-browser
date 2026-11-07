@@ -13,7 +13,8 @@ vi.mock("../../utils/api-key.js", () => ({
   }),
 }));
 vi.mock("../../services/vault.js", () => ({ vault: { list: mocks.list }, protect: vi.fn() }));
-vi.mock("../../services/login.js", () => ({
+vi.mock("../../services/login.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../services/login.js")>()),
   LoginService: class {
     startDailyChecks() {
       return () => {};

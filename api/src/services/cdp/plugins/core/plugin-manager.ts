@@ -1,232 +1,101 @@
-import { Browser, Page } from "puppeteer-core";
-import { BrowserSession } from "../../../browser-session.js";
-import { BasePlugin, ShutdownReason, TargetSessionContext } from "./base-plugin.js";
-import { FastifyBaseLogger } from "fastify";
-import { BrowserLauncherOptions } from "../../../../types/browser.js";
+import type { Browser, Page } from "puppeteer-core";
+import type { BrowserSession } from "../../../browser-session.js";
+import type { BasePlugin, ShutdownReason, TargetSessionContext } from "./base-plugin.js";
+import type { FastifyBaseLogger } from "fastify";
+import type { BrowserLauncherOptions } from "../../../../types/browser.js";
 
 export class PluginManager {
-  private plugins: Map<string, BasePlugin>;
-  private service: BrowserSession;
-  private logger: FastifyBaseLogger;
+  private readonly plugins = new Map<string, BasePlugin>();
 
-  constructor(service: BrowserSession, logger: FastifyBaseLogger) {
-    this.plugins = new Map();
-    this.service = service;
-    this.logger = logger;
-  }
+  constructor(
+    private readonly service: BrowserSession,
+    private readonly logger: FastifyBaseLogger,
+  ) {}
 
-  /**
-   * Register a plugin with the plugin manager
-   */
-  public register(plugin: BasePlugin): void {
-    if (this.plugins.has(plugin.name)) {
+  register(plugin: BasePlugin): void {
+    if (this.plugins.has(plugin.name))
       this.logger.warn(`Plugin with name ${plugin.name} is already registered. Overwriting.`);
-    }
-
     plugin.setService(this.service);
     this.plugins.set(plugin.name, plugin);
     this.logger.info(`Registered plugin: ${plugin.name}`);
   }
 
-  /**
-   * Unregister a plugin from the plugin manager
-   */
-  public unregister(pluginName: string): boolean {
-    const result = this.plugins.delete(pluginName);
-    if (result) {
-      this.logger.info(`Unregistered plugin: ${pluginName}`);
-    } else {
-      this.logger.warn(`Plugin with name ${pluginName} was not registered`);
-    }
-    return result;
+  unregister(name: string): boolean {
+    const removed = this.plugins.delete(name);
+    this.logger.info({ plugin: name, removed }, "Plugin unregister");
+    return removed;
   }
 
-  /**
-   * Get a plugin by name
-   */
-  public getPlugin<T extends BasePlugin>(pluginName: string): T | undefined {
-    return this.plugins.get(pluginName) as T | undefined;
+  getPlugin<T extends BasePlugin>(name: string): T | undefined {
+    return this.plugins.get(name) as T | undefined;
   }
 
-  /**
-   * Notify all plugins when a session is starting (before launch/reuse)
-   */
-  public async onSessionStart(sessionConfig: BrowserLauncherOptions): Promise<void> {
-    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
-      try {
-        await Promise.resolve(plugin.onSessionStart(sessionConfig));
-      } catch (error) {
-        this.logger.error(`Error in plugin ${plugin.name}.onSessionStart: ${error}`);
-      }
-    });
-    await Promise.all(promises);
+  // Each hook receives the same plugin snapshot. A failing plugin cannot prevent
+  // another plugin's hook from running, for either synchronous or async hooks.
+  private async notify(hook: string, invoke: (plugin: BasePlugin) => unknown): Promise<void> {
+    await Promise.all(
+      [...this.plugins.values()].map(async (plugin) => {
+        try {
+          await invoke(plugin);
+        } catch (error) {
+          this.logger.error(
+            { err: error, plugin: plugin.name, hook },
+            "Browser plugin hook failed",
+          );
+        }
+      }),
+    );
   }
 
-  /**
-   * Notify all plugins before shutdown begins for the current session
-   */
-  public async onBeforeSessionEnd(sessionConfig: BrowserLauncherOptions): Promise<void> {
-    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
-      try {
-        await Promise.resolve(plugin.onBeforeSessionEnd(sessionConfig));
-      } catch (error) {
-        this.logger.error(`Error in plugin ${plugin.name}.onBeforeSessionEnd: ${error}`);
-      }
-    });
-    await Promise.all(promises);
+  onSessionStart(config: BrowserLauncherOptions): Promise<void> {
+    return this.notify("onSessionStart", (plugin) => plugin.onSessionStart(config));
   }
 
-  /**
-   * Notify all plugins after all teardown and session-end work is complete
-   */
-  public async onAfterSessionEnd(sessionConfig: BrowserLauncherOptions): Promise<void> {
-    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
-      try {
-        await Promise.resolve(plugin.onAfterSessionEnd(sessionConfig));
-      } catch (error) {
-        this.logger.error(`Error in plugin ${plugin.name}.onAfterSessionEnd: ${error}`);
-      }
-    });
-    await Promise.all(promises);
+  onBeforeSessionEnd(config: BrowserLauncherOptions): Promise<void> {
+    return this.notify("onBeforeSessionEnd", (plugin) => plugin.onBeforeSessionEnd(config));
   }
 
-  /**
-   * Notify all plugins about a browser launch
-   */
-  public async onBrowserLaunch(browser: Browser): Promise<void> {
-    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
-      try {
-        await plugin.onBrowserLaunch(browser);
-      } catch (error) {
-        this.logger.error(`Error in plugin ${plugin.name}.onBrowserLaunch: ${error}`);
-      }
-    });
-    await Promise.all(promises);
+  onAfterSessionEnd(config: BrowserLauncherOptions): Promise<void> {
+    return this.notify("onAfterSessionEnd", (plugin) => plugin.onAfterSessionEnd(config));
   }
 
-  public async onBrowserReady(context: BrowserLauncherOptions): Promise<void> {
-    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
-      try {
-        // handle both async and sync hooks
-        await Promise.resolve(plugin.onBrowserReady(context));
-      } catch (error) {
-        this.logger.error(`Error in plugin ${plugin.name}.onBrowserReady: ${error}`);
-      }
-    });
-
-    await Promise.all(promises);
+  onBrowserLaunch(browser: Browser): Promise<void> {
+    return this.notify("onBrowserLaunch", (plugin) => plugin.onBrowserLaunch(browser));
   }
 
-  /**
-   * Notify all plugins about a page creation
-   */
-  public async onPageCreated(page: Page): Promise<void> {
-    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
-      try {
-        await plugin.onPageCreated(page);
-      } catch (error) {
-        this.logger.error(`Error in plugin ${plugin.name}.onPageCreated: ${error}`);
-      }
-    });
-    await Promise.all(promises);
+  onBrowserReady(config: BrowserLauncherOptions): Promise<void> {
+    return this.notify("onBrowserReady", (plugin) => plugin.onBrowserReady(config));
   }
 
-  /**
-   * Notify plugins after instrumentation has claimed a target session but before
-   * Puppeteer resumes a paused dedicated worker.
-   */
-  public async onTargetSession(context: TargetSessionContext): Promise<void> {
-    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
-      try {
-        await plugin.onTargetSession(context);
-      } catch (error) {
-        this.logger.error(`Error in plugin ${plugin.name}.onTargetSession: ${error}`);
-      }
-    });
-    await Promise.all(promises);
+  onPageCreated(page: Page): Promise<void> {
+    return this.notify("onPageCreated", (plugin) => plugin.onPageCreated(page));
   }
 
-  /**
-   * Notify all plugins before browser closes
-   */
-  public async onBrowserClose(browser: Browser): Promise<void> {
-    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
-      try {
-        await plugin.onBrowserClose(browser);
-      } catch (error) {
-        this.logger.error(`Error in plugin ${plugin.name}.onBrowserClose: ${error}`);
-      }
-    });
-    await Promise.all(promises);
+  onTargetSession(context: TargetSessionContext): Promise<void> {
+    return this.notify("onTargetSession", (plugin) => plugin.onTargetSession(context));
   }
 
-  /**
-   * Notify all plugins before a page navigates
-   */
-  public async onPageNavigate(page: Page): Promise<void> {
-    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
-      try {
-        await plugin.onPageNavigate(page);
-      } catch (error) {
-        this.logger.error(`Error in plugin ${plugin.name}.onPageNavigate: ${error}`);
-      }
-    });
-    await Promise.all(promises);
+  onBrowserClose(browser: Browser): Promise<void> {
+    return this.notify("onBrowserClose", (plugin) => plugin.onBrowserClose(browser));
   }
 
-  /**
-   * Notify all plugins before a page unloads
-   */
-  public async onPageUnload(page: Page): Promise<void> {
-    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
-      try {
-        await plugin.onPageUnload(page);
-      } catch (error) {
-        this.logger.error(`Error in plugin ${plugin.name}.onPageUnload: ${error}`);
-      }
-    });
-    await Promise.all(promises);
+  onPageNavigate(page: Page): Promise<void> {
+    return this.notify("onPageNavigate", (plugin) => plugin.onPageNavigate(page));
   }
 
-  /**
-   * Notify all plugins before a page closes
-   */
-  public async onBeforePageClose(page: Page): Promise<void> {
-    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
-      try {
-        await plugin.onBeforePageClose(page);
-      } catch (error) {
-        this.logger.error(`Error in plugin ${plugin.name}.onBeforePageClose: ${error}`);
-      }
-    });
-    await Promise.all(promises);
+  onPageUnload(page: Page): Promise<void> {
+    return this.notify("onPageUnload", (plugin) => plugin.onPageUnload(page));
   }
 
-  /**
-   * Notify all plugins about shutdown
-   */
-  public async onShutdown(reason: ShutdownReason): Promise<void> {
-    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
-      try {
-        await plugin.onShutdown(reason);
-      } catch (error) {
-        this.logger.error(`Error in plugin ${plugin.name}.onShutdown: ${error}`);
-      }
-    });
-    await Promise.all(promises);
+  onBeforePageClose(page: Page): Promise<void> {
+    return this.notify("onBeforePageClose", (plugin) => plugin.onBeforePageClose(page));
   }
 
-  /**
-   * Notify all plugins when a session has ended
-   */
-  public async onSessionEnd(sessionConfig: BrowserLauncherOptions): Promise<void> {
-    const promises = Array.from(this.plugins.values()).map(async (plugin) => {
-      try {
-        await plugin.onSessionEnd(sessionConfig);
-      } catch (error) {
-        this.logger.error(`Error in plugin ${plugin.name}.onSessionEnd: ${error}`);
-      }
-    });
-    await Promise.all(promises);
+  onShutdown(reason: ShutdownReason): Promise<void> {
+    return this.notify("onShutdown", (plugin) => plugin.onShutdown(reason));
+  }
+
+  onSessionEnd(config: BrowserLauncherOptions): Promise<void> {
+    return this.notify("onSessionEnd", (plugin) => plugin.onSessionEnd(config));
   }
 }

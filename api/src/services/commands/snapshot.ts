@@ -1,4 +1,5 @@
-import type { CDPSession, Protocol } from "puppeteer-core";
+import type { Protocol } from "devtools-protocol";
+import type { ControlSession } from "../browser-control.js";
 import {
   axString,
   holdsValue,
@@ -10,6 +11,7 @@ import {
 import type { ItemSignature, RefEntry, RefTable } from "./refs.js";
 import { within } from "./results.js";
 import { hideSecrets, SECRET_MASK, secretMask } from "./secrets.js";
+import type { TextRange } from "../../utils/text.js";
 
 type DomCapture = Protocol.DOMSnapshot.CaptureSnapshotResponse;
 type DomDocument = Protocol.DOMSnapshot.DocumentSnapshot;
@@ -84,7 +86,7 @@ const MAX_FRAME_DEPTH = 4;
 
 const SILENT_FRAME = "(did not answer)";
 
-export interface SnapshotOptions {
+export interface SnapshotOptions extends TextRange {
   interactive?: boolean;
   compact?: boolean;
   depth?: number;
@@ -93,7 +95,7 @@ export interface SnapshotOptions {
 export interface FrameHandle {
   tabId: string;
   frameId: string;
-  session: CDPSession;
+  session: ControlSession;
   sessionKey: string;
   root: boolean;
 }
@@ -204,8 +206,8 @@ export async function refsFor(
         index === undefined
           ? null
           : valueInside(index)
-          ? null
-          : normalizeName(axString(axNodes[index].name)),
+            ? null
+            : normalizeName(axString(axNodes[index].name)),
       item:
         index === undefined
           ? null
@@ -364,15 +366,18 @@ function capture(
 ): Promise<DomCapture | null> {
   let pending = captures.get(frame.sessionKey);
   if (!pending) {
-    pending = frame.session
-      .send("DOMSnapshot.captureSnapshot", { computedStyles: STYLES })
-      .catch(() => null);
+    pending =
+      frame.session.domSnapshot?.({ computedStyles: STYLES }).catch(() => null) ??
+      Promise.resolve(null);
     captures.set(frame.sessionKey, pending);
   }
   return pending;
 }
 
-async function childFrameId(session: CDPSession, backendNodeId: number): Promise<string | null> {
+async function childFrameId(
+  session: ControlSession,
+  backendNodeId: number,
+): Promise<string | null> {
   try {
     const { node } = await session.send("DOM.describeNode", { backendNodeId, depth: 1 });
     return node.contentDocument?.frameId ?? node.frameId ?? null;
@@ -690,10 +695,9 @@ export interface SecretScan {
   within(backendNodeId: number): string[];
 }
 
-export async function scanSecrets(session: CDPSession): Promise<SecretScan> {
-  const capture = await session
-    .send("DOMSnapshot.captureSnapshot", { computedStyles: STYLES })
-    .catch(() => null);
+export async function scanSecrets(session: ControlSession): Promise<SecretScan> {
+  const capture =
+    (await session.domSnapshot?.({ computedStyles: STYLES }).catch(() => null)) ?? null;
   const views = (capture?.documents ?? []).map(
     (document) => new DomView(document, capture!.strings),
   );
@@ -726,7 +730,7 @@ export async function scanSecrets(session: CDPSession): Promise<SecretScan> {
   };
 }
 
-export async function secretsIn(session: CDPSession): Promise<string[]> {
+export async function secretsIn(session: ControlSession): Promise<string[]> {
   return (await scanSecrets(session)).values;
 }
 
@@ -923,7 +927,7 @@ class DomView {
 
   box(node: number): number[] | null {
     const layout = this.layoutOf[node];
-    return layout < 0 ? null : this.document.layout.bounds[layout] ?? null;
+    return layout < 0 ? null : (this.document.layout.bounds[layout] ?? null);
   }
 
   textWithin(node: number, limit: number): string {
@@ -991,7 +995,7 @@ class DomView {
   }
 
   private string(index: number | undefined): string {
-    return index === undefined || index < 0 ? "" : this.strings[index] ?? "";
+    return index === undefined || index < 0 ? "" : (this.strings[index] ?? "");
   }
 }
 
@@ -1049,7 +1053,7 @@ function lineOf(
   value: string | undefined,
 ): string {
   const parts = [`${"  ".repeat(indent)}- ${node.role}`];
-  const display = node.name || (options.interactive ? node.affordance?.text ?? "" : "");
+  const display = node.name || (options.interactive ? (node.affordance?.text ?? "") : "");
   if (display) {
     parts.push(JSON.stringify(normalizeName(display)));
   }

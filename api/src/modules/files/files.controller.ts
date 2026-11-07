@@ -1,5 +1,4 @@
 import { MultipartFile } from "@fastify/multipart";
-import archiver from "archiver";
 import { randomUUID } from "crypto";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import * as fs from "fs";
@@ -10,13 +9,16 @@ import { tmpdir } from "os";
 import path from "path";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
-import { v4 as uuidv4 } from "uuid";
 import { FileService } from "../../services/file.service.js";
 import { attachmentContentDisposition } from "../../utils/content-disposition.js";
 import { getErrors } from "../../utils/errors.js";
 
 export class FilesController {
-  constructor(private fileService: FileService) {}
+  constructor(
+    private fileService: FileService,
+    private nameFor: (file: string) => string | undefined = () => undefined,
+    private readyFor: (file: string) => boolean = () => true,
+  ) {}
 
   private validatePath(filePath: string): boolean {
     if (path.isAbsolute(filePath)) {
@@ -65,7 +67,7 @@ export class FilesController {
             const file = part as MultipartFile;
             fileProvided = true;
 
-            tempFilePath = path.join(tmpdir(), `upload_${uuidv4()}`);
+            tempFilePath = path.join(tmpdir(), `upload_${randomUUID()}`);
 
             const writeStream = fs.createWriteStream(tempFilePath);
             await pipeline(file.file, writeStream);
@@ -146,7 +148,7 @@ export class FilesController {
       return reply.send({
         path: saveFileResult.path,
         size: saveFileResult.size,
-        lastModified: saveFileResult.lastModified,
+        lastModified: saveFileResult.lastModified.toISOString(),
       });
     } catch (e: unknown) {
       if (tempFilePath) {
@@ -247,11 +249,16 @@ export class FilesController {
       const files = await this.fileService.listFiles();
 
       return reply.send({
-        data: files.map((file) => ({
-          path: path.relative(this.fileService.getBaseFilesPath(), file.path),
-          size: file.size,
-          lastModified: file.lastModified,
-        })),
+        data: files
+          .filter((file) =>
+            this.readyFor(path.relative(this.fileService.getBaseFilesPath(), file.path)),
+          )
+          .map((file) => ({
+            path: path.relative(this.fileService.getBaseFilesPath(), file.path),
+            name: this.nameFor(path.relative(this.fileService.getBaseFilesPath(), file.path)),
+            size: file.size,
+            lastModified: file.lastModified.toISOString(),
+          })),
       });
     } catch (e: unknown) {
       const error = getErrors(e);
@@ -294,44 +301,25 @@ export class FilesController {
     request: FastifyRequest<{ Params: { sessionId: string } }>,
     reply: FastifyReply,
   ) {
-    const prebuiltArchivePath = await this.fileService.getPrebuiltArchivePath();
-
     try {
-      const stats = await fs.promises.stat(prebuiltArchivePath);
-      if (stats.isFile()) {
-        server.log.info(`Serving prebuilt archive: ${prebuiltArchivePath}`);
-        const stream = fs.createReadStream(prebuiltArchivePath);
-
+      const archivePath = await this.fileService.getArchivePath();
+      // Open before reading metadata so a concurrent rebuild cannot change the
+      // bytes between stat and streaming the response.
+      const file = await fs.promises.open(archivePath, "r");
+      try {
+        const stats = await file.stat();
         reply.header("Content-Type", "application/zip");
-        reply.header("Content-Disposition", `attachment; filename="files.zip"`);
+        reply.header("Content-Disposition", 'attachment; filename="files.zip"');
         reply.header("Content-Length", stats.size);
         reply.header("Last-Modified", stats.mtime.toUTCString());
-        return reply.send(stream);
-      } else {
-        server.log.warn(`Prebuilt archive path exists but is not a file: ${prebuiltArchivePath}`);
+        return reply.send(file.createReadStream());
+      } catch (error) {
+        await file.close();
+        throw error;
       }
-
-      server.log.info("Sending empty archive.");
-      reply.header("Content-Type", "application/zip");
-      reply.header("Content-Disposition", `attachment; filename="files-archive-empty.zip"`);
-      const emptyArchive = archiver("zip", { zlib: { level: 9 } });
-
-      emptyArchive.pipe(reply.raw);
-
-      await emptyArchive.finalize();
-      return;
-    } catch (err: any) {
-      server.log.error({ err }, "Error during handleFileArchive");
-      if (!reply.sent) {
-        try {
-          reply.code(500).send({ message: "Failed to process archive request" });
-        } catch (sendError: unknown) {
-          server.log.error(
-            { err: sendError },
-            "Error sending 500 response after archive handling error",
-          );
-        }
-      }
+    } catch (error) {
+      server.log.error({ err: error }, "Archive download failed");
+      if (!reply.sent) return reply.code(500).send({ message: "Failed to create archive" });
     }
   }
 }

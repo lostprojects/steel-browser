@@ -8,6 +8,41 @@
   display: none !important;
 }
 
+.downloads-panel {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--sand-5);
+  max-height: 260px;
+  overflow: auto;
+  flex-shrink: 0;
+}
+.downloads-panel h2 {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+.downloads-panel p {
+  color: var(--sand-10);
+}
+.downloads-panel ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.downloads-panel li {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 0;
+}
+.download-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.download-size {
+  color: var(--sand-10);
+  white-space: nowrap;
+}
+
 html,
 body,
 #root {
@@ -76,6 +111,14 @@ p {
   flex-shrink: 0;
   height: 64px;
   padding: 14px 18px 10px 24px;
+}
+
+.rail-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 .rail-logo {
@@ -273,18 +316,6 @@ p {
 .crumb-parent {
   flex-shrink: 0;
   color: var(--sand-10);
-}
-
-.crumb-sep {
-  flex-shrink: 0;
-  color: var(--sand-8);
-}
-
-.crumb-current {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .crumb-copy {
@@ -704,28 +735,6 @@ p {
   padding: 0 12px 12px;
 }
 
-.stage[data-devtools="open"] {
-  gap: 0;
-}
-
-.stage[data-devtools="open"] .stage-details {
-  display: none;
-}
-
-.dock {
-  display: flex;
-  flex: 0 0 45%;
-  min-height: 200px;
-  border-top: 0.5px solid var(--hairline);
-}
-
-.dock-frame {
-  display: block;
-  flex: 1;
-  width: 100%;
-  border: 0;
-}
-
 .details-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -1026,61 +1035,6 @@ p {
   color: var(--sand-10);
 }
 
-.switch-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px;
-  border-radius: var(--radius-button);
-  background: var(--raised-bg);
-  box-shadow: var(--shadow-button);
-  cursor: pointer;
-}
-
-.switch-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 1px;
-}
-
-.switch {
-  position: relative;
-  flex-shrink: 0;
-  width: 32px;
-  height: 18px;
-  margin: 0;
-  border-radius: 999px;
-  background: var(--sand-6);
-  cursor: pointer;
-  appearance: none;
-  transition: background-color 0.15s var(--ease-out);
-}
-
-.switch::before {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--switch-knob);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
-  transition:
-    translate 0.15s var(--ease-out),
-    background-color 0.15s var(--ease-out);
-}
-
-.switch:checked {
-  background: var(--sand-12);
-}
-
-.switch:checked::before {
-  background: var(--switch-knob-on);
-  translate: 14px 0;
-}
-
 .notice {
   display: grid;
   flex: 1;
@@ -1141,9 +1095,7 @@ p {
 
 @media (max-width: 900px) {
   .shell[data-rail] .rail,
-  .rail-toggle,
-  .devtools-toggle,
-  .dock {
+  .rail-toggle {
     display: none;
   }
 
@@ -1162,15 +1114,10 @@ p {
     border-right: 0;
   }
 
-  .stage,
-  .stage[data-devtools="open"] {
+  .stage {
     flex: 1.4;
     gap: 24px;
     overflow-y: auto;
-  }
-
-  .stage[data-devtools="open"] .stage-details {
-    display: block;
   }
 }
 
@@ -1181,4 +1128,16 @@ p {
     animation: none !important;
     transition: none !important;
   }
+}
+
+.session-picker {
+  width: min(36vw, 25rem);
+  min-width: 10rem;
+}
+
+.rail-organization {
+  padding: 0 24px 14px;
+  font-size: 12px;
+  color: var(--sand-11);
+  overflow-wrap: anywhere;
 }

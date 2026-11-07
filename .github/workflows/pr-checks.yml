@@ -29,11 +29,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Get list of changed files in this PR
-          CHANGED_FILES=$(gh pr view ${{ github.event.pull_request.number }} --json files --jq '.files[].path' | tr '\n' ' ')
+          CHANGED_FILES=$(gh pr view ${{ github.event.pull_request.number }} --repo "$GITHUB_REPOSITORY" --json files --jq '.files[].path')
           echo "Changed files: $CHANGED_FILES"
 
           # Check for potential breaking changes in specific files
-          if echo "$CHANGED_FILES" | grep -E "(api/src/types/|api/src/steel-browser-plugin.ts|api/src/services/cdp/plugins/core/)"; then
+          if echo "$CHANGED_FILES" | grep -E "(api/src/types/|api/src/toolstack-plugin.ts|api/src/services/cdp/plugins/core/)"; then
             echo "::warning::Potential breaking changes detected in core APIs"
           fi
 

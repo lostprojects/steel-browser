@@ -1,12 +1,11 @@
 import { FastifyReply } from "fastify";
 import { BrowserContext, Page, HTTPResponse } from "puppeteer-core";
 import { BrowserSession } from "../../services/browser-session.js";
-import { ProxyServer } from "../../utils/proxy.js";
 interface ActionProxySource {
   proxyFactory(url: string): IProxyServer | Promise<IProxyServer>;
   proxyServer?: IProxyServer;
 }
-import { ScrapeFormat } from "../../types/index.js";
+import { ScrapeFormat } from "../../types/enums.js";
 import { getErrors } from "../../utils/errors.js";
 import { updateLog } from "../../utils/logging.js";
 import { IProxyServer } from "../../utils/proxy.js";

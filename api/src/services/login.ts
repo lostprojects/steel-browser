@@ -12,6 +12,7 @@ import type { Agent } from "./proxy-manager.js";
 import { vault, totp, protect } from "./vault.js";
 import { QuietInput } from "./quiet-input.js";
 import { clearChallenge } from "./challenge-service.js";
+import type { Operation } from "./operations.js";
 import { withSessionLogin } from "./session-access.js";
 
 // `signedIn` marks a member page whose sign-out control sits in an unopened
@@ -71,7 +72,6 @@ export function identityVault(identity?: string) {
     (n) => identity === n || identity?.startsWith(n + "-"),
   );
 }
-const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const codeInputs =
   'input[autocomplete="one-time-code"],input[name*="code" i],input[id*="code" i],input[name*="otp" i],input[id*="otp" i]';
 type LoginRecord = {
@@ -111,7 +111,6 @@ type LoginResult = {
 };
 export class LoginService {
   private records: Record<string, LoginRecord> = {};
-  private active = new Map<string, Promise<unknown>>();
   private pendingCodes = new Map<string, PendingCode>();
   private writes: Promise<unknown> = Promise.resolve();
   private ready: Promise<void>;
@@ -142,10 +141,11 @@ export class LoginService {
     await work;
   }
   startDailyChecks(pool: SessionPool) {
-    let running = false;
-    const timer = setInterval(async () => {
-      if (running || pool.draining) return;
-      running = true;
+    // Team workers log in only for their user's explicit request. The legacy
+    // single-user deployment retains its existing observation schedule.
+    if (process.env.STEEL_ROLE === "worker") return () => {};
+    let inFlight: Promise<void> | undefined;
+    const check = async () => {
       try {
         await this.ready;
         const file = path.join(this.root, "login-daily.json");
@@ -226,12 +226,19 @@ export class LoginService {
         }
       } catch {
         /* The next minute retries metadata I/O; attempted sites remain recorded. */
-      } finally {
-        running = false;
       }
+    };
+    const timer = setInterval(() => {
+      if (inFlight || pool.draining) return;
+      inFlight = check().finally(() => {
+        inFlight = undefined;
+      });
     }, 60000);
     timer.unref();
-    return () => clearInterval(timer);
+    return async () => {
+      clearInterval(timer);
+      await inFlight;
+    };
   }
   async history(from?: string, to?: string, limit = 1000) {
     const rows: Record<string, unknown>[] = [];
@@ -256,9 +263,13 @@ export class LoginService {
     }
     return { checks: rows, limit, order: "oldest_first" };
   }
-  async metadata() {
+  async metadata(identity?: string) {
     await this.ready;
-    return this.records;
+    return identity === undefined
+      ? this.records
+      : Object.fromEntries(
+          Object.entries(this.records).filter(([key]) => key.startsWith(identity + "/")),
+        );
   }
   // Remove an identity from the schedule; its browser profile is untouched.
   async forget(identity: string) {
@@ -344,7 +355,7 @@ export class LoginService {
     const allowed = await vault.list(agent, loginSites[pending.request.site].vault);
     if (!allowed.length)
       throw Object.assign(new Error("Vault entry unavailable for this agent"), { statusCode: 403 });
-    const page = await session.getPrimaryPage();
+    const page = await session.getPrimaryReadPage();
     const waiting =
       page.url() === pending.url &&
       (await page.evaluate(
@@ -392,36 +403,41 @@ export class LoginService {
       });
     if (session.options.mode !== "quiet" || !session.display.name)
       throw Object.assign(new Error("Vault logins require quiet mode"), { statusCode: 409 });
-    if (this.active.has(session.id))
+    if (session.loginBusy)
       throw Object.assign(new Error("Login already running"), { statusCode: 409 });
     // A submission consumes its request before any input. A fresh login replaces it.
     this.pendingCodes.delete(session.id);
     for (const [id, pending] of this.pendingCodes)
       if (Date.parse(pending.request.expires) <= Date.now()) this.pendingCodes.delete(id);
-    const job = withSessionLogin(session, () =>
+    return withSessionLogin(session, (operation) =>
       vault.use(spec.vault, agent, (fields) =>
-        this.run(session, site, fields, agent, current, resume),
+        this.run(session, site, fields, agent, operation, current, resume),
       ),
     );
-    this.active.set(session.id, job);
-    try {
-      return await job;
-    } finally {
-      this.active.delete(session.id);
-    }
   }
+
   private async run(
     session: BrowserSession,
     site: LoginSite,
     fields: Readonly<Record<string, string>>,
     agent: Agent,
+    operation: Operation<any>,
     current: boolean,
     resume?: PendingCode & { code: string },
   ): Promise<LoginResult> {
+    operation.check();
+    const pause = (ms: number) =>
+      operation.wait(() => new Promise<void>((resolve) => setTimeout(resolve, ms)));
     const spec = loginSites[site];
-    const page = await session.getPrimaryPage();
+    const page = await session.getPrimaryReadPage();
     const { width, height } = session.getDimensions();
-    const input = new QuietInput(session.display.name!, width, height);
+    const native = new QuietInput(session.display.name!, width, height);
+    const input = {
+      mouse: (...args: Parameters<QuietInput["mouse"]>) =>
+        operation.wait(() => native.mouse(...args)),
+      key: (...args: Parameters<QuietInput["key"]>) => operation.wait(() => native.key(...args)),
+      text: (...args: Parameters<QuietInput["text"]>) => operation.wait(() => native.text(...args)),
+    };
     const back = resume?.back ?? (current ? page.url() : undefined);
     const started = Date.now();
     const signedIn = "signedIn" in spec ? spec.signedIn : "";
@@ -471,15 +487,15 @@ export class LoginService {
             check: /text message|sms|phone number.*code|code.*phone number/i.test(text)
               ? "sms"
               : /authenticator|authentication app/i.test(text)
-              ? "totp"
-              : /check your email|email.*(?:code|link)|(?:code|link).*email/i.test(text) &&
-                /verify|verification|device|sent|check/i.test(text)
-              ? "email"
-              : /verify (?:it.s|your)|confirm it.s you|google prompt|check your.*(?:phone|device)|security key|passkey/i.test(
-                  text,
-                )
-              ? "device"
-              : "none",
+                ? "totp"
+                : /check your email|email.*(?:code|link)|(?:code|link).*email/i.test(text) &&
+                    /verify|verification|device|sent|check/i.test(text)
+                  ? "email"
+                  : /verify (?:it.s|your)|confirm it.s you|google prompt|check your.*(?:phone|device)|security key|passkey/i.test(
+                        text,
+                      )
+                    ? "device"
+                    : "none",
             rejected:
               /incorrect password|invalid password|password is incorrect|invalid username|couldn.t sign you in|wrong password/i.test(
                 lower,
@@ -527,11 +543,13 @@ export class LoginService {
         { selector, label },
       );
     const click = async (selector: string, label?: string) => {
+      operation.check();
       // Native X11 input goes to the visible tab. A restored profile can have
       // another tab active even when CDP reads the primary page successfully.
-      await page.bringToFront();
+      await page.client.send("Page.bringToFront");
       const p = await point(selector, label);
       if (!p) return false;
+      operation.markActed();
       await input.mouse({ type: "mousePressed", x: p.x, y: p.y, button: "left" }, p.offset);
       await input.mouse({ type: "mouseReleased", x: p.x, y: p.y, button: "left" }, p.offset);
       return true;
@@ -572,6 +590,7 @@ export class LoginService {
       return false;
     };
     const go = async (url: string) => {
+      operation.markActed();
       session.lastNavigation = Date.now();
       try {
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
@@ -609,9 +628,9 @@ export class LoginService {
     // completes without input. Fold3's SSO popup would otherwise hide that page.
     if (!resume && (site === "newspapers" || site === "fold3")) {
       await go("https://www.ancestry.com/");
-      let pre = await this.run(session, "ancestry", fields, agent, true);
+      let pre = await this.run(session, "ancestry", fields, agent, operation, true);
       if (pre.status === "unchecked")
-        pre = await this.run(session, "ancestry", fields, agent, false);
+        pre = await this.run(session, "ancestry", fields, agent, operation, false);
       if (pre.status !== "ok") return pre;
     }
     if (resume) {
@@ -638,6 +657,7 @@ export class LoginService {
     let formChallenges = 0;
     const deadline = Date.now() + 120000;
     for (let step = 0; step < 60 && Date.now() < deadline; step++) {
+      operation.check();
       session.touch();
       let s;
       try {

@@ -1,10 +1,11 @@
-import type { Page } from "puppeteer-core";
+import type { PageRead } from "../../browser-control.js";
 import { describeDialog, type Dialog } from "../dialogs.js";
 import { CommandError } from "../errors.js";
 import type { InputContext, Watch } from "../pointer.js";
 import { isFinal } from "../records.js";
 import { parseRef } from "../refs.js";
 import { navigationError } from "../results.js";
+import { scrub } from "../../vault.js";
 import {
   KEPT_SNAPSHOTS,
   STEP_MS,
@@ -117,6 +118,7 @@ export function touch(ctx: Context) {
   if (ending(ctx)) {
     throw stopped(ctx);
   }
+  ctx.job.operation?.markActed();
   ctx.job.touched = true;
 }
 
@@ -220,7 +222,7 @@ export async function load(ctx: Context, tab: Tab, loading: Promise<unknown>) {
   }
 }
 
-export async function goto(ctx: Context, tab: Tab, url: string): Promise<Page> {
+export async function goto(ctx: Context, tab: Tab, url: string): Promise<PageRead> {
   const page = await tab.navigable();
   touch(ctx);
   try {
@@ -240,7 +242,7 @@ export async function capture(
   tab: Tab,
   options: SnapshotOptions,
   current: () => boolean,
-  readMs: number,
+  limits: Pick<EngineLimits, "frameReadMs" | "maxBodyBytes">,
 ) {
   const session = await tab.session();
   const { frameTree } = await session.send("Page.getFrameTree");
@@ -251,32 +253,48 @@ export async function capture(
     sessionKey: session.id(),
     root: true,
   };
-  const snapshot = await takeSnapshot(
-    main,
-    {
-      child: (parent, frameId) => {
-        const child = tab.frameSession(frameId);
-        return child
-          ? { tabId: tab.id, frameId, session: child, sessionKey: child.id(), root: true }
-          : { ...parent, frameId, root: false };
+  const snapshot = scrub(
+    await takeSnapshot(
+      main,
+      {
+        child: (parent, frameId) => {
+          const child = tab.frameSession(frameId);
+          return child
+            ? { tabId: tab.id, frameId, session: child, sessionKey: child.id(), root: true }
+            : { ...parent, frameId, root: false };
+        },
+        readMs: limits.frameReadMs,
       },
-      readMs,
-    },
-    active.refs,
-    options,
-    current,
+      active.refs,
+      options,
+      current,
+    ),
   );
   const snapshotId = `s-${++active.snapshots}`;
   if (!current()) {
     return { snapshotId, snapshot };
   }
+  if (
+    (options.offset !== undefined || options.limit !== undefined) &&
+    Buffer.byteLength(snapshot) > limits.maxBodyBytes
+  )
+    throw new CommandError(
+      "invalid_argument",
+      "Snapshot exceeds the memory budget; use interactive filtering or a smaller depth.",
+    );
   active.kept.set(snapshotId, { tab: tab.id, options: optionsKey(options), text: snapshot });
   active.latest.set(tab.id, snapshotId);
-  for (const id of active.kept.keys()) {
-    if (active.kept.size <= KEPT_SNAPSHOTS) {
+  let bytes = [...active.kept.values()].reduce(
+    (total, item) => total + Buffer.byteLength(item.text),
+    0,
+  );
+  for (const [id, item] of active.kept) {
+    if (active.kept.size <= KEPT_SNAPSHOTS && bytes <= limits.maxBodyBytes) {
       break;
     }
+    bytes -= Buffer.byteLength(item.text);
     active.kept.delete(id);
+    if (active.latest.get(item.tab) === id) active.latest.delete(item.tab);
   }
   return { snapshotId, snapshot };
 }
@@ -286,6 +304,8 @@ export function optionsKey(options: SnapshotOptions): string {
     options.interactive ?? false,
     options.compact ?? false,
     options.depth ?? null,
+    options.offset ?? 0,
+    options.limit ?? null,
   ]);
 }
 

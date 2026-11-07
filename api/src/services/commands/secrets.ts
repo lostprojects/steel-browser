@@ -1,4 +1,4 @@
-import type { CDPSession } from "puppeteer-core";
+import type { ControlSession } from "../browser-control.js";
 
 export const SECRET_MASK = "••••••••";
 
@@ -81,6 +81,7 @@ export function secretMask(
   const depth = [0];
   const longest = [0];
   let budget = SECRET_CHARS;
+  let commonPrefix: string | undefined;
   const variants = new Set(
     secrets.flatMap((secret) => [secret, secret.replace(/\s+/g, " ").trim()]),
   );
@@ -89,6 +90,12 @@ export function secretMask(
       continue;
     }
     budget -= variant.length;
+    if (commonPrefix === undefined) commonPrefix = variant;
+    else if (commonPrefix) {
+      let length = 0;
+      while (length < commonPrefix.length && commonPrefix[length] === variant[length]) length++;
+      commonPrefix = commonPrefix.slice(0, length);
+    }
     let state = 0;
     for (let index = 0; index < variant.length; index++) {
       const code = variant.charCodeAt(index);
@@ -109,9 +116,9 @@ export function secretMask(
     return (text) => text;
   }
   const fail = new Int32Array(parent.length);
-  const order = Array.from({ length: parent.length - 1 }, (_, index) => index + 1).sort(
-    (a, b) => depth[a] - depth[b],
-  );
+  const levels: number[][] = [];
+  for (let state = 1; state < parent.length; state++) (levels[depth[state]] ??= []).push(state);
+  const order = levels.flat();
   for (const state of order) {
     if (depth[state] > 1) {
       let candidate = fail[parent[state]];
@@ -128,6 +135,12 @@ export function secretMask(
     let cover: Int32Array | null = null;
     let state = 0;
     for (let index = 0; index < text.length; index++) {
+      // At the trie root, a shared prefix lets the native substring search skip
+      // ordinary page text without probing the transition map for each character.
+      if (state === 0 && commonPrefix) {
+        index = text.indexOf(commonPrefix, index);
+        if (index === -1) break;
+      }
       const code = text.charCodeAt(index);
       let next = edges.get(state * CODES + code);
       while (next === undefined && state !== 0) {
@@ -181,16 +194,16 @@ export function htmlForms(secrets: string[]): string[] {
 
 let scans = 0;
 
-export function secretsNear(session: CDPSession, backendNodeId: number): Promise<string[]> {
+export function secretsNear(session: ControlSession, backendNodeId: number): Promise<string[]> {
   return collectFrom(session, backendNodeId, SECRET_VALUES);
 }
 
-export function secretsWithin(session: CDPSession, backendNodeId: number): Promise<string[]> {
+export function secretsWithin(session: ControlSession, backendNodeId: number): Promise<string[]> {
   return collectFrom(session, backendNodeId, SECRETS_WITHIN);
 }
 
 async function collectFrom(
-  session: CDPSession,
+  session: ControlSession,
   backendNodeId: number,
   functionDeclaration: string,
 ): Promise<string[]> {

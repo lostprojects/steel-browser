@@ -1,5 +1,5 @@
 import { Defuddle } from "defuddle/node";
-import { ProtocolError } from "puppeteer-core";
+import { BrowserProtocolError } from "../../browser-control.js";
 import { getDefuddleContent, stripBase64Images } from "../../../utils/scrape/index.js";
 import type { Command } from "../commands.js";
 import { CommandError } from "../errors.js";
@@ -37,6 +37,8 @@ import {
   type Context,
 } from "./context.js";
 import { toggleState } from "./elements.js";
+import { textPage } from "../../../utils/text.js";
+import { scrub } from "../../vault.js";
 
 const WAIT_TIMEOUT_MS = 10_000;
 
@@ -71,7 +73,16 @@ export async function get(
   ctx: Context,
   command: Extract<Command, { command: "get" }>,
 ): Promise<CommandResult> {
-  const { active, job } = ctx;
+  const { active } = ctx;
+  if (
+    (command.offset !== undefined || command.limit !== undefined) &&
+    !["text", "html", "markdown"].includes(command.what)
+  ) {
+    throw new CommandError(
+      "invalid_argument",
+      "offset and limit work only with text, html or markdown.",
+    );
+  }
   if (command.what === "title" || command.what === "url") {
     const tab = active.tabs.resolve(command.tab);
     useTab(ctx, tab.id);
@@ -106,11 +117,10 @@ export async function get(
         ...(await callOn<string[]>(target, SECRET_VALUES).catch(() => [])),
         ...(await secretsIn(target.session)),
       ];
-      return {
-        ok: true,
-        effect: "none",
-        value: hideSecrets(value, command.what === "html" ? htmlForms(secrets) : secrets),
-      };
+      return contentResult(
+        hideSecrets(value, command.what === "html" ? htmlForms(secrets) : secrets),
+        command,
+      );
     }
     case "attr": {
       const result = await callOn<{ value?: string | null; masked?: boolean }>(target, ATTRIBUTE, [
@@ -182,11 +192,20 @@ async function markdown(
     command.target === undefined
       ? await getDefuddleContent(`<html>${masked}</html>`, source.url)
       : await Defuddle(`<html><body>${masked}</body></html>`, source.url, WHOLE_CONTENT);
-  return {
-    ok: true,
-    effect: "none",
-    value: hideSecrets(stripBase64Images(content.contentMarkdown ?? ""), secrets),
-  };
+  return contentResult(
+    hideSecrets(stripBase64Images(content.contentMarkdown ?? ""), secrets),
+    command,
+  );
+}
+
+// Slice only after masking so a page boundary cannot expose part of a secret.
+function contentResult(
+  value: string,
+  command: Extract<Command, { command: "get" }>,
+): CommandResult {
+  if (command.offset === undefined && command.limit === undefined)
+    return { ok: true, effect: "none", value };
+  return { ok: true, effect: "none", ...textPage(scrub(value), command) };
 }
 
 export async function is(
@@ -258,6 +277,10 @@ export async function wait(
     }
     return { ok: true, effect: "none", waited: "ms" };
   }
+  requireCapability(
+    command.load !== "networkidle" || ctx.active.browser!.capabilities.networkIdle,
+    "Network-idle observation",
+  );
   const timeout = command.timeout ?? WAIT_TIMEOUT_MS;
   if (command.download) {
     return waitDownload(ctx, timeout);
@@ -327,7 +350,7 @@ export async function wait(
   const check = () =>
     satisfied().catch((error) => {
       if (
-        error instanceof ProtocolError ||
+        error instanceof BrowserProtocolError ||
         (error instanceof CommandError && error.code === "dialog_pending")
       ) {
         return false;
@@ -368,10 +391,10 @@ export async function wait(
       command.target !== undefined
         ? "target"
         : command.text !== undefined
-        ? "text"
-        : command.url !== undefined
-        ? "url"
-        : "load",
+          ? "text"
+          : command.url !== undefined
+            ? "url"
+            : "load",
   };
 }
 
@@ -392,6 +415,7 @@ async function waitDownload(ctx: Context, timeout: number): Promise<CommandResul
         effect: "none",
         waited: "download",
         file: download.file,
+        name: download.name,
         bytes: download.bytes,
       };
     }
@@ -421,6 +445,13 @@ export async function screenshot(
   ctx: Context,
   command: Extract<Command, { command: "screenshot" }>,
 ): Promise<CommandResult> {
+  const capabilities = ctx.active.browser!.capabilities;
+  requireCapability(command.target === undefined || capabilities.elementCapture, "Element capture");
+  requireCapability(!command.fullPage || capabilities.fullPageCapture, "Full-page capture");
+  requireCapability(
+    command.quality === undefined || capabilities.captureQuality,
+    "Capture quality",
+  );
   const format = command.format ?? "png";
   let tab: Tab;
   let clip: { x: number; y: number; width: number; height: number; scale: number } | undefined;
@@ -481,7 +512,7 @@ export async function screenshot(
   }
   const { data } = await (
     await tab.session()
-  ).send("Page.captureScreenshot", {
+  ).capture({
     format,
     ...(format !== "png" && command.quality !== undefined ? { quality: command.quality } : {}),
     ...(clip ? { clip } : {}),
@@ -495,10 +526,11 @@ export async function pdf(
   ctx: Context,
   command: Extract<Command, { command: "pdf" }>,
 ): Promise<CommandResult> {
+  requireCapability(ctx.active.browser!.capabilities.pdf, "PDF printing");
   const tab = tabFor(ctx, command.tab);
   const session = await tab.session();
   try {
-    const { data } = await session.send("Page.printToPDF", {
+    const { data } = await session.print!({
       landscape: command.landscape ?? false,
       printBackground: command.printBackground ?? false,
     });
@@ -510,4 +542,13 @@ export async function pdf(
       "unsupported",
     );
   }
+}
+
+function requireCapability(supported: boolean, operation: string) {
+  if (!supported)
+    throw new CommandError(
+      "not_actionable",
+      `${operation} is unavailable in this browser backend.`,
+      "unsupported",
+    );
 }

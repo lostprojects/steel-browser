@@ -50,8 +50,8 @@ export function ReleaseButton({
             Release session
           </h2>
           <p id="release-description" className="dialog-description">
-            This action cannot be undone. This will release your session and delete some of your
-            session data.
+            Close this browser and remove its temporary files. Named profiles keep their saved login
+            state for the next session.
           </p>
           {error && (
             <p className="dialog-error" role="alert">

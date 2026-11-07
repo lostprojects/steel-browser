@@ -1,9 +1,11 @@
-# Phase 6 caller migration
+# Caller migration evidence
 
-Twenty-one remote callers have verified payloads; DTIC and HathiTrust still need
+Twenty-one remote callers have verified payloads; DTIC and HathiTrust lack
 verified browser runs. Every seven-day window is open and normal-use sufficiency
 is unestablished. Browserbase remains available. Application `4bf8e12` is healthy
 on Railway; its real Utah caller verified an explicit zero-result payload.
+Acceptance and follow-up work are maintained in
+[TOOLSTACK-PLAN.md](../TOOLSTACK-PLAN.md#caller-review-and-browserbase-retirement).
 
 | Commit | Change |
 | --- | --- |
@@ -12,7 +14,7 @@ on Railway; its real Utah caller verified an explicit zero-result payload.
 | `a1da357` | Overall fetch deadlines, authenticated cancellation and stopped-request replay protection |
 | `4bf8e12` | Accept verified Utah empty-search markup outside the result table |
 
-The Python client remains `bb.py`/`steel.py`, with `bb_session.py` for the family.
+The Python client remains `bb.py`/`toolstack.py`, with `bb_session.py` for the family.
 All 23 remote callers carry tags; known sites use the service registry and
 multi-site readers retain throwaway sessions. Kindle stays local and the research-
 tool checker opens no browser.
@@ -38,39 +40,39 @@ live session. Both providers' active-session checks were empty after verificatio
 
 ## Before-change audit
 
-This table records callers before the migration. Rungs are 1 HTTP, 2 direct agent browser and 3 quiet residential browser. `residential-US` was a persistent Steel profile.
+This table records callers before the migration. Rungs are 1 HTTP, 2 direct agent browser and 3 quiet residential browser. `residential-US` was a persistent Toolstack profile.
 
-Browser callers defaulted to Steel, with Browserbase available unless marked Steel-only; MOSAIC_BROWSER could select Browserbase explicitly. They did not use the service routing-ladder fetch, so the rung records their effective browser choice.
+Browser callers defaulted to Toolstack, with Browserbase available unless marked Toolstack-only; MOSAIC_BROWSER could select Browserbase explicitly. They did not use the service routing-ladder fetch, so the rung records their effective browser choice.
 
 | Caller | Previous backend; identity; rung/mode | Browser need and fallback |
 |---|---|---|
-| fetch_news.py (Utah, Arizona, Veridian) | Steel; residential-US; 3 quiet | Search/info reads are fetch candidates; page asset flows need interactions. Browserbase fallback. |
-| companies_fetch.py (Bizapedia) | Steel; bizapedia; 3 quiet | Renders results and card DOM; HTML fetch candidate after equivalent validation. Browserbase fallback. |
-| aa.py | Steel; residential-US; 3 quiet | Search HTML is a fetch candidate, including legitimate zero-result pages. Direct rung 2 was measured 20/20. Browserbase fallback. Member API download uses direct HTTP. |
-| ancestry_com_fetch.py | Steel; ancestry; 3 quiet | Authenticated searches, viewer, downloads require session. Browserbase context ancestry-family fallback. |
-| newspapers_fetch.py | Steel; ancestry; 3 quiet | Authenticated session, API, page viewer and downloads require session. Browserbase context ancestry-family fallback. |
-| fold3_fetch.py | Steel; ancestry; 3 quiet | Authenticated search and viewer need session; tile transfers may be direct. Browserbase context ancestry-family fallback. |
-| maryferrell.py | Steel only; mary-ferrell; 3 quiet | Session required for protected login and PDF. No Browserbase fallback. |
-| dtic.py | Steel; throwaway; 2 agent | Direct requests first; browser fallback for live DTIC; rendered HTML may fit fetch. Browserbase fallback. |
-| obit.py | Steel; throwaway; 2 agent | Direct/Jina first; fallback rendered HTML could fit fetch. Browserbase fallback. |
+| fetch_news.py (Utah, Arizona, Veridian) | Toolstack; residential-US; 3 quiet | Search/info reads are fetch candidates; page asset flows need interactions. Browserbase fallback. |
+| companies_fetch.py (Bizapedia) | Toolstack; bizapedia; 3 quiet | Renders results and card DOM; HTML fetch candidate after equivalent validation. Browserbase fallback. |
+| aa.py | Toolstack; residential-US; 3 quiet | Search HTML is a fetch candidate, including legitimate zero-result pages. Direct rung 2 was measured 20/20. Browserbase fallback. Member API download uses direct HTTP. |
+| ancestry_com_fetch.py | Toolstack; ancestry; 3 quiet | Authenticated searches, viewer, downloads require session. Browserbase context ancestry-family fallback. |
+| newspapers_fetch.py | Toolstack; ancestry; 3 quiet | Authenticated session, API, page viewer and downloads require session. Browserbase context ancestry-family fallback. |
+| fold3_fetch.py | Toolstack; ancestry; 3 quiet | Authenticated search and viewer need session; tile transfers may be direct. Browserbase context ancestry-family fallback. |
+| maryferrell.py | Toolstack only; mary-ferrell; 3 quiet | Session required for protected login and PDF. No Browserbase fallback. |
+| dtic.py | Toolstack; throwaway; 2 agent | Direct requests first; browser fallback for live DTIC; rendered HTML may fit fetch. Browserbase fallback. |
+| obit.py | Toolstack; throwaway; 2 agent | Direct/Jina first; fallback rendered HTML could fit fetch. Browserbase fallback. |
 | kindle_fetch.py | Local Patchright; local kindle profile; local network | Persistent Kindle reader/login, page turns and OCR; stays local. No Browserbase fallback. |
-| fbi.py | Steel; throwaway; 2 agent | Rendered catalog/subject pages are fetch candidates; PDF flow uses same session. Browserbase fallback. |
-| crest.py | Steel; throwaway; 2 agent | Uses rendered page and browser context PDF request; initial HTML may fit fetch. Browserbase fallback. |
-| aip.py | Steel; throwaway; 2 agent | Viewer state and manifest via page evaluation; session needed for current implementation. Browserbase fallback. |
-| yale.py | Steel; throwaway; 2 agent | Interactive search, cookie-carrying document requests; other downloads use direct HTTP. Browserbase fallback. |
-| quartex.py | Steel; throwaway; 2 agent | Search, viewer and downloads use page DOM/interaction; browser needed. Browserbase fallback. |
-| documentcloud.py | Steel; throwaway; 2 agent | JSON API reads are fetch candidates, subject to content validation. Browserbase fallback. |
-| photo.py | Steel; throwaway; 2 agent | PICRYL page inspection extracts source-image URLs, then browser fetches bytes; HTML fetch candidate. Browserbase fallback. |
-| archive.py | Steel; throwaway; 2 agent | Shared browser renders multiple archive searches; some pages may fit fetch. Browserbase fallback. |
-| dpia.py | Steel; throwaway; 2 agent | Login/forms, search and document interactions require browser; credentials are site-specific. Browserbase fallback. |
-| hathitrust.py | Steel; throwaway; 2 agent by default, residential-US/3 quiet with --proxy | Search/query renders page results, read-only parsing candidate for fetch. Browserbase fallback. |
-| wayback_bb_fetch.py | Steel; throwaway; 2 agent | Batch-rendered pages; some HTTP reads could fit fetch. Browserbase fallback. |
-| wikidata_expand.py | Steel; throwaway; 2 agent for NARA and VIAF | Interactive NARA search plus rendered VIAF; other authority reads use HTTP. Browserbase fallback. |
-| imageverify.py | Steel; throwaway; 2 agent | Reverse-search engines and extracted anchors; HTTP/HTML fetch candidate after validation. Browserbase fallback. |
-| render_diagram.py | Steel; throwaway; 2 agent | Local render and direct POST tried separately; Kroki GET binary may need browser to clear wall. Browserbase fallback. |
-| check_research_tools.py | No browser session; checks local configuration only | No routing or fallback used. Its Steel readiness check required a local Evomi proxy URL although the service manages proxies; this is now corrected. |
+| fbi.py | Toolstack; throwaway; 2 agent | Rendered catalog/subject pages are fetch candidates; PDF flow uses same session. Browserbase fallback. |
+| crest.py | Toolstack; throwaway; 2 agent | Uses rendered page and browser context PDF request; initial HTML may fit fetch. Browserbase fallback. |
+| aip.py | Toolstack; throwaway; 2 agent | Viewer state and manifest via page evaluation; session needed for current implementation. Browserbase fallback. |
+| yale.py | Toolstack; throwaway; 2 agent | Interactive search, cookie-carrying document requests; other downloads use direct HTTP. Browserbase fallback. |
+| quartex.py | Toolstack; throwaway; 2 agent | Search, viewer and downloads use page DOM/interaction; browser needed. Browserbase fallback. |
+| documentcloud.py | Toolstack; throwaway; 2 agent | JSON API reads are fetch candidates, subject to content validation. Browserbase fallback. |
+| photo.py | Toolstack; throwaway; 2 agent | PICRYL page inspection extracts source-image URLs, then browser fetches bytes; HTML fetch candidate. Browserbase fallback. |
+| archive.py | Toolstack; throwaway; 2 agent | Shared browser renders multiple archive searches; some pages may fit fetch. Browserbase fallback. |
+| dpia.py | Toolstack; throwaway; 2 agent | Login/forms, search and document interactions require browser; credentials are site-specific. Browserbase fallback. |
+| hathitrust.py | Toolstack; throwaway; 2 agent by default, residential-US/3 quiet with --proxy | Search/query renders page results, read-only parsing candidate for fetch. Browserbase fallback. |
+| wayback_bb_fetch.py | Toolstack; throwaway; 2 agent | Batch-rendered pages; some HTTP reads could fit fetch. Browserbase fallback. |
+| wikidata_expand.py | Toolstack; throwaway; 2 agent for NARA and VIAF | Interactive NARA search plus rendered VIAF; other authority reads use HTTP. Browserbase fallback. |
+| imageverify.py | Toolstack; throwaway; 2 agent | Reverse-search engines and extracted anchors; HTTP/HTML fetch candidate after validation. Browserbase fallback. |
+| render_diagram.py | Toolstack; throwaway; 2 agent | Local render and direct POST tried separately; Kroki GET binary may need browser to clear wall. Browserbase fallback. |
+| check_research_tools.py | No browser session; checks local configuration only | No routing or fallback used. Its Toolstack readiness check required a local Evomi proxy URL although the service manages proxies; this is now corrected. |
 
-Import search: `rg -l 'from browser\\.(bb|bb_session|steel|api) import|from browser import (bb|bb_session|steel|api)|import browser\\.(bb|bb_session|steel|api)' scripts .claude/skills -g '*.py' -g '!*/tests/*'`. Besides the caller rows, it finds browser internals bb.py, bb_session.py, challenge.py and login_codes.py. Kindle imports only browser.mac_focus; check_research_tools reads keys and module availability without importing a browser client.
+Import search: `rg -l 'from browser\\.(bb|bb_session|toolstack|api) import|from browser import (bb|bb_session|toolstack|api)|import browser\\.(bb|bb_session|toolstack|api)' scripts .claude/skills -g '*.py' -g '!*/tests/*'`. Besides the caller rows, it finds browser internals bb.py, bb_session.py, challenge.py and login_codes.py. Kindle imports only browser.mac_focus; check_research_tools reads keys and module availability without importing a browser client.
 
 ## First checks and observation windows
 
@@ -104,8 +106,8 @@ These are first verified payloads, not seven-day passes.
 
 | Caller awaiting a window | Current blocker |
 |---|---|
-| dtic.py | Live apps.dtic.mil returns a 1,408-byte maintenance page. Ordinary mirror search returned ten matches and cite resolved AD0688332, 417 pages; those HTTP results cannot start its browser window. The browser validator now requires the requested accession. |
-| hathitrust.py | Ordinary public search stopped at ChallengeRequired; supported --proxy retries returned BLOCKED on 5 November. No result count was established. The caller stops when the service reports ChallengeRequired. Protected Google login was untouched. |
+| dtic.py | Public source unavailable: official DTIC notices and local/Toolstack responses agree on maintenance. Mirror search and citation work independently; they cannot start a browser window. Live access is now lazy after a mirror miss or PDF failure. The browser validator requires the requested accession. |
+| hathitrust.py | Remote search is challenged before a source payload. The identical query works anonymously in local Chrome, including a zero control and page-number lookup inside a copyrighted volume. Local UI access and catalog API results cannot start its remote window. Protected Google login was untouched. |
 
 The first AIP and image-verification results were transport-only and must not be counted as payload validation. Earlier unknown, failed and interrupted events remain in the service ledger. Filter each observation window from the listed verified-run start; compare failures and fallbacks, and treat unknowns and insufficient normal use as no acceptance.
 
@@ -113,7 +115,7 @@ Browserbase and its existing family context remain available. `check_research_to
 
 Existing tests: fetch_news 10/10, archive 9/9, imageverify 5/5 after final validation change. Collector skill/link checks: 0 problems across the changed procedure files.
 
-A controlled UDN nonsense query after the validator change was interrupted after 19 minutes on 05 Nov at 09:50:57 UTC; the service recorded a failure and its remaining session was released. A separate direct validation probe reported payload_missing on Steel and Browserbase. Neither establishes a valid zero result. The service summary last recorded a UDN outcome at 09:51:17.787 UTC; its verified rung 2 policy was restored after the attempt.
+A controlled UDN nonsense query after the validator change was interrupted after 19 minutes on 05 Nov at 09:50:57 UTC; the service recorded a failure and its remaining session was released. A separate direct validation probe reported payload_missing on Toolstack and Browserbase. Neither establishes a valid zero result. The service summary last recorded a UDN outcome at 09:51:17.787 UTC; its verified rung 2 policy was restored after the attempt.
 
 ## Validation and delivery
 
@@ -139,7 +141,7 @@ A stalled Quartex interruption exposed the previous order; subsequent new-proces
 checks completed and released normally.
 
 MCP downloads return a session-scoped file. The local command
-`steel.py --receive-download SESSION_ID --file FILE_NAME` saves it in Mosaic's
+`toolstack.py --receive-download SESSION_ID --file FILE_NAME` saves it in Mosaic's
 INBOX without overwriting an existing file; `--out` selects another directory.
 
 ## Timeout incident and resolution
@@ -159,8 +161,7 @@ verifies Utah's zero-result payload.
 
 The verified Utah policy remains rung 2 with its measured split policy preserved.
 No Browserbase code, account, contexts or environment keys were removed.
-Retirement awaits every caller's week and successful browser checks for DTIC and
-HathiTrust. No Browserbase retirement is supported yet.
+No Browserbase retirement is supported by these measurements.
 
 ## Follow-up diagnostics, 5 November
 
@@ -198,19 +199,11 @@ The service, Browserbase fallback validator and collector now recognize that
 specific markup. The earlier prolonged failed caller remains recorded.
 
 After flushing metadata (pending zero), all 21 exact seven-day ranges were queried
-through `steel.py --outcomes --from START --to END`. After the Utah production
+through `toolstack.py --outcomes --from START --to END`. After the Utah production
 check on 5 November, fetch_news and Ancestry were each 1 failedOrFallback / 3
 attempts (33.3%). Other started windows had zero failedOrFallback with only 1–4
 attempts each. All selected windows had zero unknowns, but every window was still
 open and normal-use sufficiency was unestablished. None passed acceptance.
-
-For the next review, flush again and use each exact range in the table. Sum
-`failedOrFallback` and divide by `attempts` for that caller across all returned
-UTC-day rows. Require less than 10%, zero unresolved unknowns, seven elapsed days
-and sufficient normal collection use; diagnostics and repeated acceptance probes
-cannot establish that use. A later repair does not erase a failure or restart an
-already verified window. DTIC and HathiTrust need their own dates after real
-browser payloads become available.
 
 Focused checks passed: news 10, acquisition 3, photo 21 and service routing 5.
 TypeScript and syntax checks for the ten changed Python files passed. Collector
@@ -244,3 +237,60 @@ collector traffic is absent. Keep keys and query strings out of diagnostic outpu
 Both branches were pushed together with `git push origin main main:deploy` after
 pulling with rebase. The documentation-only follow-up does not need a service
 restart. No account, context or environment key was removed.
+
+## Source diagnosis, 5 November
+
+The owner reports the same DTIC and HathiTrust failures through Browserbase.
+The checks below distinguish source availability from remote-browser access;
+they do not establish that Toolstack passes either caller's acceptance window.
+
+DTIC's [Technical Reports](https://discover.dtic.mil/technical-reports/) and
+[Products & Services](https://discover.dtic.mil/products-services/) pages report
+public search offline. The former still documents `apps.dtic.mil/sitemap.xml`;
+neither announces a replacement public endpoint or permanent retirement.
+The separately controlled R&E Gateway has its own eligibility requirements.
+
+The actual caller's citation request redirected to `/landingpage/maint.html`
+at 21:36:15 UTC, HTTP 200 with 1,408 wire bytes. Toolstack reached that same page at
+21:36:48 UTC, HTTP 200 with 1,352 rendered HTML bytes. Direct requests for the
+report PDF and official sitemap also returned maintenance at 21:39:46 UTC.
+The internal cause and restoration date remain unknown.
+
+DTIC now resolves mirror metadata before starting live access, opens a browser
+only after HTTP needs it, and repairs the skipped live-PDF path when direct
+metadata succeeds without a browser or a mirror PDF fails. A normal citation
+rerun resolved AD0688332's 417-page metadata through one IA request and zero
+live requests. The repaired live-PDF path still needs a real PDF after service
+restoration. Mirror success cannot substitute for its browser observation week.
+
+HathiTrust's remote residential browser returned Cloudflare verification for
+both the Babel homepage and the exact `Uhouse` search URL. Local direct HTTP
+also received a Cloudflare 403. Local Chrome served that same search anonymously
+with 317 items, 86 Full View, and a genuine zero for `Uhouse Qxzjkl`.
+The local item UI also found one `Uhouse` match at scan 384, printed page 52,
+inside copyrighted volume `uva.x002460967`, without login.
+
+This isolates a remote-access problem before the search payload. It does not
+identify the decisive IP, browser or session signal. HathiTrust's
+[access policy](https://hathitrust.atlassian.net/wiki/spaces/GS/pages/2387247137)
+allows anonymous search-within page numbers; member login does not generally
+unlock copyrighted text. The old partner-login explanation has been removed.
+The collector now reports specific block reasons and stops on explicit refusal;
+the procedure uses the existing local UI when remote access is challenged.
+
+A tagged check of the revised HathiTrust caller from 21:42:56 to 21:43:06 UTC
+returned `BLOCKED`, HTTP 403, `block_reason: cloudflare_challenge`, and released
+the session. Source detail stays in caller output; service metadata uses its
+existing reason vocabulary. Its outcome remains failed. The earlier
+`source-diagnostic.hathitrust-access` probe remains unknown because it inspected
+access responses without validating a search result.
+
+The DTIC diagnostic's unsupported queued reason `source_maintenance` was changed
+to the supported `payload_missing` before delivery, preserving its failed
+outcome and timestamp. The queue then flushed completely, including unrelated
+waiting outcomes. No historical failure was removed or relabelled as success.
+
+Syntax, catalog metadata retrieval and collector procedure checks passed; neither
+changed collector has an existing matching test file. No protected login, human
+handoff or corpus write was used. Neither caller has a remote observation start;
+the 21 existing windows and retirement requirements remain unchanged.

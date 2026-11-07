@@ -1,6 +1,6 @@
 // Observes an existing login without input or password submission. Persist only
 // metadata; member HTML and account values must remain inside the service.
-import type { Page } from "puppeteer-core";
+import type { PageRead as Page } from "./browser-control.js";
 import type { BrowserSession } from "./browser-session.js";
 export const memberReads = {
   ancestry: {
@@ -25,7 +25,7 @@ export async function observeMemberRead(session: BrowserSession, site: keyof typ
   for (let attempt = 1; attempt <= 3; attempt++) {
     let fresh: Page | undefined;
     try {
-      fresh = await session.getBrowserInstance()!.newPage();
+      fresh = await session.createReadPage();
       return { ...(await readPage(fresh)), readAttempts: attempt };
     } catch (error) {
       lastError = error;
@@ -97,10 +97,10 @@ export async function observeMemberRead(session: BrowserSession, site: keyof typ
       check: observed.deviceCheck
         ? "device"
         : observed.signInPrompt
-        ? "sign_in_prompt"
-        : ok
-        ? "none"
-        : "member_payload_missing",
+          ? "sign_in_prompt"
+          : ok
+            ? "none"
+            : "member_payload_missing",
       httpStatus: response?.status() ?? null,
       exitIp: session.exit?.ip,
       proxyBytes:

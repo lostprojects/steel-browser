@@ -1,7 +1,17 @@
 **/node_modules/
+**/.venv/
 **/build
 **/dist
 **/.env
 **/.env.local
+.git/
+.github/
+.husky/
+mosaic/
+repl/
+**/*.md
+**/*.test.ts
+**/__tests__/
+**/*.tsbuildinfo
 Dockerfile
 docker-compose.yml

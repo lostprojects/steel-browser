@@ -1,5 +1,5 @@
 import type { CDPSession, Protocol, TargetType } from "puppeteer-core";
-import { BrowserEventType } from "../../../types/index.js";
+import { BrowserEventType } from "../../../types/enums.js";
 import { BrowserLogger } from "./browser-logger.js";
 
 export interface AttachNetworkEventsOptions {

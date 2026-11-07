@@ -7,6 +7,8 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 .env
+api/.venv/
+content/**/__pycache__/
 .env.local
 .env.development.local
 .test.env.local
@@ -20,3 +22,8 @@ out
 *.env
 dist
 .aider*
+
+# API-generated files
+api/files/*
+api/static/*
+api/eval-report.json

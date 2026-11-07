@@ -34,7 +34,7 @@ export function SessionConsole({ session, hidden }: { session: SessionDetails; h
   const [query, setQuery] = useState("");
   const search = useDeferredValue(query.trim().toLowerCase());
   const input = useRef<HTMLInputElement>(null);
-  const logs = useLogs();
+  const logs = useLogs(session);
 
   const visible = useMemo(
     () => logs.filter((entry) => matches(entry, filter, search)),
@@ -82,7 +82,7 @@ export function SessionConsole({ session, hidden }: { session: SessionDetails; h
               title="Download logs"
               disabled={visible.length === 0}
               onClick={() =>
-                downloadJson(`steel-session-${session.id.slice(0, 8)}-logs.json`, events())
+                downloadJson(`toolstack-session-${session.id.slice(0, 8)}-logs.json`, events())
               }
             >
               <ArrowDownIcon />
@@ -121,7 +121,15 @@ export function SessionConsole({ session, hidden }: { session: SessionDetails; h
       </div>
       <Logs
         entries={visible}
-        empty={logs.length === 0 ? "Waiting for browser events…" : "No logs match."}
+        empty={
+          session.mode === "quiet"
+            ? "Quiet sessions do not collect browser events."
+            : session.status !== "live"
+            ? "This session has ended."
+            : logs.length === 0
+            ? "Waiting for browser events…"
+            : "No logs match."
+        }
         onScrolledChange={setScrolled}
       />
     </section>

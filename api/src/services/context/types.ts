@@ -7,69 +7,6 @@ export enum StorageProviderName {
   IndexedDB = "indexedDB",
 }
 
-export interface IndexedDBDatabaseWithOrigin {
-  id: number;
-  name: string;
-  origin: string;
-  objectStores: IndexedDBObjectStore[];
-}
-
-export interface IndexedDBDatabase {
-  id: number;
-  name: string;
-  data: IndexedDBObjectStore[];
-}
-
-export interface IndexedDBObjectStore {
-  id: number;
-  name: string;
-  records: IndexedDBRecord[];
-}
-
-export interface IndexedDBRecord {
-  key: any;
-  value: any;
-  blobFiles?: IndexedDBBlobFile[];
-}
-
-export interface IndexedDBBlobFile {
-  blobNumber: number;
-  mimeType: string;
-  size: number;
-  filename?: string;
-  lastModified?: Date;
-  path?: string;
-}
-
-export type LocalStorageData = Record<string, string>;
-export type SessionStorageData = Record<string, string>;
-export type CookieData = z.infer<typeof CDPCookieSchema>;
-
-export interface StorageProviderDataMap {
-  [StorageProviderName.LocalStorage]: LocalStorageData;
-  [StorageProviderName.SessionStorage]: SessionStorageData;
-  [StorageProviderName.Cookies]: CookieData[];
-  [StorageProviderName.IndexedDB]: Array<IndexedDBDatabase>;
-}
-
-// Utility type to get the data type for a specific provider
-export type ProviderDataType<T extends StorageProviderName> = StorageProviderDataMap[T];
-
-export type SessionData = {
-  [StorageProviderName.Cookies]?: CookieData[];
-  [StorageProviderName.LocalStorage]?: Record<string, LocalStorageData>;
-  [StorageProviderName.SessionStorage]?: Record<string, SessionStorageData>;
-  [StorageProviderName.IndexedDB]?: Record<string, Array<IndexedDBDatabase>>;
-};
-
-// Error classes
-export class CorruptedSessionDataError extends Error {
-  constructor(zodError: z.ZodError) {
-    super(`Session data is corrupted: ${zodError.message}`);
-    this.name = "CorruptedSessionDataError";
-  }
-}
-
 // CDP related schemas
 export const CDPSameSite = z.enum(["Strict", "Lax", "None"]);
 export const CDPCookiePriority = z.enum(["Low", "Medium", "High"]);
@@ -111,7 +48,6 @@ export const CDPCookieSchema = z.object({
   sourceScheme: CDPSourceScheme.optional().describe("The source scheme of the cookie"),
   sourcePort: z.number().optional().describe("The source port of the cookie"),
 });
-export type CDPCookie = z.infer<typeof CDPCookieSchema>;
 
 // IndexedDB related schemas
 export const IndexedDBBlobFileSchema = z.object({
@@ -124,8 +60,8 @@ export const IndexedDBBlobFileSchema = z.object({
 });
 
 export const IndexedDBRecordSchema = z.object({
-  key: z.any(),
-  value: z.any(),
+  key: z.any().optional(),
+  value: z.any().optional(),
   blobFiles: z.array(IndexedDBBlobFileSchema).optional(),
 });
 
@@ -141,7 +77,6 @@ export const IndexedDBDatabaseSchema = z.object({
   data: z.array(IndexedDBObjectStoreSchema),
 });
 
-// Update the existing schema to use the new schemas
 export const SessionContextSchema = z.object({
   [StorageProviderName.Cookies]: z
     .array(CDPCookieSchema)
@@ -158,5 +93,12 @@ export const SessionContextSchema = z.object({
   [StorageProviderName.IndexedDB]: z
     .record(z.string(), z.array(IndexedDBDatabaseSchema))
     .optional()
-    .describe("Domain-specific indexedDB items to initialize in the session"),
+    .describe(
+      "Legacy context field; named profiles preserve IndexedDB, but context injection does not restore it",
+    ),
 });
+
+export type IndexedDBDatabase = z.infer<typeof IndexedDBDatabaseSchema>;
+export type LocalStorageData = Record<string, string>;
+export type SessionStorageData = Record<string, string>;
+export type SessionData = z.infer<typeof SessionContextSchema>;

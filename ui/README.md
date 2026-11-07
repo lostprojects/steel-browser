@@ -1,43 +1,26 @@
-# Steel Browser UI
+# Toolstack dashboard
 
-The dashboard the API serves at `/ui`. It shows the live browser, session details, logs, and Chrome DevTools for the active session, and it can start a new session.
+The dashboard at `/ui/` selects among live and recently ended sessions. It shows session metadata and permitted live views; agent-mode browser events are scoped to the selected session. Quiet sessions have no instrumentation stream, and protected profiles show metadata without a viewer.
 
 ## Development
 
-Start the API on port 3000, then run:
+Copy `api/.env.example` to `api/.env`, choose a local `STEEL_API_KEY` and keep `DOMAIN=localhost:5173`. From the repository root, run `npm run dev`.
 
-```bash
-npm run dev -w ui
-```
+Open `http://localhost:5173/ui/?apiKey=<key>` once. Vite forwards this authentication request to the API, which sets an HttpOnly cookie and redirects back without the key. Subsequent UI, REST and WebSocket requests share the same origin. The API runs on port 3000; Vite uses a fixed port 5173 and binds to loopback.
 
-The dev server proxies `/api` and `/ws` to `http://localhost:3000`.
+Compose and production serve the built UI directly through the API. Compose uses `http://localhost:3000/ui/`; production uses the configured HTTPS domain.
 
-## Configuration
-
-| Variable       | Default | Purpose                            |
-| -------------- | ------- | ---------------------------------- |
-| `VITE_API_URL` | `/api`  | Base URL for HTTP requests         |
-| `VITE_WS_URL`  | `/ws`   | Base URL for WebSocket connections |
-
-The combined Docker image builds with both set to an empty string, so the UI talks to the API on the same origin.
-
-## Dependencies
-
-The UI ships React and nothing else at runtime. Styles are plain CSS. Dev tooling is Vite, the React plugin, and TypeScript, with exact versions pinned.
-
-`src/styles/tokens.css` holds a snapshot of Steel's design tokens: colors, fonts, radii, and shadows. Components only reference these variables, so a visual refresh means editing this one file.
-
-The fonts are Inter and Geist Mono, both under the SIL Open Font License. The font files and their licenses live in `src/fonts`.
+`VITE_API_URL` and `VITE_WS_URL` default to empty strings. Keep them empty for these supported setups; a different origin also requires deliberate authentication and service-origin configuration.
 
 ## API types
 
-`src/client` holds types generated from `api/openapi/schemas.json`. This file exports the shared models without starting the API or a browser. The running API publishes its route documentation at `/documentation`.
-
-Regenerate both files from the repository root after a schema change:
+`src/client` is generated from the four session models used by `src/api.ts`. `api/openapi/schemas.json` contains only those models; the service keeps its complete API documentation at `/documentation`. Generate both after changing a schema:
 
 ```bash
 npm run generate:openapi -w api
 npm run generate-api -w ui
 ```
 
-The generator runs through `npx` at a pinned version, so it is not installed with the project. The script pins TypeScript for it too, because TypeScript 7 breaks the generator. `--prefix=/` makes npx install that TypeScript instead of reusing the project's copy, which the generator can't load. Prettier then formats the output.
+The pinned `npx` generator uses its own pinned TypeScript through `--prefix=/`. The running API provides route documentation at `/documentation`.
+
+Run `npm run typecheck -w ui` and `npm run build -w ui` for local verification. React is the only UI runtime dependency. CSS variables live in `src/styles/tokens.css`; font files and their SIL Open Font licences remain in `src/fonts`.

@@ -1,5 +1,5 @@
 import type { CDPSession } from "puppeteer-core";
-import { BrowserEventType } from "../../../types/index.js";
+import { BrowserEventType } from "../../../types/enums.js";
 import { BrowserLogger } from "./browser-logger.js";
 import { BROWSER_INTERACTION_BINDING } from "./browser-interaction-events.js";
 

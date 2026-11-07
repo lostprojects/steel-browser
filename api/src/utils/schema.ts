@@ -1,5 +1,4 @@
 import { ZodType, z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
 
 export type Models<Key extends string = string> = {
   readonly [K in Key]: ZodType<unknown>;
@@ -38,20 +37,22 @@ export const buildJsonSchemas = <M extends Models>(
   models: M,
   opts: BuildJsonSchemasOptions = {},
 ): BuildJsonSchemasResult<M> => {
-  const zodSchema = z.object(models);
-
-  const zodJsonSchema = zodToJsonSchema(zodSchema, {
-    target: "openApi3",
-    $refStrategy: "none",
-    errorMessages: opts.errorMessages,
+  const cleanedSchemas = Object.entries(models).map(([key, model]) => {
+    const schema = z.toJSONSchema(model, {
+      target: opts.target === "jsonSchema7" ? "draft-07" : "openapi-3.0",
+      io: "input",
+      reused: "inline",
+      unrepresentable: ({ zodSchema }) =>
+        zodSchema._zod.def.type === "date" ? { type: "string", format: "date-time" } : "throw",
+      override: ({ zodSchema, jsonSchema }) => {
+        if (zodSchema._zod.def.type === "object" && jsonSchema.additionalProperties === undefined) {
+          jsonSchema.additionalProperties = false;
+        }
+      },
+    });
+    delete schema.$schema;
+    return { $id: key, title: key, ...schema };
   });
-
-  const cleanedSchemas = Object.entries(
-    //@ts-ignore
-    zodJsonSchema.properties as { [key: string]: any },
-  ).reduce((acc, [key, value]) => {
-    return [...acc, { $id: key, title: key, ...value }];
-  }, [] as JsonSchema[]);
 
   const $ref: $Ref<M> = (key) => {
     const $ref = `${typeof key === `string` ? key : key.key}#`;

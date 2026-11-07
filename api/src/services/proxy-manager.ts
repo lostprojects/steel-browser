@@ -3,13 +3,12 @@
 import { randomBytes } from "node:crypto";
 import { readFile, mkdir, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
-import axios from "axios";
-import { HttpsProxyAgent } from "https-proxy-agent";
+import { httpFetch } from "./http-fetch.js";
 import type { BrowserSession } from "./browser-session.js";
 import { ProxyServer } from "../utils/proxy.js";
 
 export const DAILY_BUDGET = 1_000_000_000;
-export type Agent = { name: string; dailyBudgetBytes: number; admin?: boolean };
+export type Agent = { name: string; dailyBudgetBytes: number; admin?: boolean; connectedApp?: import("./gateway-principal.js").ConnectedPrincipal };
 export type Exit = { ip: string; timezone: string; country: string; region: string };
 type Identity = { country: string; stickyId: string; lastExit?: Exit };
 type State = {
@@ -166,13 +165,14 @@ export class ProxyManager {
       this.active.set(session.id, { session, agent, accounted: previous?.accounted ?? 0 });
       await proxy.listen();
       try {
-        const response = await axios.get("https://ipwho.is/", {
-          httpsAgent: new HttpsProxyAgent(proxy.url),
-          proxy: false,
-          timeout: 20_000,
-          maxContentLength: 64_000,
+        const response = await httpFetch({
+          url: "https://ipwho.is/",
+          proxy: proxy.url,
+          timeout: 20,
+          maxBytes: 64_000,
         });
-        const data = response.data;
+        if (response.status < 200 || response.status >= 300) throw new Error("Exit lookup failed");
+        const data = JSON.parse(Buffer.from(response.body, "base64").toString());
         if (!data.success || !data.ip || !data.timezone?.id)
           throw new Error("Exit lookup returned no timezone");
         Intl.DateTimeFormat("en-US", { timeZone: data.timezone.id });
@@ -206,7 +206,8 @@ export class ProxyManager {
         await proxy.close(true);
         this.collect();
         await this.persist();
-        // Never include axios errors: their request configuration contains credentials.
+        // Transport errors must not expose proxy credentials.
+        if ([429, 413].includes((error as { statusCode?: number }).statusCode ?? 0)) throw error;
         throw Object.assign(
           new Error(
             error instanceof Error && error.message.startsWith("Daily")

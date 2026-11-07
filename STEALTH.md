@@ -1,6 +1,6 @@
 # Stealth
 
-Production has passed phases 0–3. See [the final phase 3 measurements](#phase-3-acceptance) for the accepted build and route results.
+This file preserves measurement history, including superseded failures. Phases 0–3 passed; later routing, login and caller checks are recorded below. Use [README.md](README.md#status-and-evidence) for the current summary and [mosaic/CALLERS.md](mosaic/CALLERS.md) for caller observation windows. Current requirements and follow-up work live in [TOOLSTACK-PLAN.md](TOOLSTACK-PLAN.md#browser-acceptance-and-migration).
 
 ## The principle
 
@@ -8,9 +8,9 @@ Anti-bot systems look for contradictions more than for any single unusual value.
 
 So the browser reports itself truthfully and consistently, as an ordinary Linux desktop. It spoofs nothing it can make true instead, and every fix removes a contradiction or an automation trace.
 
-The measurements below were taken with [mosaic/stealth_check.py](mosaic/stealth_check.py) on 2 and 3 November 2026. Most use Evomi Core Residential; the early route table identifies the Premium comparison.
+Measurements begin on 2 November 2026 and continue in the dated sections below, using [mosaic/stealth_check.py](mosaic/stealth_check.py). Most use Evomi Core Residential; the early route table identifies the Premium comparison.
 
-The early sections describe the former singleton browser. Phase 2 replaces its launch setup, and [phase 3 acceptance](#phase-3-acceptance) supplies the current route results and byte accounting.
+The early sections describe the former singleton browser. Phase 2 replaces its launch setup, and the later dated sections record subsequent route and byte-accounting changes.
 
 ## Signals
 
@@ -22,7 +22,7 @@ The early sections describe the former singleton browser. Phase 2 replaces its l
 | WebGL | Renderer changes every session; vendor reads `0` | Unavailable | Unavailable | `ANGLE (Mesa/X.org, llvmpipe (LLVM 15.0.6 256 bits), OpenGL 4.5)` |
 | Plugins | 0 | 0 | 0 | 5 PDF viewer entries |
 | Cores / memory | 8–12 / 8 GB | 48 / 32 GB (the host's real values) | Same | Same |
-| Timezone against exit IP | Wrong when Steel's lookup fails | Same | Matches (client-supplied) | Matches |
+| Timezone against exit IP | Wrong when Toolstack's lookup fails | Same | Matches (client-supplied) | Matches |
 | deviceandbrowserinfo.com flags | CDP, timing, worker values | CDP in page and worker | None | None |
 
 Headless mode on its own, with spoofing off, showed `HeadlessChrome/156` in the user agent, 32 cores and SwiftShader WebGL.
@@ -33,13 +33,13 @@ Headless mode on its own, with spoofing off, showed `HeadlessChrome/156` in the 
 2. **Headful on Xvfb** (`CHROME_HEADLESS=false`, plus the Xvfb start in `entrypoint.sh`). Removed the headless user agent and screen.
 3. **Quiet CDP.** The test puts a getter on an `Error`'s `stack` and calls `console.log` on it. Any CDP client listening to the console serializes the error and runs the getter. Three sources had to be closed, each found after the previous fix left the flag in place:
    - the client: Patchright in place of Playwright
-   - Steel's Puppeteer: `rebrowser-puppeteer-core`, whose patch was confirmed active with `REBROWSER_PATCHES_DEBUG=1`
-   - Steel's own console logging: `CAPTURE_CONSOLE_EVENTS=false`. Steel's `/v1/scrape`, with no client connected, still raised the flag until this one was fixed
-4. **Timezone** passed by the client. See [USAGE.md](USAGE.md#pass-the-timezone-yourself).
-5. **WebGL.** `chrome://gpu` showed WebGL disabled by Steel's `--disable-gpu`. Removing it, then `--in-process-gpu` (which made the GPU process crash and Chrome give up), and adding `--use-angle=gl --ignore-gpu-blocklist` gives software WebGL through Mesa llvmpipe. llvmpipe is what a Linux desktop without GPU drivers reports; SwiftShader, Chrome's own fallback, is a known headless signature.
+   - Toolstack's Puppeteer: `rebrowser-puppeteer-core`, whose patch was confirmed active with `REBROWSER_PATCHES_DEBUG=1`
+   - Toolstack's own console logging: `CAPTURE_CONSOLE_EVENTS=false`. Toolstack's `/v1/scrape`, with no client connected, still raised the flag until this one was fixed
+4. **Timezone** passed by the client. See [USAGE.md](USAGE.md#sessions-and-identities).
+5. **WebGL.** `chrome://gpu` showed WebGL disabled by Toolstack's `--disable-gpu`. Removing it, then `--in-process-gpu` (which made the GPU process crash and Chrome give up), and adding `--use-angle=gl --ignore-gpu-blocklist` gives software WebGL through Mesa llvmpipe. llvmpipe is what a Linux desktop without GPU drivers reports; SwiftShader, Chrome's own fallback, is a known headless signature.
 6. **Plugins** (`ENABLE_PDF_VIEWER=true`).
 
-Steel's recorder binding, `__steelBrowserInteractionLog`, needed no change. It lives in an isolated world, which page scripts cannot see. The recorder extension loads only in headless mode.
+Toolstack's recorder binding, `__steelBrowserInteractionLog`, needed no change. It lives in an isolated world, which page scripts cannot see. The recorder extension loads only in headless mode.
 
 ## Route results
 
@@ -72,7 +72,7 @@ In the early singleton measurements, WebGL and the PDF plugins brought the autom
 python mosaic/stealth_check.py probe                          # fingerprint signals and bot-test flags
 python mosaic/stealth_check.py probe '{"headless": true}'     # same, with per-session options
 python mosaic/stealth_check.py routes core                    # all routes through Evomi Core
-python mosaic/stealth_check.py routes premium annas ancestry  # chosen routes through Premium
+python mosaic/stealth_check.py routes core annas ancestry     # chosen routes through Core
 ```
 
 Failed routes save a screenshot and the page text to `./stealth-failures/`. Run it from a temporary directory and delete that folder afterwards. The session pool allows at most three browsers. Keep the residential byte budget in view when running checks concurrently.
@@ -147,7 +147,7 @@ Every row below used Chrome 156.0.8078.79. “Complete” means the detector res
 
 The whole phases 0–2 attempt used 137,169,680 residential bytes across 130 metered sessions, including timezone preflights and unsuccessful probes. All residential traffic used Evomi Core. Phase 0 and phase 1 acceptance used zero residential bytes. Quiet-mode and six-route acceptance were not run.
 
-The unresolved check is consistent completion of the detector fixture. A continuation should inspect the missing response and wait for the actual result, then address navigation timeouts within the owner’s chosen retry limit. Phase 3 requires a new passing phase 2 acceptance set first.
+At this stopping point, consistent completion of the detector fixture remained unresolved. Missing responses and navigation timeouts prevented phase 2 acceptance and therefore the start of phase 3. The subsequent continuation and accepted set are recorded below.
 
 After rollback, production reported Chromium 156.0.8078.73. Health and a fresh session’s creation/release passed. The release confirmed temporary-profile removal.
 
@@ -219,7 +219,7 @@ The full quiet probe used 43,835,996 bytes, plus an 87,237-byte timezone preflig
 
 Live byte totals exposed a defect in the inherited proxy accounting: they included closed connections only. Open tunnels were added when the session ended, so the live budget monitor substantially understated spending. Route-level deltas from that build are consequently unreliable; the settled session totals above include the open tunnels. Commit `6bee0ba` corrects the getters to add active-tunnel statistics and tests that closing a tunnel does not count its bytes twice. This correction is part of the unaccepted candidate, not the phase 2 rollback image.
 
-Phase 3 measurements used 76,231,429 residential bytes across four metered sessions. Cumulative usage across all phases and attempts is 275,183,787 bytes across 187 metered sessions, all Evomi Core. Residential checks stopped with 24,816,213 bytes remaining under the owner’s 300 MB ceiling; this cannot support the outstanding route acceptance set at the measured costs. A continuation needs authorization for more traffic and should diagnose the excess traffic before repeating the batch.
+Phase 3 measurements used 76,231,429 residential bytes across four metered sessions. Cumulative usage across all phases and attempts is 275,183,787 bytes across 187 metered sessions, all Evomi Core. Residential checks stopped with 24,816,213 bytes remaining under the owner’s 300 MB ceiling; this could not support the outstanding route acceptance set at the measured costs.
 
 The bot tests did not detect the accessibility read, so the isolated-DOM fallback was not needed. Phase 3 remains unaccepted because its route checks are incomplete. Production was restored from accepted phase 2 deployment `6ffa7417-bc73-4f16-8090-59ed3c929e4a`. The restored image passed health, session creation and CDP checks; release confirmed temporary-profile removal and zero residential bytes. Quiet mode and the accounting correction remain committed for continuation. Browserbase remains available, and Mosaic’s scripts are unchanged.
 
@@ -368,8 +368,7 @@ Mosaic's pool client is active. Three simultaneous direct callers retained disti
 sessions and page titles; a fourth received the queued 429 and opened the temporary
 Browserbase fallback. This used zero residential bytes.
 
-Browserbase remains only
-until phase 6 moves the callers.
+Browserbase remained available during these checks.
 
 The identity-policy check passed both waiting and throwaway modes, including
 acquisition after release, using 77,831 bytes. The activated client read the named
@@ -390,8 +389,8 @@ The second migration correction materialized all 48 local-storage entries
 across two origins.
 
 All three sites still displayed sign-in links after both fixes,
-so login preservation remains unconfirmed. The local credential file is retained,
-unused by the new client, and must remain until a manual login check passes.
+so login preservation remained unconfirmed at this stage. The local credential
+file was retained unused by the new client pending a manual login check.
 
 The initial import used 39,129 bytes. The three homepage login checks used
 6,953,649, 5,262,616 and 3,986,192 residential bytes respectively.
@@ -1217,7 +1216,7 @@ The earlier 13-read interrupted Anna attempt also observed a challenge and remai
 | 113 | 2026-11-04T18:55:05.267055+00:00 | 116 | 2.231 | 200 | 2 | — | no | pass |
 | 114 | 2026-11-04T18:55:09.499559+00:00 | 116 | 2.276 | 200 | 2 | — | no | pass |
 
-A prior Newspapers volume attempt returned 108 payloads before Steel rejected the next request with HTTP 429. The failure occurred at the API; its response body was not retained. The API’s 128-entry, ten-minute idempotency cache is the likely cause. A later diagnostic HTTP read passed. Read-only probes were changed to omit mutation-cache keys, and remaining batches reuse one browser session.
+A prior Newspapers volume attempt returned 108 payloads before Toolstack rejected the next request with HTTP 429. The failure occurred at the API; its response body was not retained. The API’s 128-entry, ten-minute idempotency cache is the likely cause. A later diagnostic HTTP read passed. Read-only probes were changed to omit mutation-cache keys, and remaining batches reuse one browser session.
 
 ### Interrupted Newspapers volume observations
 
@@ -1918,7 +1917,7 @@ The service endpoint waits for a collector-free deployment window. The preceding
   | Newspapers.com | `ncom-rt`; `user_token` 12 h; `ncom-session` 30 min | 30 days; renewed through Ancestry sign-on |
   | Fold3 | `sess` | 30 days; renewed through Ancestry sign-on |
 
-  Ancestry's sign-in form has no remember-me checkbox. Named profiles restore session cookies, so the daily check keeps the login indefinitely.
+  Ancestry's sign-in form has no remember-me checkbox. Named profiles restore session cookies. Daily member reads observe whether access persists; they cannot guarantee renewal or prevent a site from revoking a login.
 - **Checker changes** (`4faffe1`): skip refused passwords and unanswered codes, run when two slots are free, and remove test identities with `DELETE /v1/logins/:identity`. The idempotency table now evicts finished operations instead of refusing all keyed calls after 128 (`01a9c98`).
 
 ## Browser-service follow-up, 4 November 2026 (5 November UTC)
@@ -2096,8 +2095,8 @@ The five-session pilot used 9,831,259 bytes, including its interrupted page.
 Total settled Bizapedia traffic for this follow-up was 23,984,072 bytes.
 Every session released. The cheap quota responses cannot establish bandwidth
 acceptance for actual people pages. Both the 18/20 pass mark and the 50%
-bandwidth reduction remain unmet. Another valid acceptance set needs access
-that permits twenty people-page reads; the current free quota prevented it.
+bandwidth reduction remain unmet. The free quota prevented the twenty
+people-page reads required for this set.
 
 ## Phase 5 logged-in checks, 5 November 2026
 
@@ -2126,11 +2125,11 @@ the earlier rows remain available and have no `readVersion:2` marker.
 | 06:00:30.250 | Newspapers.com | authenticated, no prompt or device check | 667,926 | 313,672 |
 | 06:00:37.143 | Fold3 | authenticated, no prompt or device check | 140,751 | 424,377 |
 
-All three used exit `71.214.129.141`. The observation window is 5–12 November UTC;
-seven daily jobs per site remain to be evaluated on or after 12 November. Daily
-jobs continue beyond that date. An identity still waits while busy or when fewer
-than two slots are free, and prior refused credentials or unanswered codes retain
-their scheduling guard. Google is excluded from automatic attempts.
+All three used exit `71.214.129.141`. The recorded observation window is
+5–12 November UTC. Daily jobs continue beyond that date. An identity still waits
+while busy or when fewer than two slots are free, and prior refused credentials
+or unanswered codes retain their scheduling guard. Google is excluded from
+automatic attempts.
 
 ### Deploy and crash survival
 
@@ -2214,8 +2213,7 @@ observation; a completed or released run cannot resume.
 
 The session renews after its 175-minute observation, before the service's
 three-hour lifetime cap. An IP change triggers a new session on the same identity
-before further site reads. Each new session checks the retained login. Results
-will be reconciled here when the finite run ends.
+before further site reads. Each new session checks the retained login.
 
 That measured run stopped at 06:20:35 UTC after the auxiliary read-only membership
 endpoint returned HTTP 500 during the ten-minute observation. It had two complete
@@ -2248,7 +2246,7 @@ The viewer canvas heuristic reported the states shown below. A `partial` observa
 | 07:32:13 | 1805.031 | 71.214.129.141 | 1,532,133,376 | ok | partial |
 
 Application `d36ab5b` also passed all three retained-login checks after deployment, each on its first read attempt. No additional Google attempt or Chrome fault was made.
-The daily observation window still requires evaluation on or after 12 November. Read `readVersion:2` jobs for `ancestry` at the admin history route, retaining earlier validator failures as separate observations.
+The daily window was incomplete at the time of these measurements. Corrected jobs have `readVersion:2`; earlier validator failures remain separate observations.
 
 ## Phase 6 caller interface and timeout checks, 5 November 2026
 
@@ -2257,9 +2255,10 @@ and per-caller metadata. All eleven tools passed the local official MCP SDK
 against production; the download and Python files receiver delivered identical
 135-byte fixtures. Both copies were removed.
 
-The serial caller check established fifteen verified first runs. Eight callers
-remain without a verified payload; the complete audit, first-run results and
-Eastern-time observation windows are in [mosaic/CALLERS.md](mosaic/CALLERS.md).
+The initial serial check established fifteen verified first runs. Later checks
+raised that count to twenty-one, with DTIC and HathiTrust still awaiting qualifying
+remote payloads. The current audit and exact observation windows are in
+[mosaic/CALLERS.md](mosaic/CALLERS.md).
 Browserbase remains available while those checks and the seven-day windows finish.
 
 A Utah empty-result probe ran for more than nineteen minutes. The caller was
@@ -2281,3 +2280,22 @@ no live session. The verified Utah rung-2/split policy remains in place.
 TypeScript and the changed service files' 47 existing checks passed. Mosaic's
 three affected existing test files passed 24 checks. No new permanent test files
 or autonomous observation worker were added.
+
+## Library release and retained profiles, 7 November 2026
+
+The owner service received application source `2af8f90` from an isolated local
+release branch through Railway upload. Chrome remains 156.0.8078.79 and session
+capacity remains twelve. The browser volume was backed up before release;
+its profile storage and vault key were preserved.
+
+Fresh Chrome creation, authenticated CDP, navigation/read and release passed.
+The hosted Library passed real HTTPS/UI/MCP checks against dedicated Postgres
+and encrypted Wasabi storage. Its temporary records, bytes and public database
+endpoint were removed. Local verification passed 43 API files (481 tests, eight
+skips), nine isolated Postgres/storage checks and the application/Library Chrome
+checks. These checks do not complete the remaining elapsed browser acceptance.
+
+The post-release retained-login checks passed on Newspapers.com and Fold3.
+Ancestry initially returned a human-verification interstitial; the existing
+native handler cleared its checkbox, and the member-page check then passed.
+No passwords were submitted. Each verification session was released.

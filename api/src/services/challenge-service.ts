@@ -17,7 +17,7 @@ export async function detectChallenge(
   targetId?: string,
 ): Promise<Detection> {
   const pages = await session.getAllPages();
-  const page = targetId ? pages.find((p) => (p.target() as any)._targetId === targetId) : pages[0];
+  const page = targetId ? pages.find((p) => p.targetId === targetId) : pages[0];
   if (!page) throw new Error("Challenge page no longer exists");
   const state = await page.evaluate(() => {
     const box = (e: Element | null): Box | null => {
@@ -50,7 +50,7 @@ export async function detectChallenge(
   if (/human verification/i.test(state.text) && state.drag && state.drop)
     return { kind: "drag", points: [...state.drag, ...state.drop, ...(state.verify ?? [])] };
   // Inventory finds owners even when Turnstile is inside a closed shadow root.
-  const client = await page.createCDPSession();
+  const client = await page.createSession();
   try {
     const root = await client.send("Page.getFrameTree");
     const inventory: Array<{ id: string; url: string }> = [];
@@ -114,7 +114,7 @@ export async function clearChallenge(
   const { width, height } = session.getDimensions();
   const input = new QuietInput(session.display.name, width, height);
   const pages = await session.getAllPages();
-  const page = targetId ? pages.find((p) => (p.target() as any)._targetId === targetId) : pages[0];
+  const page = targetId ? pages.find((p) => p.targetId === targetId) : pages[0];
   if (!page) throw new Error("Challenge page no longer exists");
   const pointer = async (type: string, x: number, y: number) => {
     const offset = await page.evaluate(() => ({

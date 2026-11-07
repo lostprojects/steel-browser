@@ -1,25 +1,20 @@
-import { Protocol, Target, TargetType } from "puppeteer-core";
+import type { CDPSession, Protocol, Target } from "puppeteer-core";
 import type { BrowserLogger } from "./browser-logger.js";
-import { ExtensionEvent } from "./types.js";
+import type { ExtensionEvent } from "./types.js";
 import { BrowserEventType } from "../../../types/enums.js";
-import { formatLocation, serializeRemoteObject } from "./utils.js";
-import type { FastifyBaseLogger } from "fastify";
+import { extractTargetId, formatLocation, serializeRemoteObject } from "./utils.js";
 
-export async function attachExtensionEvents(
+export function attachExtensionEvents(
   target: Target,
+  session: CDPSession,
   logger: BrowserLogger,
-  internalExtensions: Set<string>,
-  appLogger: FastifyBaseLogger,
-): Promise<void> {
+): void {
   const url = target.url();
   if (!url.startsWith("chrome-extension://")) return;
 
   const extensionId = url.split("/")[2];
-  const isInternal = internalExtensions.has(extensionId);
-  const serviceWorkerId = (target as any)._targetId as string;
-  const targetType = target.type() as TargetType;
-
-  const session = await target.createCDPSession();
+  const serviceWorkerId = extractTargetId(target);
+  const targetType = target.type();
 
   const emitExtensionEvent = (
     partial: Pick<ExtensionEvent, "logLevel" | "message" | "type" | "loc" | "executionContextId">,
@@ -35,13 +30,6 @@ export async function attachExtensionEvents(
       loc: partial.loc,
       executionContextId: partial.executionContextId,
     };
-
-    if (isInternal) {
-      const prefix = `[INTERNAL EXT ${extensionId}] ${event.type}`;
-      const locSuffix = event.loc ? ` (${event.loc})` : "";
-      appLogger.info(`${prefix} (${event.logLevel}) ${event.message + locSuffix}`);
-      return;
-    }
 
     logger.record(event);
   };

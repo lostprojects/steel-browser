@@ -3,7 +3,7 @@ import type { CDPSession, Target } from "puppeteer-core";
 import { TargetType } from "puppeteer-core";
 import { describe, expect, it, vi } from "vitest";
 
-import { BrowserEventType } from "../../../types/index.js";
+import { BrowserEventType } from "../../../types/enums.js";
 import { TargetInstrumentationManager } from "./target-manager.js";
 
 describe("TargetInstrumentationManager", () => {

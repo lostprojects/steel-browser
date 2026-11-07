@@ -1,6 +1,20 @@
 import type { FastifyInstance } from "fastify";
 import type { IncomingMessage } from "node:http";
 import { agentFor } from "../../utils/api-key.js";
+export function selectedTransfers(
+  server: FastifyInstance,
+  request: { params?: unknown; raw: IncomingMessage },
+) {
+  const id = (request.params as { sessionId: string }).sessionId;
+  const owner = server.sessionPool.owner(id),
+    files = server.sessionPool.fileTransfers(id);
+  if (!owner || !files)
+    throw Object.assign(new Error("Download expired or unavailable"), { statusCode: 410 });
+  const agent = agentFor(request.raw);
+  if (!agent || (!agent.admin && owner.name !== agent.name))
+    throw Object.assign(new Error("Download belongs to another agent"), { statusCode: 403 });
+  return files;
+}
 export function selectedSession(
   server: FastifyInstance,
   request: {

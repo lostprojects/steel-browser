@@ -1,4 +1,4 @@
-import type { CDPSession } from "puppeteer-core";
+import type { ControlSession } from "../browser-control.js";
 import {
   axString,
   holdsValue,
@@ -118,7 +118,7 @@ export interface Expectation {
 
 export interface Scope {
   tab: Tab;
-  session: CDPSession;
+  session: ControlSession;
   frameId: string;
   root: boolean;
   group: string;
@@ -126,7 +126,7 @@ export interface Scope {
 
 export interface Element {
   tab: Tab;
-  session: CDPSession;
+  session: ControlSession;
   frameId: string;
   group: string;
   backendNodeId: number;
@@ -359,7 +359,10 @@ export async function resolveRef(
   if (!session) {
     throw stale(entry, "detached");
   }
-  const { frameTree } = await session.send("Page.getFrameTree");
+  const { frameTree } = await session.send("Page.getFrameTree").catch((error) => {
+    if (tab.sessionByKey(entry.sessionKey) !== session) throw stale(entry, "detached");
+    throw error;
+  });
   const loaderId = findLoader(frameTree, entry.frameId);
   if (!loaderId || loaderId !== entry.loaderId) {
     throw stale(entry, "detached");
@@ -490,7 +493,7 @@ export async function callIn<T>(
 }
 
 export async function axNode(
-  session: CDPSession,
+  session: ControlSession,
   backendNodeId: number,
 ): Promise<{ role: string; name: string } | null> {
   try {
@@ -622,7 +625,7 @@ function stale(entry: RefEntry, reason: string): CommandError {
 }
 
 async function itemText(
-  session: CDPSession,
+  session: ControlSession,
   backendNodeId: number,
   frameId: string,
 ): Promise<string | null> {
@@ -642,7 +645,7 @@ async function itemText(
 }
 
 async function walkText(
-  session: CDPSession,
+  session: ControlSession,
   backendNodeId: number,
   frameId: string,
 ): Promise<string | null> {

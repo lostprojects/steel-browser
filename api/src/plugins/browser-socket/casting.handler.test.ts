@@ -90,8 +90,9 @@ describe("handleCastSession cleanup", () => {
 
     expect(puppeteer.connect).toHaveBeenCalledTimes(1);
     expect(mockSocket.destroy).toHaveBeenCalledTimes(1);
-    expect(mockWs.listenerCount("close")).toBe(0);
-    expect(mockWs.listenerCount("error")).toBe(0);
+    // Failed setup still handles socket errors until the close event arrives.
+    expect(mockWs.listenerCount("close")).toBe(1);
+    expect(mockWs.listenerCount("error")).toBe(1);
     expect(mockDisconnect).toHaveBeenCalledTimes(1);
   });
 

@@ -14,12 +14,6 @@ const ALLOWED_ACTIONS = new Set([
   "drag",
 ]);
 
-export interface BrowserInteractionWirePayload {
-  source?: unknown;
-  timestamp?: unknown;
-  interaction?: unknown;
-}
-
 export function truncateBrowserInteractionText(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const normalized = value.replace(/\s+/g, " ").trim();

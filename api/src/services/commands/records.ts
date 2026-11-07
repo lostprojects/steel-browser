@@ -2,14 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { CommandEffect } from "./errors.js";
 import type { TabInfo } from "./tabs.js";
 
-export type ExecutionState =
-  | "queued"
-  | "running"
-  | "completed"
-  | "failed"
-  | "cancelled"
-  | "timeout"
-  | "expired";
+export type ExecutionState = import("../operations.js").OperationState;
 
 const FINAL_STATES = new Set<ExecutionState>([
   "completed",

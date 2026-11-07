@@ -1,10 +1,9 @@
 import { selectedSession } from "../sessions/sessions.controller.js";
 import { FastifyPluginAsync, FastifyRequest } from "fastify";
-import { LogQuerySchema, ExportLogsSchema, LogQueryInput } from "./logs.schema.js";
-import { randomUUID } from "crypto";
+import { LogQueryInput } from "./logs.schema.js";
 import { $ref } from "../../plugins/schemas.js";
-import { LogQuery } from "../../services/cdp/instrumentation/storage/index.js";
 import { EmitEvent } from "../../types/enums.js";
+import { scrubObject } from "../../services/vault.js";
 
 const logsRoutes: FastifyPluginAsync = async (fastify) => {
   /**
@@ -97,7 +96,7 @@ const logsRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Listen for new log events
       const handleLog = (event: any, context: any) => {
-        const data = JSON.stringify({ ...event, ...context });
+        const data = JSON.stringify(scrubObject({ ...event, ...context }));
         reply.raw.write(`data: ${data}\n\n`);
       };
 
@@ -111,32 +110,22 @@ const logsRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   /**
-   * Export logs to Parquet format
+   * Retain a clear response for clients of the removed disk-storage export.
    */
   fastify.post(
     "/export",
     {
       schema: {
-        querystring: $ref("LogQuerySchema"),
         tags: ["Logs"],
-        description: "Export browser logs to Parquet format",
+        deprecated: true,
+        description: "Parquet export is unavailable; retrieve JSON with /v1/logs/query",
       },
     },
-    async (request: FastifyRequest<{ Querystring: LogQuery }>) => {
-      const query = request.query;
-      const storage = selectedSession(fastify, request).getInstrumentationLogger().getStorage()!;
-
-      // Generate a unique filename
-      const fileName = `steel-browser-logs-${randomUUID()}.parquet`;
-      const filePath = `/tmp/steel-browser-exports/${fileName}`;
-
-      // Export with optional query filters
-      const exportedPath = await storage.exportToParquet(filePath, query);
-
-      return {
-        filePath: exportedPath,
-        message: "Logs exported successfully",
-      };
+    async (request, reply) => {
+      selectedSession(fastify, request);
+      return reply
+        .code(501)
+        .send({ message: "Use /v1/logs/query for JSON logs; Parquet export is unavailable" });
     },
   );
 

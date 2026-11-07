@@ -58,11 +58,6 @@ export interface ErrorEvent extends BaseBrowserEvent {
   error: { message: string; stack?: string; url?: string };
 }
 
-export interface RecordingEvent extends BaseBrowserEvent {
-  type: BrowserEventType.Recording | BrowserEventType.ScreencastFrame;
-  data: any;
-}
-
 export interface BrowserInteractionTarget {
   tagName?: string;
   role?: string;
@@ -186,7 +181,6 @@ export type BrowserEventUnion =
   | NavigationEvent
   | ConsoleEvent
   | ErrorEvent
-  | RecordingEvent
   | BrowserInteractionEvent
   | CDPEvent
   | CDPCommandEvent

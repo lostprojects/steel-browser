@@ -37,7 +37,7 @@ import { observeMemberRead } from "./login-observation.js";
 import { LoginService } from "./login.js";
 const roots: string[] = [],
   windows: JSDOM[] = [],
-  stops: Array<() => void> = [];
+  stops: Array<() => void | Promise<void>> = [];
 const agent = { name: "mosaic", dailyBudgetBytes: 1000 };
 beforeEach(() => {
   vi.clearAllMocks();
@@ -48,7 +48,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date("2026-11-05T04:00:00Z"));
 });
 afterEach(async () => {
-  stops.splice(0).forEach((stop) => stop());
+  await Promise.all(stops.splice(0).map((stop) => stop()));
   windows.splice(0).forEach((dom) => dom.window.close());
   vi.useRealTimers();
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
@@ -107,14 +107,14 @@ async function fixture(
       load(...(typeof p === "string" ? ([url, p] as const) : p));
     }),
     evaluate: async (fn: Function, arg: any) => dom.window.eval(`(${fn.toString()})`)(arg),
-    bringToFront: vi.fn(async () => {}),
+    client: { send: vi.fn(async () => {}) },
   };
   const session = {
     id: "fixture",
     options: { identity, mode: "quiet" },
     display: { name: ":99" },
     getDimensions: () => ({ width: 1920, height: 1080 }),
-    getPrimaryPage: async () => page,
+    getPrimaryReadPage: async () => page,
     getCookies: async () => [],
     touch: vi.fn(),
     getLogger: () => ({ info: vi.fn() }),

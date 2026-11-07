@@ -1,4 +1,4 @@
-import type { Page } from "puppeteer-core";
+import type { PageRead } from "../browser-control.js";
 import { IN_SECRET, SECRET_FIELD, SECRET_MASK } from "./secrets.js";
 
 export const MOUSE_HELPERS = "#__cursor__, puppeteer-mouse-pointer";
@@ -119,7 +119,7 @@ export function urlMatches(pattern: string, url: string): boolean {
 }
 
 export async function networkIdle(
-  page: Page,
+  page: PageRead,
   quietMs: number,
   timeoutMs: number,
   stopped: () => boolean,
@@ -131,6 +131,7 @@ export async function networkIdle(
     }
   }, 100);
   try {
+    if (!page.waitForNetworkIdle) throw new Error("Network-idle observation is unavailable");
     await page.waitForNetworkIdle({
       idleTime: quietMs,
       timeout: Math.max(timeoutMs, 1),

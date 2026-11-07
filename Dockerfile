@@ -1,19 +1,16 @@
 ARG NODE_VERSION=22.23.4
+ARG STEEL_IMAGE=browser
 
-FROM node:${NODE_VERSION} AS base
+FROM node:${NODE_VERSION}-bookworm-slim AS base
 
 WORKDIR /app
 
-ENV NODE_ENV="production" \
-    PUPPETEER_CACHE_DIR=/app/.cache \
-    CHROME_BIN=/usr/bin/google-chrome-stable \
-    CHROME_PATH=/usr/bin/google-chrome-stable \
-    CHROME_EXECUTABLE_PATH=/app/api/chrome-launcher.sh
+ENV NODE_ENV="production"
 
-LABEL org.opencontainers.image.source="https://github.com/lostprojects/steel-browser"
+LABEL org.opencontainers.image.source="https://github.com/lostprojects/toolstack"
 
 # Stage 1: Build UI
-FROM node:${NODE_VERSION} AS ui-build
+FROM base AS ui-build
 
 WORKDIR /app
 
@@ -28,13 +25,6 @@ RUN VITE_API_URL="" VITE_WS_URL="" npm run build -w ui -- --base=/ui
 # Stage 2: Build API
 FROM base AS api-build
 
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    build-essential \
-    pkg-config \
-    python-is-python3 \
-    xvfb
-
 # Copy root workspace files for API build
 COPY --link package.json package-lock.json ./
 
@@ -46,30 +36,31 @@ COPY --link api/ ./api/
 # Install dependencies for API
 RUN npm ci --include=dev --workspace=api
 
-# Install dependencies for recorder extension separately
-RUN cd api/extensions/recorder && npm ci --include=dev && cd -
-
 # Build the API package
-RUN npm run build -w api
-
-# Build the recorder extension
-RUN cd api/extensions/recorder && \
-    npm run build && \
-    cd -
+RUN npm run build -w api && npm run package:gateway -w api
 
 # Prune dev dependencies
-RUN npm prune --omit=dev -w api
-RUN cd api/extensions/recorder && npm prune --omit=dev && cd -
+RUN npm prune --omit=dev -w api && mkdir -p api/node_modules
 
-# Stage 3: Production
-FROM base AS production
+# The gateway ships its entry point and OAuth runtime, without browser dependencies.
+FROM base AS gateway
+
+COPY --from=api-build /app/build/gateway-runtime /app/
+COPY --link LICENSE /app/LICENSE
+RUN node --input-type=module -e "await import('./gateway/server.js')"
+ENV STEEL_ROLE=gateway
+EXPOSE 3000
+CMD ["node", "gateway/start.js"]
+
+# Browser worker and standalone runtime.
+FROM base AS browser
+
+ENV CHROME_EXECUTABLE_PATH=/app/api/chrome-launcher.sh
 
 # Install production dependencies
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends \
-    wget \
-    nginx \
-    gnupg \
+    ca-certificates \
     fonts-ipafont-gothic \
     fonts-wqy-zenhei \
     fonts-thai-tlwg \
@@ -78,7 +69,6 @@ RUN apt-get update && \
     libxss1 \
     xvfb \
     curl \
-    unzip \
     dbus \
     dbus-x11 \
     procps \
@@ -108,8 +98,14 @@ RUN mkdir -p /etc/chromium/policies/managed /etc/opt/chrome/policies/managed \
 
 RUN mkdir -p /files
 
-# Copy the built API from api-build stage
-COPY --from=api-build /app /app
+# Copy runtime files only; source, fixtures and build tools stay in the build stage.
+COPY --from=api-build /app/package.json /app/package.json
+COPY --from=api-build /app/node_modules /app/node_modules
+COPY --from=api-build /app/api/package.json /app/api/package.json
+COPY --from=api-build /app/api/node_modules /app/api/node_modules
+COPY --from=api-build /app/api/build /app/api/build
+COPY --link api/fetch.py /app/api/fetch.py
+COPY --link LICENSE /app/LICENSE
 
 # Copy the built UI from ui-build stage into the API container
 COPY --from=ui-build /app/ui/dist /app/ui/dist
@@ -117,10 +113,13 @@ COPY --from=ui-build /app/ui/dist /app/ui/dist
 # Copy entrypoint script
 COPY --chmod=755 api/entrypoint.sh api/chrome-launcher.sh /app/api/
 
-EXPOSE 3000 9223
+EXPOSE 3000
 
-ENV HOST_IP=localhost \
-    DBUS_SESSION_BUS_ADDRESS=autolaunch:
+ENV DBUS_SESSION_BUS_ADDRESS=autolaunch:
 
 # Tini runs as PID 1 to forward signals and reap zombies (like compose `init: true`)
 ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/app/api/entrypoint.sh"]
+
+# Railway passes declared build arguments from service variables. The default
+# remains the browser image; gateway services set STEEL_IMAGE=gateway.
+FROM ${STEEL_IMAGE} AS production

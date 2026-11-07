@@ -4,10 +4,16 @@ Read JSON on stdin. Do not log cookies or proxy URLs, run page scripts, or send
 identity cookies during a routing probe. Byte accounting belongs to the forwarder.
 """
 import base64
+from contextlib import ExitStack
 import http.cookiejar
+import hashlib
 import json
 import sys
 from curl_cffi import requests
+
+
+class ResponseTooLarge(Exception):
+    pass
 
 
 def main():
@@ -31,20 +37,42 @@ def main():
         headers["User-Agent"] = options["userAgent"]
     if options.get("referer"):
         headers["Referer"] = options["referer"]
+    limit_hit = False
     try:
-        with session.stream(options.get("method", "GET"), url, headers=headers, data=options.get("data"), proxy=options.get("proxy"), timeout=options.get("timeout", 30),
-                            max_redirects=8) as response:
-            parts, size = [], 0
-            for chunk in response.iter_content():
+        with ExitStack() as resources:
+            output = resources.enter_context(open(options["outputPath"], "xb")) if options.get("outputPath") else None
+            parts, size, prefix = [], 0, bytearray()
+            digest = hashlib.sha256()
+            def consume(chunk):
+                nonlocal size, limit_hit
                 size += len(chunk)
                 if size > limit:
-                    raise ValueError("Response exceeds byte limit")
-                parts.append(chunk)
-            print(json.dumps({"status": response.status_code, "url": response.url,
-                              "headers": dict(response.headers), "body": base64.b64encode(b"".join(parts)).decode()}))
+                    limit_hit = True
+                    raise ResponseTooLarge()
+                if output:
+                    output.write(chunk)
+                    digest.update(chunk)
+                    prefix.extend(chunk[:max(0, 5000 - len(prefix))])
+                else:
+                    parts.append(chunk)
+                return len(chunk)
+            request = dict(headers=headers, data=options.get("data"), proxy=options.get("proxy"),
+                           timeout=options.get("timeout", 30), max_redirects=8)
+            if output:
+                # The synchronous callback applies disk backpressure to curl;
+                # a streaming response queue could otherwise prefetch the body.
+                response = session.request(options.get("method", "GET"), url, content_callback=consume, **request)
+            else:
+                response = resources.enter_context(session.stream(options.get("method", "GET"), url, **request))
+                for chunk in response.iter_content():
+                    consume(chunk)
+        print(json.dumps({"status": response.status_code, "url": response.url,
+                          "headers": dict(response.headers), "body": base64.b64encode(bytes(prefix) if output else b"".join(parts)).decode(),
+                          **({"bytes": size, "sha256": digest.hexdigest()} if output else {})}))
     except Exception as error:
         # curl errors can contain the full URL; it may carry a signed token.
-        print(json.dumps({"error": type(error).__name__}))
+        kind = "limit" if limit_hit or isinstance(error, ResponseTooLarge) else "transport"
+        print(json.dumps({"error": kind}))
         sys.exit(1)
     finally:
         session.close()

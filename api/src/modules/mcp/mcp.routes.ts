@@ -1,9 +1,8 @@
+import { browserApplication } from "../../services/browser-application.js";
 // Exposes the existing browser operations through stateless Streamable HTTP.
 // Credentials stay in the REST/vault flows; this module cannot send requests
 // to a person or approve its own hand-off on a named agent key.
 import { createHash, randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
-import path from "node:path";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -13,138 +12,35 @@ import {
   type CallToolResult,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
-import { commandSchema } from "../../services/commands/commands.js";
+import type { CommandRequest } from "../../services/commands/commands.js";
 import { identityVault } from "../../services/login.js";
-import { scrub, scrubObject } from "../../services/vault.js";
-import { getUrl } from "../../utils/url.js";
-import { agentFor, suppliedKey, browserOriginAllowed } from "../../utils/api-key.js";
-import { selectedSession } from "../sessions/sessions.controller.js";
+import { agentFor, browserOriginAllowed } from "../../utils/api-key.js";
+import { selectedSession, selectedTransfers } from "../sessions/sessions.controller.js";
 import { getDefuddleContent } from "../../utils/scrape/readability.js";
+import { stripBase64Images } from "../../utils/scrape/stripBase64Images.js";
+import { DEFAULT_TEXT_LIMIT, textPage } from "../../utils/text.js";
+import { scrub } from "../../services/vault.js";
 import { BrowserEventType } from "../../types/enums.js";
-import { callerTag } from "../../services/caller-outcomes.js";
+import { env } from "../../env.js";
 
-const session = z.string().uuid();
-const name = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/);
-const siteName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,252}$/);
-const url = z
-  .string()
-  .url()
-  .refine((value) => {
-    const parsed = new URL(value);
-    return ["http:", "https:"].includes(parsed.protocol) && !parsed.username && !parsed.password;
-  }, "Use an HTTP URL without credentials");
-const country = z.string().regex(/^[A-Z]{2}$/);
-const actNames = new Set([
-  "navigate",
-  "back",
-  "forward",
-  "reload",
-  "click",
-  "dblclick",
-  "hover",
-  "focus",
-  "type",
-  "fill",
-  "press",
-  "keydown",
-  "keyup",
-  "mouse",
-  "select",
-  "check",
-  "uncheck",
-  "scroll",
-  "wait",
-]);
-const actCommandSchema = z.discriminatedUnion(
-  "command",
-  commandSchema.options.filter((option) => actNames.has(option.shape.command.value)) as any,
-);
-const schemas = {
-  browser_open: z
-    .object({
-      site: siteName.optional(),
-      url: url.optional(),
-      identity: name.optional(),
-      mode: z.enum(["agent", "quiet"]).optional(),
-      residential: z.union([z.boolean(), z.object({ country }).strict()]).optional(),
-      caller: callerTag.default("mcp"),
-    })
-    .strict()
-    .refine((value) => value.site || value.url, "Supply a site or URL"),
-  browser_snapshot: z.object({ session, compact: z.boolean().default(true) }).strict(),
-  browser_act: z
-    .object({
-      session,
-      commands: z.array(actCommandSchema).min(1).max(50),
-    })
-    .strict(),
-  browser_read: z
-    .object({ session, format: z.enum(["markdown", "text", "html"]).default("markdown") })
-    .strict(),
-  browser_screenshot: z.object({ session }).strict(),
-  browser_download: z
-    .object({ session, url: url.optional(), ref: z.string().min(1).max(200).optional() })
-    .strict()
-    .refine((value) => !!value.url !== !!value.ref, "Supply one URL or element ref"),
-  browser_login: z
-    .object({
-      session,
-      identity: name.optional(),
-      site: name.optional(),
-      current: z.boolean().default(false),
-    })
-    .strict(),
-  browser_handoff: z
-    .object({
-      session,
-      reason: z.string().trim().min(1).max(1000),
-      approval: z.string().uuid().optional(),
-    })
-    .strict(),
-  browser_network: z
-    .object({ session, limit: z.number().int().min(1).max(200).default(50) })
-    .strict(),
-  browser_close: z.object({ session }).strict(),
-  fetch: z
-    .object({
-      url,
-      site: siteName.optional(),
-      residential: z.union([z.boolean(), z.object({ country }).strict()]).optional(),
-      caller: callerTag.default("mcp-fetch"),
-      requestId: z.string().uuid().optional(),
-      timeoutMs: z.number().int().min(1000).max(300_000).optional(),
-    })
-    .strict(),
-};
-type ToolName = keyof typeof schemas;
-const descriptions: Record<ToolName, string> = {
-  browser_open:
-    "Open a browser using shared site defaults. Keep the returned session until browser_close.",
-  browser_snapshot: "Read a page outline with stable element refs for subsequent actions.",
-  browser_act: "Run batched navigation and native input commands. Use vault login for credentials.",
-  browser_read: "Read the current page as markdown, visible text or HTML.",
-  browser_screenshot:
-    "Capture the page or quiet display. Protected identities refuse image capture.",
-  browser_download:
-    "Download a URL or click an element ref. Returns an authenticated files API URL and suggested local INBOX path; the caller copies the file before closing.",
-  browser_login:
-    "Run the scoped vault flow on the session identity. Local email/SMS codes use Mosaic's code-only helper; stop on credentials_rejected.",
-  browser_handoff:
-    "Return a noVNC link only after an admin records the owner's explicit agreement for this session and reason. Without approval, returns owner_agreement_required.",
-  browser_network:
-    "Read recent request metadata in agent mode. Request bodies, headers and URL queries are omitted.",
-  browser_close: "Release the browser and report settled bytes and estimated residential cost.",
-  fetch:
-    "Read one page as markdown using the routing ladder, then release its browser. Prefer this for pages requiring no interaction.",
-};
+import { schemas, descriptions, textResult, commandFailed } from "./tools.js";
+import { ToolRegistry, type ToolContext } from "../../services/toolkits/registry.js";
+import { callRegisteredTool, discoveryDefinitions } from "./discovery.js";
+import type { ToolName } from "./tools.js";
+import { commandResult, deliveryResult, scrubToolMetadata } from "./output.js";
+import { connectionToolkit } from "./connections.js";
+import { apiToolkit } from "./api.js";
+import { builtInApiToolkits } from "../../services/toolkits/builtins.js";
+import { nativeApiToolkit } from "../../services/toolkits/native-api.js";
+import { applicationRoutes } from "../application/application.routes.js";
+import { workflowToolkit } from "./workflows.js";
+import { verifyConnection } from "../../services/toolkits/verify-connection.js";
+import { libraryToolkit } from "./library.js";
 
-function textResult(value: unknown, isError = false): CallToolResult {
-  return {
-    content: [{ type: "text", text: scrub(JSON.stringify(scrubObject(value))) }],
-    ...(isError ? { isError: true } : {}),
-  };
+interface BrowserToolContext extends ToolContext {
+  request: FastifyRequest;
 }
+
 function metadataUrl(raw: string) {
   try {
     const parsed = new URL(raw);
@@ -155,6 +51,7 @@ function metadataUrl(raw: string) {
 }
 
 export default async function mcpRoutes(server: FastifyInstance) {
+  const application = browserApplication(server.sessionPool);
   const approvals = new Map<
     string,
     { session: string; reason: string; owner: string; expires: number }
@@ -175,7 +72,7 @@ export default async function mcpRoutes(server: FastifyInstance) {
         throw Object.assign(new Error("Admin key required to record the owner's agreement"), {
           statusCode: 403,
         });
-      const browser = access(req, session.parse(req.params.sessionId));
+      const browser = access(req, schemas.browser_close.shape.session.parse(req.params.sessionId));
       if (identityVault(browser.options.identity))
         throw Object.assign(new Error("Protected identity view unavailable"), { statusCode: 403 });
       const body = z
@@ -209,458 +106,534 @@ export default async function mcpRoutes(server: FastifyInstance) {
     },
   });
 
-  server.post("/mcp", { bodyLimit: 2_000_000 }, async (req, reply) => {
-    check(req);
-    const agent = agentFor(req.raw)!;
-    const key = suppliedKey(req.raw).key;
-    const requestKey =
-      typeof req.headers["idempotency-key"] === "string"
-        ? req.headers["idempotency-key"]
-        : randomUUID();
-    const api = async (
-      method: "GET" | "POST",
-      endpoint: string,
-      payload?: unknown,
-      operation = endpoint,
-    ) => {
-      const response = await server.inject({
-        method,
-        url: endpoint,
-        headers: {
-          ...(key ? { "steel-api-key": key } : {}),
-          ...(payload !== undefined ? { "content-type": "application/json" } : {}),
-          ...(method === "POST"
-            ? {
-                "idempotency-key": createHash("sha256")
-                  .update(requestKey + ":" + operation)
-                  .digest("hex"),
-              }
-            : {}),
-        },
-        ...(payload !== undefined ? { payload: JSON.stringify(payload) } : {}),
-      });
-      const data = response.json();
-      if (response.statusCode >= 400)
+  async function executeBrowser(tool: ToolName, args: any, context: BrowserToolContext) {
+    const req = context.request;
+    const agent = context.agent;
+    let requestKey = context.requestId;
+    if (typeof args.idempotencyKey === "string") requestKey = args.idempotencyKey;
+    const appContext = (operation: string, idempotencyKey?: string) => ({
+      agent,
+      assertAuthorized: context.assertAuthorized,
+      idempotencyKey:
+        idempotencyKey ??
+        createHash("sha256")
+          .update(requestKey + ":" + operation)
+          .digest("hex"),
+    });
+    const unwrap = (response: import("../../services/commands/engine.js").EngineResponse) => {
+      if (response.status >= 400)
         throw Object.assign(
-          new Error(data.message ?? data.error ?? `Browser API HTTP ${response.statusCode}`),
+          new Error((response.body.error as any)?.message ?? "Browser operation failed"),
           {
-            statusCode: response.statusCode,
-            ...(response.statusCode === 408
-              ? { requestId: data.requestId, reason: data.reason }
-              : {}),
+            statusCode: response.status,
+            details: response.body,
+            retryAfter: response.headers["retry-after"],
           },
         );
-      return data;
+      return response.body as any;
     };
-    const commands = async (id: string, list: unknown[], operation: string) => {
-      let result = await api("POST", `/v1/sessions/${id}/commands`, { commands: list }, operation);
-      const deadline = Date.now() + 150_000;
-      while (["queued", "running"].includes(result.execution?.state) && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 250));
-        result = await api(
-          "POST",
-          `/v1/sessions/${id}/commands`,
-          { commands: [{ command: "status", execution: result.execution.id }] },
-          randomUUID(),
-        );
-      }
-      if (
-        result.execution?.state !== "completed" ||
-        result.results?.some((value: any) => !value.ok)
-      )
-        throw Object.assign(
-          new Error(
-            result.results?.find((value: any) => value.error)?.error?.message ??
-              result.execution?.error?.message ??
-              "Browser command did not complete",
+    let unfinished = false;
+    const commands = async (
+      id: string,
+      body: CommandRequest,
+      operation: string,
+      idempotencyKey?: string,
+    ) => {
+      const result = unwrap(
+        await application.commands(appContext(operation, idempotencyKey), id, {
+          ...body,
+          commands: body.commands.map((command) =>
+            command.command === "snapshot" ||
+            (command.command === "get" && ["text", "html", "markdown"].includes(command.what))
+              ? { ...command, limit: command.limit ?? DEFAULT_TEXT_LIMIT }
+              : command,
           ),
-          { statusCode: 409 },
-        );
+          ...(body.observe && body.observe.mode !== "none"
+            ? { observe: { ...body.observe, limit: body.observe.limit ?? DEFAULT_TEXT_LIMIT } }
+            : {}),
+        }),
+      );
+      unfinished = ["queued", "running"].includes(result.execution?.state);
       return result;
     };
-    const protocol = new Server(
-      { name: "mosaic-browser", version: "1.0.0" },
-      {
-        capabilities: { tools: {} },
-        instructions:
-          "Use fetch for one-page reads. Close each interactive session in finally. Use vault login; do not type credentials. A human hand-off requires the owner's agreement.",
-      },
-    );
-    protocol.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: Object.entries(schemas).map(([tool, schema]) => ({
-        name: tool,
-        description: descriptions[tool as ToolName],
-        inputSchema: zodToJsonSchema(schema, { $refStrategy: "none" }) as any,
-      })),
-    }));
-    protocol.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const tool = request.params.name as ToolName;
-      const eventHash = createHash("sha256").update(`${requestKey}:${tool}:outcome`).digest("hex");
-      const outcomeId = `${eventHash.slice(0, 8)}-${eventHash.slice(8, 12)}-4${eventHash.slice(
-        13,
-        16,
-      )}-8${eventHash.slice(17, 20)}-${eventHash.slice(20, 32)}`;
-      let outcomeContext: { caller: string; site?: string; sessionId?: string } = { caller: "mcp" };
-      let outcomeReason: "completed" | "exception" | "auth_required" | "unobserved" | undefined;
-      const run = async (): Promise<CallToolResult> => {
-        try {
-          if (!Object.hasOwn(schemas, tool))
-            return textResult({ error: "Unknown browser tool" }, true);
-          const args = schemas[tool].parse(request.params.arguments ?? {}) as any;
-          if (tool === "browser_open") {
-            outcomeContext = { caller: args.caller, site: args.site };
-            const body = {
-              ...(args.site ? { site: args.site } : {}),
-              ...(args.url ? { targetUrl: args.url } : {}),
-              caller: args.caller,
-              ...(args.identity ? { identity: args.identity } : {}),
-              ...(args.mode ? { mode: args.mode } : {}),
-              ...(args.residential === false
-                ? { residential: false }
-                : args.residential
+    const eventHash = createHash("sha256").update(`${requestKey}:${tool}:outcome`).digest("hex");
+    const outcomeId = `${eventHash.slice(0, 8)}-${eventHash.slice(8, 12)}-4${eventHash.slice(
+      13,
+      16,
+    )}-8${eventHash.slice(17, 20)}-${eventHash.slice(20, 32)}`;
+    let outcomeContext: { caller: string; site?: string; sessionId?: string } = { caller: "mcp" };
+    let outcomeReason: "completed" | "exception" | "auth_required" | "unobserved" | undefined;
+    const run = async (): Promise<CallToolResult> => {
+      try {
+        if (tool === "browser_sessions") {
+          const { sessions } = application.list({ agent });
+          return textResult({
+            sessions: sessions
+              .filter((value: any) => value.status === "live")
+              .map((value: any) => ({
+                session: value.id,
+                status: value.status,
+                site: value.site,
+                mode: value.mode,
+                identity: value.identity ?? null,
+                caller: value.caller,
+                createdAt: value.createdAt,
+                idleTimeoutMs: value.timeout,
+                residentialBytes: (value.proxyTxBytes ?? 0) + (value.proxyRxBytes ?? 0),
+              })),
+          });
+        }
+        if (tool === "browser_open") {
+          outcomeContext = { caller: args.caller, site: args.site };
+          const body = {
+            ...(args.connection ? { connection: args.connection } : {}),
+            ...(args.site ? { site: args.site } : {}),
+            ...(args.url ? { targetUrl: args.url } : {}),
+            caller: args.caller,
+            ...(args.identity ? { identity: args.identity } : {}),
+            ...(args.mode ? { mode: args.mode } : {}),
+            ...(args.residential === false
+              ? { residential: false }
+              : args.residential
                 ? {
                     residential:
                       typeof args.residential === "object" ? args.residential : { country: "US" },
                   }
                 : {}),
+          };
+          const opened = await application.open(appContext("open"), body);
+          try {
+            const browser = access(req, opened.id);
+            outcomeContext = {
+              caller: browser.options.caller ?? "mcp",
+              site: browser.options.site,
+              sessionId: browser.id,
             };
-            const opened = await api("POST", "/v1/sessions", body, "open");
-            try {
-              const browser = access(req, opened.id);
-              outcomeContext = {
-                caller: browser.options.caller ?? "mcp",
-                site: browser.options.site,
-                sessionId: browser.id,
-              };
-              const destination = args.url ?? browser.options.targetUrl;
-              if (destination)
-                await commands(
-                  opened.id,
-                  [{ command: "navigate", url: destination }],
-                  "open-navigate",
-                );
-              return textResult({
+            const destination = args.url ?? browser.options.targetUrl;
+            const state = await commands(
+              opened.id,
+              {
+                commands: destination
+                  ? [{ command: "navigate", url: destination }]
+                  : [{ command: "get", what: "url" }],
+                observe: args.observe,
+              },
+              "open-navigate",
+            );
+            return textResult(
+              {
                 session: opened.id,
                 site: browser.options.site,
                 mode: opened.mode,
                 identity: opened.identity ?? null,
                 url: destination,
                 idleTimeoutMs: opened.timeout,
-              });
-            } catch (error) {
-              await api("POST", `/v1/sessions/${opened.id}/release`, {}, "open-failed-release");
-              throw error;
-            }
-          }
-          if (tool === "fetch") {
-            let result: any;
+                ...state,
+              },
+              commandFailed(state),
+            );
+          } catch (error) {
             try {
-              if (args.residential === false) {
-                const site = await server.sessionPool.routing.resolve(args.site ?? args.url);
-                if (identityVault(site?.identity ?? undefined))
-                  throw Object.assign(
-                    new Error("Protected identities require their managed residential exit"),
-                    { statusCode: 403 },
-                  );
-              }
-              result = await api(
-                "POST",
-                "/v1/fetch",
-                {
-                  url: args.url,
-                  ...(args.site ? { site: args.site } : {}),
-                  caller: args.caller,
-                  requestId: args.requestId ?? outcomeId,
-                  timeoutMs: args.timeoutMs ?? 180_000,
-                  retain: false,
-                  ...(args.residential === false ? { maxRung: 2 } : {}),
-                  ...(args.residential
-                    ? {
-                        startRung: 3,
-                        country:
-                          typeof args.residential === "object" ? args.residential.country : "US",
-                      }
-                    : {}),
+              await application.release(appContext("open-failed-release"), opened.id);
+            } catch (cleanupError) {
+              Object.assign(error as Error, {
+                details: {
+                  ...(error as any).details,
+                  session: opened.id,
+                  cleanupError: (cleanupError as Error).message,
                 },
-                "fetch",
-              );
-              if (result.status !== "ok")
-                return textResult(
-                  { status: result.status, rung: result.rung, attempts: result.attempts },
-                  true,
-                );
-              const content = await getDefuddleContent(result.html, result.url ?? args.url);
-              return textResult({
-                status: "ok",
-                url: result.url ?? args.url,
-                rung: result.rung,
-                markdown: content.contentMarkdown ?? "",
-                attempts: result.attempts,
-                residentialBytes:
-                  (result.settled?.proxyTxBytes ?? 0) + (result.settled?.proxyRxBytes ?? 0),
               });
-            } finally {
-              if (result?.session?.id)
-                await api(
-                  "POST",
-                  `/v1/sessions/${result.session.id}/release`,
-                  {},
-                  "fetch-finally-release",
+            }
+            throw error;
+          }
+        }
+        if (tool === "fetch") {
+          const requestId = args.requestId ?? outcomeId;
+          let result: any;
+          try {
+            if (args.residential === false) {
+              const site = await server.sessionPool.routing.resolve(args.site ?? args.url);
+              if (identityVault(site?.identity ?? undefined))
+                throw Object.assign(
+                  new Error("Protected identities require their managed residential exit"),
+                  { statusCode: 403 },
                 );
             }
-          }
-          if (tool === "browser_close") {
-            const ended = await api("POST", `/v1/sessions/${args.session}/release`, {}, "close");
-            outcomeContext = {
-              caller: ended.caller ?? "mcp",
-              site: ended.site,
-              sessionId: args.session,
-            };
-            const residentialBytes = (ended.proxyTxBytes ?? 0) + (ended.proxyRxBytes ?? 0);
-            return textResult({
-              session: args.session,
-              endReason: ended.endReason,
-              residentialBytes,
-              directBytes: ended.directBytes ?? 0,
-              estimatedResidentialUSD: residentialBytes / 1_000_000_000,
-              costBasis: "Evomi Core estimate at USD 1 per GB; Railway compute excluded",
-            });
-          }
-          const browser = access(req, args.session);
-          outcomeContext = {
-            caller: browser.options.caller ?? "mcp",
-            site: browser.options.site,
-            sessionId: browser.id,
-          };
-          if (tool === "browser_snapshot")
-            return textResult(
-              await commands(
-                args.session,
-                [{ command: "snapshot", compact: args.compact }],
-                "snapshot",
+            result = await application.fetch(
+              appContext(
+                "fetch",
+                createHash("sha256").update(`mcp-fetch:${requestId}`).digest("hex"),
               ),
+              {
+                url: args.url,
+                ...(args.site ? { site: args.site } : {}),
+                caller: args.caller,
+                requestId,
+                timeoutMs: args.timeoutMs ?? 180_000,
+                retain: false,
+                ...(args.residential === false ? { maxRung: 2 } : {}),
+                ...(args.residential
+                  ? {
+                      startRung: 3,
+                      country:
+                        typeof args.residential === "object" ? args.residential.country : "US",
+                    }
+                  : {}),
+              },
             );
-          if (tool === "browser_act")
-            return textResult(await commands(args.session, args.commands, "act"));
-          if (tool === "browser_read")
-            return textResult(
-              await commands(args.session, [{ command: "get", what: args.format }], "read"),
-            );
-          if (tool === "browser_screenshot") {
-            if (identityVault(browser.options.identity))
-              throw Object.assign(new Error("Protected identity image capture unavailable"), {
-                statusCode: 403,
-              });
-            const result = await commands(
-              args.session,
-              [{ command: "screenshot", format: "png" }],
-              "screenshot",
-            );
-            return {
-              content: [{ type: "image", data: result.results[0].data, mimeType: "image/png" }],
-            };
-          }
-          if (tool === "browser_download") {
-            let filename: string;
-            let bytes: number;
-            if (args.url) {
-              const downloaded = await api(
-                "POST",
-                `/v1/sessions/${args.session}/download`,
-                { url: args.url },
-                "download",
+            if (result.status !== "ok")
+              return textResult(
+                { status: result.status, rung: result.rung, attempts: result.attempts },
+                true,
               );
-              if (downloaded.status < 200 || downloaded.status >= 300)
-                throw new Error(`Download HTTP ${downloaded.status}`);
-              const data = Buffer.from(downloaded.body, "base64");
-              if (!data.length) throw new Error("Download returned no bytes");
-              const raw = decodeURIComponent(path.posix.basename(new URL(args.url).pathname));
-              filename = (
-                raw.replace(/[^A-Za-z0-9._-]/g, "_").replace(/^\.+/, "") || "download"
-              ).slice(0, 160);
-              filename = `${randomUUID()}-${filename}`;
-              await writeFile(path.join(browser.filesPath, filename), data, {
-                flag: "wx",
-                mode: 0o600,
-              });
-              bytes = data.length;
-            } else {
-              const result = await commands(
-                args.session,
-                [
+            const content = await getDefuddleContent(result.html, result.url ?? args.url);
+            const { value: markdown, ...page } = textPage(
+              scrub(stripBase64Images(content.contentMarkdown ?? "")),
+              args,
+            );
+            return textResult({
+              status: "ok",
+              requestId,
+              url: result.url ?? args.url,
+              rung: result.rung,
+              markdown,
+              ...page,
+              attempts: result.attempts,
+              residentialBytes:
+                (result.settled?.proxyTxBytes ?? 0) + (result.settled?.proxyRxBytes ?? 0),
+            });
+          } finally {
+            if (result?.session?.id)
+              await application.release(appContext("fetch-finally-release"), result.session.id);
+          }
+        }
+        if (tool === "browser_close") {
+          const ended = await application.release(appContext("close"), args.session);
+          outcomeContext = {
+            caller: ended.caller ?? "mcp",
+            site: ended.site,
+            sessionId: args.session,
+          };
+          const residentialBytes = (ended.proxyTxBytes ?? 0) + (ended.proxyRxBytes ?? 0);
+          return textResult({
+            session: args.session,
+            endReason: ended.endReason,
+            residentialBytes,
+            directBytes: ended.directBytes ?? 0,
+            estimatedResidentialUSD: residentialBytes / 1_000_000_000,
+            costBasis: "Evomi Core estimate at USD 1 per GB; Railway compute excluded",
+          });
+        }
+        if (tool === "browser_download" && args.transfer) {
+          const files = selectedTransfers(server, {
+            raw: req.raw,
+            params: { sessionId: args.session },
+          });
+          let delivery = args.cancel
+            ? await files.cancel(args.transfer)
+            : files.status(args.transfer);
+          if (!args.cancel && delivery.state === "ready") delivery = files.share(args.transfer);
+          unfinished = delivery.state === "receiving";
+          return deliveryResult(delivery, args.cancel);
+        }
+        const browser = access(req, args.session);
+        outcomeContext = {
+          caller: browser.options.caller ?? "mcp",
+          site: browser.options.site,
+          sessionId: browser.id,
+        };
+        if (tool === "browser_snapshot") {
+          const { session: id, after, eventsAfter, ...options } = args;
+          return await commandResult(
+            browser,
+            await commands(
+              id,
+              {
+                commands: [{ command: "snapshot", ...options }],
+                after,
+                eventsAfter,
+              },
+              "snapshot",
+            ),
+          );
+        }
+        if (tool === "browser_act") {
+          const { session: id, idempotencyKey, ...body } = args;
+          const list = Array.isArray(body.commands) ? body.commands : [body.commands];
+          if (
+            identityVault(browser.options.identity) &&
+            list.some((item: any) => ["screenshot", "pdf"].includes(item.command))
+          )
+            throw Object.assign(new Error("Protected identity image capture unavailable"), {
+              statusCode: 403,
+            });
+          return await commandResult(
+            browser,
+            await commands(id, { ...body, commands: list }, "act", idempotencyKey),
+            list.length === 1 && list[0].command === "cancel",
+          );
+        }
+        if (tool === "browser_read") {
+          const { session: id, format, after, eventsAfter, ...options } = args;
+          return await commandResult(
+            browser,
+            await commands(
+              id,
+              {
+                commands: [
+                  {
+                    command: "get",
+                    what: format,
+                    ...options,
+                    target: options.target ?? (format === "markdown" ? undefined : ":root"),
+                  },
+                ],
+                after,
+                eventsAfter,
+              },
+              "read",
+            ),
+          );
+        }
+        if (tool === "browser_screenshot") {
+          if (identityVault(browser.options.identity))
+            throw Object.assign(new Error("Protected identity image capture unavailable"), {
+              statusCode: 403,
+            });
+          const { session: id, ...options } = args;
+          const result = await commands(
+            args.session,
+            { commands: [{ command: "screenshot", ...options }] },
+            "screenshot",
+          );
+          return await commandResult(browser, result);
+        }
+        if (tool === "browser_download") {
+          if (args.url) {
+            const delivery = await application.prepareDelivery(
+              appContext("download"),
+              args.session,
+              { url: args.url },
+            );
+            unfinished = delivery.state === "receiving";
+            return deliveryResult(delivery);
+          }
+          return await commandResult(
+            browser,
+            await commands(
+              args.session,
+              {
+                commands: [
                   { command: "click", target: args.ref },
                   { command: "wait", download: true, timeout: 50_000 },
                 ],
-                "download-ref",
-              );
-              filename = path.basename(result.results.at(-1).file);
-              bytes = result.results.at(-1).bytes;
-            }
-            const remotePath = filename;
-            const uri = getUrl(
-              `v1/sessions/${args.session}/files/${remotePath
-                .split("/")
-                .map(encodeURIComponent)
-                .join("/")}`,
-            );
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: scrub(
-                    JSON.stringify({
-                      name: filename,
-                      bytes,
-                      suggestedInboxPath: `Source Data/-INBOX/browser-downloads/${filename}`,
-                      requiresAuthentication: true,
-                      copyBeforeClose: true,
-                    }),
-                  ),
-                },
-                {
-                  type: "resource_link",
-                  uri,
-                  name: filename,
-                  description:
-                    "Copy this authenticated file to the suggested local INBOX path before closing the session.",
-                },
-              ],
-            };
-          }
-          if (tool === "browser_login") {
-            if (args.identity && args.identity !== browser.options.identity)
-              throw new Error("Login identity must match the open session");
-            const selectedSite = browser.options.site ?? browser.options.targetUrl;
-            const site =
-              args.site ??
-              (selectedSite
-                ? (await server.sessionPool.routing.resolve(selectedSite))?.loginSite
-                : undefined) ??
-              identityVault(browser.options.identity);
-            if (!site) throw new Error("The site has no configured vault login");
-            const result = await api(
-              "POST",
-              `/v1/sessions/${args.session}/login`,
-              { site, current: args.current },
-              "login",
-            );
-            outcomeReason = result.status === "ok" ? "completed" : "auth_required";
-            return textResult(result, result.status !== "ok");
-          }
-          if (tool === "browser_handoff") {
-            if (identityVault(browser.options.identity))
-              throw Object.assign(new Error("Protected identity view unavailable"), {
-                statusCode: 403,
-              });
-            const permission = args.approval ? approvals.get(args.approval) : undefined;
-            if (
-              !permission ||
-              permission.expires <= Date.now() ||
-              permission.session !== args.session ||
-              permission.reason !== args.reason ||
-              (!agent.admin && permission.owner !== agent.name)
-            ) {
-              outcomeReason = "unobserved";
-              return textResult({
-                status: "owner_agreement_required",
-                session: args.session,
-                reason: args.reason,
-              });
-            }
-            approvals.delete(args.approval);
-            return textResult({
-              status: "awaiting_owner",
-              session: args.session,
-              noVncUrl: browser.info().noVncUrl,
-              requiresAuthentication: true,
-              idleTimeoutMs: browser.info().timeout,
-            });
-          }
-          if (tool === "browser_network") {
-            if (browser.options.mode !== "agent")
-              throw Object.assign(new Error("Network inventory is available only in agent mode"), {
-                statusCode: 409,
-              });
-            const result = await browser
-              .getInstrumentationLogger()
-              .getStorage()!
-              .query({
-                eventTypes: [
-                  BrowserEventType.Request,
-                  BrowserEventType.Response,
-                  BrowserEventType.RequestFailed,
-                ],
-                limit: args.limit,
-              });
-            return textResult({
-              events: result.events.map((event: any) => ({
-                type: event.type,
-                timestamp: event.timestamp,
-                url: metadataUrl(
-                  event.request?.url ?? event.response?.url ?? event.error?.url ?? "",
-                ),
-                ...(event.request
-                  ? { method: event.request.method, resourceType: event.request.resourceType }
-                  : {}),
-                ...(event.response
-                  ? { status: event.response.status, mimeType: event.response.mimeType }
-                  : {}),
-              })),
-              hasMore: result.hasMore,
-            });
-          }
-          return textResult({ error: "Unknown browser tool" }, true);
-        } catch (error) {
-          const message =
-            error instanceof z.ZodError
-              ? error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")
-              : (error as Error).message;
-          return textResult(
-            {
-              error: message,
-              statusCode: (error as any).statusCode ?? 400,
-              ...((error as any).statusCode === 408
-                ? { requestId: (error as any).requestId, reason: (error as any).reason }
-                : {}),
-            },
-            true,
+              },
+              "download-ref",
+            ),
           );
         }
-      };
-      const result = await run();
-      // Fetch already records its routing result. These rows describe MCP tool
-      // operations, separately from the browser session's eventual end reason.
-      if (tool !== "fetch") {
-        try {
-          await api(
-            "POST",
-            "/v1/caller-outcomes",
-            {
-              attemptId: outcomeId,
-              ...outcomeContext,
-              backend: "steel",
-              outcome:
-                outcomeReason === "unobserved" ? "unknown" : result.isError ? "failure" : "success",
-              reason: outcomeReason ?? (result.isError ? "exception" : "completed"),
-              fallback: false,
-            },
-            "tool-outcome",
-          );
-        } catch {
-          result.content.push({
-            type: "text",
-            text: "Caller outcome was not recorded; this operation cannot establish migration acceptance.",
+        if (tool === "browser_login") {
+          if (args.identity && args.identity !== browser.options.identity)
+            throw new Error("Login identity must match the open session");
+          const selectedSite = browser.options.site ?? browser.options.targetUrl;
+          const site =
+            args.site ??
+            (selectedSite
+              ? (await server.sessionPool.routing.resolve(selectedSite))?.loginSite
+              : undefined) ??
+            identityVault(browser.options.identity);
+          if (!site) throw new Error("The site has no configured vault login");
+          const result = await application.signIn(appContext("login"), args.session, {
+            site,
+            current: args.current,
+          });
+          outcomeReason = result.status === "ok" ? "completed" : "auth_required";
+          return textResult(result, result.status !== "ok");
+        }
+        if (tool === "browser_handoff") {
+          if (identityVault(browser.options.identity))
+            throw Object.assign(new Error("Protected identity view unavailable"), {
+              statusCode: 403,
+            });
+          const permission = args.approval ? approvals.get(args.approval) : undefined;
+          if (
+            !permission ||
+            permission.expires <= Date.now() ||
+            permission.session !== args.session ||
+            permission.reason !== args.reason ||
+            (!agent.admin && permission.owner !== agent.name)
+          ) {
+            outcomeReason = "unobserved";
+            return textResult({
+              status: "owner_agreement_required",
+              session: args.session,
+              reason: args.reason,
+            });
+          }
+          approvals.delete(args.approval);
+          return textResult({
+            status: "awaiting_owner",
+            session: args.session,
+            noVncUrl: browser.info().noVncUrl,
+            requiresAuthentication: true,
+            idleTimeoutMs: browser.info().timeout,
           });
         }
+        if (tool === "browser_network") {
+          if (browser.options.mode !== "agent")
+            throw Object.assign(new Error("Network inventory is available only in agent mode"), {
+              statusCode: 409,
+            });
+          const result = await browser
+            .getInstrumentationLogger()
+            .getStorage()!
+            .query({
+              eventTypes: [
+                BrowserEventType.Request,
+                BrowserEventType.Response,
+                BrowserEventType.RequestFailed,
+              ],
+              limit: args.limit,
+            });
+          return textResult({
+            events: result.events.map((event: any) => ({
+              type: event.type,
+              timestamp: event.timestamp,
+              url: metadataUrl(event.request?.url ?? event.response?.url ?? event.error?.url ?? ""),
+              ...(event.request
+                ? { method: event.request.method, resourceType: event.request.resourceType }
+                : {}),
+              ...(event.response
+                ? { status: event.response.status, mimeType: event.response.mimeType }
+                : {}),
+            })),
+            hasMore: result.hasMore,
+          });
+        }
+        return textResult({ error: "Unknown browser tool" }, true);
+      } catch (error) {
+        const message =
+          error instanceof z.ZodError
+            ? error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")
+            : (error as Error).message;
+        return textResult(
+          {
+            ...(error as any).details,
+            ...(["fetch_timeout", "fetch_cancelled"].includes((error as any).reason)
+              ? {
+                  status: "failed",
+                  requestId: (error as any).requestId,
+                  reason: (error as any).reason,
+                }
+              : {}),
+            error: (error as any).details?.error ?? {
+              code: error instanceof z.ZodError ? "invalid_request" : "browser_error",
+              message,
+            },
+            statusCode: (error as any).statusCode ?? 400,
+            ...((error as any).retryAfter ? { retryAfter: (error as any).retryAfter } : {}),
+          },
+          true,
+        );
       }
-      return result;
-    });
+    };
+    const result = await run();
+    // Fetch already records its routing result. These rows describe MCP tool
+    // operations, separately from the browser session's eventual end reason.
+    if (tool !== "fetch") {
+      try {
+        await application.outcome(appContext("tool-outcome"), {
+          attemptId: outcomeId,
+          ...outcomeContext,
+          backend: "steel",
+          outcome: result.isError
+            ? "failure"
+            : outcomeReason === "unobserved" || unfinished
+              ? "unknown"
+              : "success",
+          reason:
+            outcomeReason ??
+            (result.isError ? "exception" : unfinished ? "unobserved" : "completed"),
+          fallback: false,
+        });
+      } catch {
+        result.content.push({
+          type: "text",
+          text: "Caller outcome was not recorded; this operation cannot establish migration acceptance.",
+        });
+      }
+    }
+    return result;
+  }
+
+  const registry: ToolRegistry<BrowserToolContext> = new ToolRegistry<BrowserToolContext>([
+    {
+      id: "browser",
+      name: "Toolstack",
+      version: "1.3.0",
+      description: "Browser sessions, page reads, authenticated browsing and downloads",
+      authentication:
+        "Uses your Toolstack key and its session ownership; site logins use scoped vault entries.",
+      tools: Object.entries(schemas).map(([name, input]) => ({
+        name,
+        description: descriptions[name as ToolName],
+        input,
+        execute: (args, context) => executeBrowser(name as ToolName, args, context),
+      })),
+    },
+    connectionToolkit(
+      () => application.connections,
+      (id, context) =>
+        verifyConnection(registry, application.connections, id, context as BrowserToolContext),
+    ),
+    apiToolkit(() => application.api),
+    workflowToolkit(() => registry as unknown as ToolRegistry),
+    libraryToolkit(() => server.contentLibrary),
+    ...[...builtInApiToolkits(), ...(server.steelBrowserConfig?.apiToolkits ?? [])].map(
+      (definition) => nativeApiToolkit(definition, () => application.api),
+    ),
+    ...(server.steelBrowserConfig?.toolkits ?? []),
+  ]);
+  const exposure = server.steelBrowserConfig?.mcpToolExposure ?? env.MCP_TOOL_EXPOSURE;
+  application.connections.useCatalog(registry as unknown as ToolRegistry);
+  await applicationRoutes(server, registry, application);
+
+  server.post("/mcp", { bodyLimit: 2_000_000 }, async (req, reply) => {
+    check(req);
+    const controller = new AbortController();
+    const context: BrowserToolContext = {
+      agent: agentFor(req.raw)!,
+      request: req,
+      requestId:
+        typeof req.headers["idempotency-key"] === "string"
+          ? req.headers["idempotency-key"]
+          : randomUUID(),
+      signal: controller.signal,
+    };
+    const protocol = new Server(
+      { name: "toolstack", version: "1.5.0" },
+      {
+        capabilities: { tools: {} },
+        instructions:
+          "Use library_list to find your owned skills and content explicitly assigned to you or published globally, then library_get to read the applicable instructions. Content sharing grants no account access; uploaded scripts require a registered execution runtime. Use connections_list to discover permitted accounts and pass a browser connection ID to browser_open. Discover native API tools for the selected api: connection; api_usage reads allowances and private history. Use workflows_list and workflows_get to fetch versioned working methods, and workflows_reference for declared reference material. Check the verification estimate before connections_verify; it consumes the normal allowance. Reuse the same idempotencyKey on API transport retries; unknown provider outcomes retain their reservation. Use tools_search to discover registered tools and tools_describe for exact schemas. tools_execute runs a discovered tool with the same permissions and results as its direct name. Use fetch for one-page reads. browser_open starts navigation with an initial snapshot; reuse its session and pass next as after. Reuse idempotencyKey when retrying an open, action or reference download. Every command-based tool can return a queued/running execution; inspect or cancel it through browser_act status/cancel. Batch actions with observe to read changes in one call. Failed batches retain partial results and effects; inspect them before retrying. Continue long reads at results[0].nextOffset. Ready downloads return webUri links for ordinary browser downloads without a local installer. These handoffs expire thirty minutes after publication and survive remote browser closure; wait for ready before closing. Binary URI and checksum remain available for optional automated receivers. Use browser_sessions to resume your work and close sessions in finally. Use vault login for credentials. A human hand-off requires the owner's agreement.",
+      },
+    );
+    protocol.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools: scrubToolMetadata([
+        ...(exposure === "all" ? registry.list(context) : []),
+        ...discoveryDefinitions,
+      ]),
+    }));
+    protocol.setRequestHandler(CallToolRequestSchema, (request) =>
+      callRegisteredTool(registry, request.params.name, request.params.arguments ?? {}, context),
+    );
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
     });
     reply.hijack();
     reply.raw.once("close", () => {
+      controller.abort();
       void protocol.close();
     });
     await protocol.connect(transport);

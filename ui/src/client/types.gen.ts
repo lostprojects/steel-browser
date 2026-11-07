@@ -5,124 +5,18 @@ export type ClientOptions = {
 };
 
 /**
- * ScrapeRequest
- */
-export type ScrapeRequest = {
-  url?: string;
-  format?: Array<"html" | "readability" | "cleaned_html" | "markdown">;
-  screenshot?: boolean;
-  pdf?: boolean;
-  removeBase64Images?: boolean;
-  /**
-   * Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.
-   */
-  proxyUrl?: string | null;
-  delay?: number;
-  logUrl?: string;
-};
-
-/**
- * ScrapeResponse
- */
-export type ScrapeResponse = {
-  content: {
-    [key: string]: unknown;
-  };
-  metadata: {
-    title?: string;
-    language?: string;
-    urlSource?: string;
-    timestamp?: string;
-    description?: string;
-    keywords?: string;
-    author?: string;
-    ogTitle?: string;
-    ogDescription?: string;
-    ogImage?: string;
-    ogUrl?: string;
-    ogSiteName?: string;
-    articleAuthor?: string;
-    publishedTime?: string;
-    modifiedTime?: string;
-    canonical?: string;
-    favicon?: string;
-    jsonLd?: unknown;
-    wordCount?: number;
-    statusCode: number;
-  };
-  links: Array<{
-    url: string;
-    text: string;
-  }>;
-  screenshot?: string;
-  pdf?: string;
-};
-
-/**
- * ScreenshotRequest
- */
-export type ScreenshotRequest = {
-  url?: string;
-  /**
-   * Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.
-   */
-  proxyUrl?: string | null;
-  delay?: number;
-  fullPage?: boolean;
-  logUrl?: string;
-};
-
-/**
- * ScreenshotResponse
- */
-export type ScreenshotResponse = unknown;
-
-/**
- * PDFRequest
- */
-export type PdfRequest = {
-  url?: string;
-  /**
-   * Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.
-   */
-  proxyUrl?: string | null;
-  delay?: number;
-  logUrl?: string;
-};
-
-/**
- * PDFResponse
- */
-export type PdfResponse = unknown;
-
-/**
- * SearchRequest
- */
-export type SearchRequest = {
-  query: string;
-  /**
-   * Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.
-   */
-  proxyUrl?: string | null;
-  logUrl?: string;
-};
-
-/**
- * SearchResponse
- */
-export type SearchResponse = {
-  results: Array<{
-    title: string;
-    url: string;
-    description?: string | null;
-  }>;
-};
-
-/**
  * CreateSession
  */
 export type CreateSession = {
   sessionId?: string;
+  site?: string;
+  caller?: string;
+  residential?: {
+    country?: string;
+  };
+  targetUrl?: string;
+  splitTraffic?: boolean;
+  budgetBytes?: number;
   mode?: "agent" | "quiet";
   identity?: string;
   profile?: string;
@@ -231,7 +125,7 @@ export type CreateSession = {
       };
     };
     /**
-     * Domain-specific indexedDB items to initialize in the session
+     * Legacy context field; named profiles preserve IndexedDB, but context injection does not restore it
      */
     indexedDB?: {
       [key: string]: Array<{
@@ -256,12 +150,17 @@ export type CreateSession = {
       }>;
     };
   };
+  connection?: string;
 };
 
 /**
  * SessionDetails
  */
 export type SessionDetails = {
+  /**
+   * Verified binary delivery protocol supported by this session
+   */
+  deliveryVersion?: 1;
   /**
    * Unique identifier for the session
    */
@@ -276,9 +175,40 @@ export type SessionDetails = {
   status: "starting" | "live" | "released" | "failed";
   mode: "agent" | "quiet";
   /**
+   * Browser operations supported before command execution
+   */
+  browserCapabilities: {
+    input: "native" | "cdp";
+    capture: "display" | "page";
+    fullPageCapture: boolean;
+    elementCapture: boolean;
+    captureQuality: boolean;
+    pdf: boolean;
+    networkIdle: boolean;
+  };
+  /**
    * Named persistent profile, when requested
    */
   identity?: string;
+  site?: string;
+  caller?: string;
+  last_login_ok?: string;
+  /**
+   * Whether this identity permits a live browser view
+   */
+  viewAvailable: boolean;
+  exit?: {
+    ip: string;
+    timezone: string;
+    country: string;
+    region: string;
+  };
+  challenge?: {
+    status: string;
+    kind: string;
+    url: string;
+  };
+  directBytes: number;
   endReason?: string;
   temporaryProfileRemoved: boolean;
   /**
@@ -286,7 +216,7 @@ export type SessionDetails = {
    */
   duration: number;
   /**
-   * Number of events processed in the session
+   * Legacy compatibility field; use /v1/logs/stats for event counts
    */
   eventCount: number;
   /**
@@ -301,7 +231,7 @@ export type SessionDetails = {
    */
   timeout: number;
   /**
-   * Amount of credits consumed by the session
+   * Legacy compatibility field; this service meters proxy bytes
    */
   creditsUsed: number;
   /**
@@ -313,7 +243,7 @@ export type SessionDetails = {
    */
   debugUrl: string;
   /**
-   * URL for debugging the session
+   * Legacy alias for the session viewer URL
    */
   debuggerUrl: string;
   /**
@@ -357,6 +287,10 @@ export type SessionDetails = {
 export type MultipleSessions = {
   sessions: Array<{
     /**
+     * Verified binary delivery protocol supported by this session
+     */
+    deliveryVersion?: 1;
+    /**
      * Unique identifier for the session
      */
     id: string;
@@ -370,9 +304,40 @@ export type MultipleSessions = {
     status: "starting" | "live" | "released" | "failed";
     mode: "agent" | "quiet";
     /**
+     * Browser operations supported before command execution
+     */
+    browserCapabilities: {
+      input: "native" | "cdp";
+      capture: "display" | "page";
+      fullPageCapture: boolean;
+      elementCapture: boolean;
+      captureQuality: boolean;
+      pdf: boolean;
+      networkIdle: boolean;
+    };
+    /**
      * Named persistent profile, when requested
      */
     identity?: string;
+    site?: string;
+    caller?: string;
+    last_login_ok?: string;
+    /**
+     * Whether this identity permits a live browser view
+     */
+    viewAvailable: boolean;
+    exit?: {
+      ip: string;
+      timezone: string;
+      country: string;
+      region: string;
+    };
+    challenge?: {
+      status: string;
+      kind: string;
+      url: string;
+    };
+    directBytes: number;
     endReason?: string;
     temporaryProfileRemoved: boolean;
     /**
@@ -380,7 +345,7 @@ export type MultipleSessions = {
      */
     duration: number;
     /**
-     * Number of events processed in the session
+     * Legacy compatibility field; use /v1/logs/stats for event counts
      */
     eventCount: number;
     /**
@@ -395,7 +360,7 @@ export type MultipleSessions = {
      */
     timeout: number;
     /**
-     * Amount of credits consumed by the session
+     * Legacy compatibility field; this service meters proxy bytes
      */
     creditsUsed: number;
     /**
@@ -407,7 +372,7 @@ export type MultipleSessions = {
      */
     debugUrl: string;
     /**
-     * URL for debugging the session
+     * Legacy alias for the session viewer URL
      */
     debuggerUrl: string;
     /**
@@ -447,134 +412,13 @@ export type MultipleSessions = {
 };
 
 /**
- * SessionContextSchema
- */
-export type SessionContextSchema = {
-  /**
-   * Cookies to initialize in the session
-   */
-  cookies?: Array<{
-    /**
-     * The name of the cookie
-     */
-    name: string;
-    /**
-     * The value of the cookie
-     */
-    value: string;
-    /**
-     * The URL of the cookie
-     */
-    url?: string;
-    /**
-     * The domain of the cookie
-     */
-    domain?: string;
-    /**
-     * The path of the cookie
-     */
-    path?: string;
-    /**
-     * Whether the cookie is secure
-     */
-    secure?: boolean;
-    /**
-     * Whether the cookie is HTTP only
-     */
-    httpOnly?: boolean;
-    /**
-     * The same site attribute of the cookie
-     */
-    sameSite?: "Strict" | "Lax" | "None";
-    /**
-     * The size of the cookie
-     */
-    size?: number;
-    /**
-     * The expiration date of the cookie
-     */
-    expires?: number;
-    /**
-     * The partition key of the cookie
-     */
-    partitionKey?: {
-      /**
-       * The site of the top-level URL the browser was visiting at the start of the request to the endpoint that set the cookie.
-       */
-      topLevelSite: string;
-      /**
-       * Indicates if the cookie has any ancestors that are cross-site to the topLevelSite.
-       */
-      hasCrossSiteAncestor: boolean;
-    };
-    /**
-     * Whether the cookie is a session cookie
-     */
-    session?: boolean;
-    /**
-     * The priority of the cookie
-     */
-    priority?: "Low" | "Medium" | "High";
-    /**
-     * Whether the cookie is a same party cookie
-     */
-    sameParty?: boolean;
-    /**
-     * The source scheme of the cookie
-     */
-    sourceScheme?: "Unset" | "NonSecure" | "Secure";
-    /**
-     * The source port of the cookie
-     */
-    sourcePort?: number;
-  }>;
-  /**
-   * Domain-specific localStorage items to initialize in the session
-   */
-  localStorage?: {
-    [key: string]: {
-      [key: string]: string;
-    };
-  };
-  /**
-   * Domain-specific sessionStorage items to initialize in the session
-   */
-  sessionStorage?: {
-    [key: string]: {
-      [key: string]: string;
-    };
-  };
-  /**
-   * Domain-specific indexedDB items to initialize in the session
-   */
-  indexedDB?: {
-    [key: string]: Array<{
-      id: number;
-      name: string;
-      data: Array<{
-        id: number;
-        name: string;
-        records: Array<{
-          key?: unknown;
-          value?: unknown;
-          blobFiles?: Array<{
-            blobNumber: number;
-            mimeType: string;
-            size: number;
-            filename?: string;
-            lastModified?: string;
-            path?: string;
-          }>;
-        }>;
-      }>;
-    }>;
-  };
-};
-
-/**
  * ReleaseSession
  */
 export type ReleaseSession = {
+  /**
+   * Verified binary delivery protocol supported by this session
+   */
+  deliveryVersion?: 1;
   /**
    * Unique identifier for the session
    */
@@ -589,9 +433,40 @@ export type ReleaseSession = {
   status: "starting" | "live" | "released" | "failed";
   mode: "agent" | "quiet";
   /**
+   * Browser operations supported before command execution
+   */
+  browserCapabilities: {
+    input: "native" | "cdp";
+    capture: "display" | "page";
+    fullPageCapture: boolean;
+    elementCapture: boolean;
+    captureQuality: boolean;
+    pdf: boolean;
+    networkIdle: boolean;
+  };
+  /**
    * Named persistent profile, when requested
    */
   identity?: string;
+  site?: string;
+  caller?: string;
+  last_login_ok?: string;
+  /**
+   * Whether this identity permits a live browser view
+   */
+  viewAvailable: boolean;
+  exit?: {
+    ip: string;
+    timezone: string;
+    country: string;
+    region: string;
+  };
+  challenge?: {
+    status: string;
+    kind: string;
+    url: string;
+  };
+  directBytes: number;
   endReason?: string;
   temporaryProfileRemoved: boolean;
   /**
@@ -599,7 +474,7 @@ export type ReleaseSession = {
    */
   duration: number;
   /**
-   * Number of events processed in the session
+   * Legacy compatibility field; use /v1/logs/stats for event counts
    */
   eventCount: number;
   /**
@@ -614,7 +489,7 @@ export type ReleaseSession = {
    */
   timeout: number;
   /**
-   * Amount of credits consumed by the session
+   * Legacy compatibility field; this service meters proxy bytes
    */
   creditsUsed: number;
   /**
@@ -626,7 +501,7 @@ export type ReleaseSession = {
    */
   debugUrl: string;
   /**
-   * URL for debugging the session
+   * Legacy alias for the session viewer URL
    */
   debuggerUrl: string;
   /**
@@ -666,1469 +541,4 @@ export type ReleaseSession = {
    * Indicates if the session was successfully released
    */
   success: boolean;
-};
-
-/**
- * SessionLiveDetailsResponse
- */
-export type SessionLiveDetailsResponse = {
-  /**
-   * Unique identifier for the session
-   */
-  id: string;
-  /**
-   * Timestamp when the session started
-   */
-  createdAt: string;
-  /**
-   * Status of the session
-   */
-  status: "starting" | "live" | "released" | "failed";
-  mode: "agent" | "quiet";
-  /**
-   * Named persistent profile, when requested
-   */
-  identity?: string;
-  endReason?: string;
-  temporaryProfileRemoved: boolean;
-  /**
-   * Duration of the session in milliseconds
-   */
-  duration: number;
-  /**
-   * Number of events processed in the session
-   */
-  eventCount: number;
-  /**
-   * Dimensions used for the session
-   */
-  dimensions: {
-    width: number;
-    height: number;
-  };
-  /**
-   * Session timeout duration in milliseconds
-   */
-  timeout: number;
-  /**
-   * Amount of credits consumed by the session
-   */
-  creditsUsed: number;
-  /**
-   * URL for the session's WebSocket connection
-   */
-  websocketUrl: string;
-  /**
-   * URL for a viewing the live browser instance for the session
-   */
-  debugUrl: string;
-  /**
-   * URL for debugging the session
-   */
-  debuggerUrl: string;
-  /**
-   * URL to view session details
-   */
-  sessionViewerUrl: string;
-  /**
-   * Authenticated live display view
-   */
-  noVncUrl: string;
-  display?: string;
-  /**
-   * CDP methods used by quiet commands
-   */
-  commandMethods?: Array<string>;
-  /**
-   * User agent string used in the session
-   */
-  userAgent?: string;
-  /**
-   * Amount of data transmitted through the proxy
-   */
-  proxyTxBytes: number;
-  /**
-   * Amount of data received through the proxy
-   */
-  proxyRxBytes: number;
-  /**
-   * Proxy bytes by hostname, including open tunnels; no URLs or credentials
-   */
-  proxyTraffic: Array<{
-    hostname: string;
-    txBytes: number;
-    rxBytes: number;
-  }>;
-  pages: Array<{
-    id: string;
-    url: string;
-    title: string;
-    favicon: string | null;
-  }>;
-};
-
-/**
- * LogQuerySchema
- */
-export type LogQuerySchema = {
-  startTime?: string;
-  endTime?: string;
-  eventTypes?: string;
-  pageId?: string;
-  targetType?: string;
-  limit?: number;
-  offset?: number;
-};
-
-/**
- * LogStatsSchema
- */
-export type LogStatsSchema = {
-  totalEvents: number;
-  oldestEvent: string | null;
-  newestEvent: string | null;
-  sizeBytes: number;
-};
-
-/**
- * LogQueryResultSchema
- */
-export type LogQueryResultSchema = {
-  events: Array<{
-    [key: string]: unknown;
-  }>;
-  total: number;
-  hasMore: boolean;
-};
-
-/**
- * ExportLogsSchema
- */
-export type ExportLogsSchema = {
-  query?: {
-    startTime?: string;
-    endTime?: string;
-    eventTypes?: string;
-    pageId?: string;
-    targetType?: string;
-    limit?: number;
-    offset?: number;
-  };
-};
-
-/**
- * GetDevtoolsUrlSchema
- */
-export type GetDevtoolsUrlSchema = {
-  pageId?: string;
-};
-
-/**
- * FileUploadRequest
- */
-export type FileUploadRequest = {
-  /**
-   * The file to upload (binary) or URL string to download from
-   */
-  file?: unknown;
-  /**
-   * Path to the file in the storage system
-   */
-  path?: string;
-};
-
-/**
- * FileDetails
- */
-export type FileDetails = {
-  /**
-   * Path to the file in the storage system
-   */
-  path: string;
-  /**
-   * Size of the file in bytes
-   */
-  size: number;
-  /**
-   * Timestamp when the file was last updated
-   */
-  lastModified: string;
-};
-
-/**
- * MultipleFiles
- */
-export type MultipleFiles = {
-  /**
-   * Array of files for the current page
-   */
-  data: Array<{
-    /**
-     * Path to the file in the storage system
-     */
-    path: string;
-    /**
-     * Size of the file in bytes
-     */
-    size: number;
-    /**
-     * Timestamp when the file was last updated
-     */
-    lastModified: string;
-  }>;
-};
-
-/**
- * CommandRequest
- */
-export type CommandRequest = {
-  after?: string;
-  commands:
-    | {
-        command: "navigate";
-        url: string;
-        tab?: string;
-      }
-    | {
-        command: "back";
-        tab?: string;
-      }
-    | {
-        command: "forward";
-        tab?: string;
-      }
-    | {
-        command: "reload";
-        tab?: string;
-      }
-    | {
-        command: "snapshot";
-        tab?: string;
-        interactive?: boolean;
-        compact?: boolean;
-        depth?: number;
-      }
-    | {
-        command: "click";
-        target:
-          | string
-          | {
-              role?: string;
-              name?: string;
-              text?: string;
-              label?: string;
-              placeholder?: string;
-              alt?: string;
-              title?: string;
-              testid?: string;
-              css?: string;
-              exact?: boolean;
-              nth?: number;
-            };
-        tab?: string;
-        frame?: string;
-        expect?: {
-          role?: string;
-          name?: string;
-        };
-      }
-    | {
-        command: "dblclick";
-        target:
-          | string
-          | {
-              role?: string;
-              name?: string;
-              text?: string;
-              label?: string;
-              placeholder?: string;
-              alt?: string;
-              title?: string;
-              testid?: string;
-              css?: string;
-              exact?: boolean;
-              nth?: number;
-            };
-        tab?: string;
-        frame?: string;
-        expect?: {
-          role?: string;
-          name?: string;
-        };
-      }
-    | {
-        command: "hover";
-        target:
-          | string
-          | {
-              role?: string;
-              name?: string;
-              text?: string;
-              label?: string;
-              placeholder?: string;
-              alt?: string;
-              title?: string;
-              testid?: string;
-              css?: string;
-              exact?: boolean;
-              nth?: number;
-            };
-        tab?: string;
-        frame?: string;
-        expect?: {
-          role?: string;
-          name?: string;
-        };
-      }
-    | {
-        command: "focus";
-        target:
-          | string
-          | {
-              role?: string;
-              name?: string;
-              text?: string;
-              label?: string;
-              placeholder?: string;
-              alt?: string;
-              title?: string;
-              testid?: string;
-              css?: string;
-              exact?: boolean;
-              nth?: number;
-            };
-        tab?: string;
-        frame?: string;
-        expect?: {
-          role?: string;
-          name?: string;
-        };
-      }
-    | {
-        command: "type";
-        target:
-          | string
-          | {
-              role?: string;
-              name?: string;
-              text?: string;
-              label?: string;
-              placeholder?: string;
-              alt?: string;
-              title?: string;
-              testid?: string;
-              css?: string;
-              exact?: boolean;
-              nth?: number;
-            };
-        tab?: string;
-        frame?: string;
-        expect?: {
-          role?: string;
-          name?: string;
-        };
-        text: string;
-        clear?: boolean;
-        delay?: number;
-      }
-    | {
-        command: "fill";
-        target:
-          | string
-          | {
-              role?: string;
-              name?: string;
-              text?: string;
-              label?: string;
-              placeholder?: string;
-              alt?: string;
-              title?: string;
-              testid?: string;
-              css?: string;
-              exact?: boolean;
-              nth?: number;
-            };
-        tab?: string;
-        frame?: string;
-        expect?: {
-          role?: string;
-          name?: string;
-        };
-        value: string;
-      }
-    | {
-        command: "press";
-        key: string;
-        target?:
-          | string
-          | {
-              role?: string;
-              name?: string;
-              text?: string;
-              label?: string;
-              placeholder?: string;
-              alt?: string;
-              title?: string;
-              testid?: string;
-              css?: string;
-              exact?: boolean;
-              nth?: number;
-            };
-        tab?: string;
-        frame?: string;
-        expect?: {
-          role?: string;
-          name?: string;
-        };
-      }
-    | {
-        command: "keydown";
-        key: string;
-        tab?: string;
-      }
-    | {
-        command: "keyup";
-        key: string;
-        tab?: string;
-      }
-    | {
-        command: "mouse";
-        action: "move" | "down" | "up" | "click" | "wheel";
-        x?: number;
-        y?: number;
-        button?: "left" | "right" | "middle";
-        clicks?: number;
-        deltaX?: number;
-        deltaY?: number;
-        tab?: string;
-      }
-    | {
-        command: "select";
-        target:
-          | string
-          | {
-              role?: string;
-              name?: string;
-              text?: string;
-              label?: string;
-              placeholder?: string;
-              alt?: string;
-              title?: string;
-              testid?: string;
-              css?: string;
-              exact?: boolean;
-              nth?: number;
-            };
-        tab?: string;
-        frame?: string;
-        expect?: {
-          role?: string;
-          name?: string;
-        };
-        values: string | Array<string>;
-      }
-    | {
-        command: "check";
-        target:
-          | string
-          | {
-              role?: string;
-              name?: string;
-              text?: string;
-              label?: string;
-              placeholder?: string;
-              alt?: string;
-              title?: string;
-              testid?: string;
-              css?: string;
-              exact?: boolean;
-              nth?: number;
-            };
-        tab?: string;
-        frame?: string;
-        expect?: {
-          role?: string;
-          name?: string;
-        };
-      }
-    | {
-        command: "upload";
-        target:
-          | string
-          | {
-              role?: string;
-              name?: string;
-              text?: string;
-              label?: string;
-              placeholder?: string;
-              alt?: string;
-              title?: string;
-              testid?: string;
-              css?: string;
-              exact?: boolean;
-              nth?: number;
-            };
-        tab?: string;
-        frame?: string;
-        expect?: {
-          role?: string;
-          name?: string;
-        };
-        files: string | Array<string>;
-      }
-    | {
-        command: "drag";
-        source:
-          | string
-          | {
-              role?: string;
-              name?: string;
-              text?: string;
-              label?: string;
-              placeholder?: string;
-              alt?: string;
-              title?: string;
-              testid?: string;
-              css?: string;
-              exact?: boolean;
-              nth?: number;
-            };
-        target:
-          | string
-          | {
-              role?: string;
-              name?: string;
-              text?: string;
-              label?: string;
-              placeholder?: string;
-              alt?: string;
-              title?: string;
-              testid?: string;
-              css?: string;
-              exact?: boolean;
-              nth?: number;
-            };
-        tab?: string;
-        frame?: string;
-      }
-    | {
-        command: "uncheck";
-        target:
-          | string
-          | {
-              role?: string;
-              name?: string;
-              text?: string;
-              label?: string;
-              placeholder?: string;
-              alt?: string;
-              title?: string;
-              testid?: string;
-              css?: string;
-              exact?: boolean;
-              nth?: number;
-            };
-        tab?: string;
-        frame?: string;
-        expect?: {
-          role?: string;
-          name?: string;
-        };
-      }
-    | {
-        command: "get";
-        what: "text" | "html" | "markdown" | "value" | "attr" | "title" | "url" | "count" | "box";
-        target?:
-          | string
-          | {
-              role?: string;
-              name?: string;
-              text?: string;
-              label?: string;
-              placeholder?: string;
-              alt?: string;
-              title?: string;
-              testid?: string;
-              css?: string;
-              exact?: boolean;
-              nth?: number;
-            };
-        attribute?: string;
-        tab?: string;
-        frame?: string;
-        expect?: {
-          role?: string;
-          name?: string;
-        };
-      }
-    | {
-        command: "is";
-        what: "visible" | "enabled" | "checked";
-        target:
-          | string
-          | {
-              role?: string;
-              name?: string;
-              text?: string;
-              label?: string;
-              placeholder?: string;
-              alt?: string;
-              title?: string;
-              testid?: string;
-              css?: string;
-              exact?: boolean;
-              nth?: number;
-            };
-        tab?: string;
-        frame?: string;
-        expect?: {
-          role?: string;
-          name?: string;
-        };
-      }
-    | {
-        command: "wait";
-        target?:
-          | string
-          | {
-              role?: string;
-              name?: string;
-              text?: string;
-              label?: string;
-              placeholder?: string;
-              alt?: string;
-              title?: string;
-              testid?: string;
-              css?: string;
-              exact?: boolean;
-              nth?: number;
-            };
-        state?: "visible" | "hidden" | "attached" | "detached";
-        text?: string;
-        url?: string;
-        load?: "load" | "domcontentloaded" | "networkidle";
-        ms?: number;
-        download?: true;
-        timeout?: number;
-        tab?: string;
-        frame?: string;
-        expect?: {
-          role?: string;
-          name?: string;
-        };
-      }
-    | {
-        command: "screenshot";
-        target?:
-          | string
-          | {
-              role?: string;
-              name?: string;
-              text?: string;
-              label?: string;
-              placeholder?: string;
-              alt?: string;
-              title?: string;
-              testid?: string;
-              css?: string;
-              exact?: boolean;
-              nth?: number;
-            };
-        fullPage?: boolean;
-        format?: "png" | "jpeg" | "webp";
-        quality?: number;
-        tab?: string;
-        frame?: string;
-        expect?: {
-          role?: string;
-          name?: string;
-        };
-      }
-    | {
-        command: "eval";
-        script: string;
-        timeout?: number;
-        tab?: string;
-      }
-    | {
-        command: "pdf";
-        tab?: string;
-        landscape?: boolean;
-        printBackground?: boolean;
-      }
-    | {
-        command: "scroll";
-        direction?: "up" | "down" | "left" | "right";
-        amount?: number;
-        target?:
-          | string
-          | {
-              role?: string;
-              name?: string;
-              text?: string;
-              label?: string;
-              placeholder?: string;
-              alt?: string;
-              title?: string;
-              testid?: string;
-              css?: string;
-              exact?: boolean;
-              nth?: number;
-            };
-        tab?: string;
-        frame?: string;
-        expect?: {
-          role?: string;
-          name?: string;
-        };
-      }
-    | {
-        command: "find";
-        by: "role" | "text" | "label" | "placeholder" | "alt" | "title" | "testid" | "css";
-        value: string;
-        name?: string;
-        exact?: boolean;
-        tab?: string;
-        frame?: string;
-      }
-    | {
-        command: "tab";
-        action: "list" | "new" | "close";
-        tab?: string;
-        url?: string;
-      }
-    | {
-        command: "status";
-        execution: string;
-      }
-    | {
-        command: "cancel";
-        execution: string;
-      }
-    | {
-        command: "dialog";
-        dialog: string;
-        action: "accept" | "dismiss";
-        text?: string;
-      }
-    | Array<
-        | {
-            command: "navigate";
-            url: string;
-            tab?: string;
-          }
-        | {
-            command: "back";
-            tab?: string;
-          }
-        | {
-            command: "forward";
-            tab?: string;
-          }
-        | {
-            command: "reload";
-            tab?: string;
-          }
-        | {
-            command: "snapshot";
-            tab?: string;
-            interactive?: boolean;
-            compact?: boolean;
-            depth?: number;
-          }
-        | {
-            command: "click";
-            target:
-              | string
-              | {
-                  role?: string;
-                  name?: string;
-                  text?: string;
-                  label?: string;
-                  placeholder?: string;
-                  alt?: string;
-                  title?: string;
-                  testid?: string;
-                  css?: string;
-                  exact?: boolean;
-                  nth?: number;
-                };
-            tab?: string;
-            frame?: string;
-            expect?: {
-              role?: string;
-              name?: string;
-            };
-          }
-        | {
-            command: "dblclick";
-            target:
-              | string
-              | {
-                  role?: string;
-                  name?: string;
-                  text?: string;
-                  label?: string;
-                  placeholder?: string;
-                  alt?: string;
-                  title?: string;
-                  testid?: string;
-                  css?: string;
-                  exact?: boolean;
-                  nth?: number;
-                };
-            tab?: string;
-            frame?: string;
-            expect?: {
-              role?: string;
-              name?: string;
-            };
-          }
-        | {
-            command: "hover";
-            target:
-              | string
-              | {
-                  role?: string;
-                  name?: string;
-                  text?: string;
-                  label?: string;
-                  placeholder?: string;
-                  alt?: string;
-                  title?: string;
-                  testid?: string;
-                  css?: string;
-                  exact?: boolean;
-                  nth?: number;
-                };
-            tab?: string;
-            frame?: string;
-            expect?: {
-              role?: string;
-              name?: string;
-            };
-          }
-        | {
-            command: "focus";
-            target:
-              | string
-              | {
-                  role?: string;
-                  name?: string;
-                  text?: string;
-                  label?: string;
-                  placeholder?: string;
-                  alt?: string;
-                  title?: string;
-                  testid?: string;
-                  css?: string;
-                  exact?: boolean;
-                  nth?: number;
-                };
-            tab?: string;
-            frame?: string;
-            expect?: {
-              role?: string;
-              name?: string;
-            };
-          }
-        | {
-            command: "type";
-            target:
-              | string
-              | {
-                  role?: string;
-                  name?: string;
-                  text?: string;
-                  label?: string;
-                  placeholder?: string;
-                  alt?: string;
-                  title?: string;
-                  testid?: string;
-                  css?: string;
-                  exact?: boolean;
-                  nth?: number;
-                };
-            tab?: string;
-            frame?: string;
-            expect?: {
-              role?: string;
-              name?: string;
-            };
-            text: string;
-            clear?: boolean;
-            delay?: number;
-          }
-        | {
-            command: "fill";
-            target:
-              | string
-              | {
-                  role?: string;
-                  name?: string;
-                  text?: string;
-                  label?: string;
-                  placeholder?: string;
-                  alt?: string;
-                  title?: string;
-                  testid?: string;
-                  css?: string;
-                  exact?: boolean;
-                  nth?: number;
-                };
-            tab?: string;
-            frame?: string;
-            expect?: {
-              role?: string;
-              name?: string;
-            };
-            value: string;
-          }
-        | {
-            command: "press";
-            key: string;
-            target?:
-              | string
-              | {
-                  role?: string;
-                  name?: string;
-                  text?: string;
-                  label?: string;
-                  placeholder?: string;
-                  alt?: string;
-                  title?: string;
-                  testid?: string;
-                  css?: string;
-                  exact?: boolean;
-                  nth?: number;
-                };
-            tab?: string;
-            frame?: string;
-            expect?: {
-              role?: string;
-              name?: string;
-            };
-          }
-        | {
-            command: "keydown";
-            key: string;
-            tab?: string;
-          }
-        | {
-            command: "keyup";
-            key: string;
-            tab?: string;
-          }
-        | {
-            command: "mouse";
-            action: "move" | "down" | "up" | "click" | "wheel";
-            x?: number;
-            y?: number;
-            button?: "left" | "right" | "middle";
-            clicks?: number;
-            deltaX?: number;
-            deltaY?: number;
-            tab?: string;
-          }
-        | {
-            command: "select";
-            target:
-              | string
-              | {
-                  role?: string;
-                  name?: string;
-                  text?: string;
-                  label?: string;
-                  placeholder?: string;
-                  alt?: string;
-                  title?: string;
-                  testid?: string;
-                  css?: string;
-                  exact?: boolean;
-                  nth?: number;
-                };
-            tab?: string;
-            frame?: string;
-            expect?: {
-              role?: string;
-              name?: string;
-            };
-            values: string | Array<string>;
-          }
-        | {
-            command: "check";
-            target:
-              | string
-              | {
-                  role?: string;
-                  name?: string;
-                  text?: string;
-                  label?: string;
-                  placeholder?: string;
-                  alt?: string;
-                  title?: string;
-                  testid?: string;
-                  css?: string;
-                  exact?: boolean;
-                  nth?: number;
-                };
-            tab?: string;
-            frame?: string;
-            expect?: {
-              role?: string;
-              name?: string;
-            };
-          }
-        | {
-            command: "upload";
-            target:
-              | string
-              | {
-                  role?: string;
-                  name?: string;
-                  text?: string;
-                  label?: string;
-                  placeholder?: string;
-                  alt?: string;
-                  title?: string;
-                  testid?: string;
-                  css?: string;
-                  exact?: boolean;
-                  nth?: number;
-                };
-            tab?: string;
-            frame?: string;
-            expect?: {
-              role?: string;
-              name?: string;
-            };
-            files: string | Array<string>;
-          }
-        | {
-            command: "drag";
-            source:
-              | string
-              | {
-                  role?: string;
-                  name?: string;
-                  text?: string;
-                  label?: string;
-                  placeholder?: string;
-                  alt?: string;
-                  title?: string;
-                  testid?: string;
-                  css?: string;
-                  exact?: boolean;
-                  nth?: number;
-                };
-            target:
-              | string
-              | {
-                  role?: string;
-                  name?: string;
-                  text?: string;
-                  label?: string;
-                  placeholder?: string;
-                  alt?: string;
-                  title?: string;
-                  testid?: string;
-                  css?: string;
-                  exact?: boolean;
-                  nth?: number;
-                };
-            tab?: string;
-            frame?: string;
-          }
-        | {
-            command: "uncheck";
-            target:
-              | string
-              | {
-                  role?: string;
-                  name?: string;
-                  text?: string;
-                  label?: string;
-                  placeholder?: string;
-                  alt?: string;
-                  title?: string;
-                  testid?: string;
-                  css?: string;
-                  exact?: boolean;
-                  nth?: number;
-                };
-            tab?: string;
-            frame?: string;
-            expect?: {
-              role?: string;
-              name?: string;
-            };
-          }
-        | {
-            command: "get";
-            what:
-              | "text"
-              | "html"
-              | "markdown"
-              | "value"
-              | "attr"
-              | "title"
-              | "url"
-              | "count"
-              | "box";
-            target?:
-              | string
-              | {
-                  role?: string;
-                  name?: string;
-                  text?: string;
-                  label?: string;
-                  placeholder?: string;
-                  alt?: string;
-                  title?: string;
-                  testid?: string;
-                  css?: string;
-                  exact?: boolean;
-                  nth?: number;
-                };
-            attribute?: string;
-            tab?: string;
-            frame?: string;
-            expect?: {
-              role?: string;
-              name?: string;
-            };
-          }
-        | {
-            command: "is";
-            what: "visible" | "enabled" | "checked";
-            target:
-              | string
-              | {
-                  role?: string;
-                  name?: string;
-                  text?: string;
-                  label?: string;
-                  placeholder?: string;
-                  alt?: string;
-                  title?: string;
-                  testid?: string;
-                  css?: string;
-                  exact?: boolean;
-                  nth?: number;
-                };
-            tab?: string;
-            frame?: string;
-            expect?: {
-              role?: string;
-              name?: string;
-            };
-          }
-        | {
-            command: "wait";
-            target?:
-              | string
-              | {
-                  role?: string;
-                  name?: string;
-                  text?: string;
-                  label?: string;
-                  placeholder?: string;
-                  alt?: string;
-                  title?: string;
-                  testid?: string;
-                  css?: string;
-                  exact?: boolean;
-                  nth?: number;
-                };
-            state?: "visible" | "hidden" | "attached" | "detached";
-            text?: string;
-            url?: string;
-            load?: "load" | "domcontentloaded" | "networkidle";
-            ms?: number;
-            download?: true;
-            timeout?: number;
-            tab?: string;
-            frame?: string;
-            expect?: {
-              role?: string;
-              name?: string;
-            };
-          }
-        | {
-            command: "screenshot";
-            target?:
-              | string
-              | {
-                  role?: string;
-                  name?: string;
-                  text?: string;
-                  label?: string;
-                  placeholder?: string;
-                  alt?: string;
-                  title?: string;
-                  testid?: string;
-                  css?: string;
-                  exact?: boolean;
-                  nth?: number;
-                };
-            fullPage?: boolean;
-            format?: "png" | "jpeg" | "webp";
-            quality?: number;
-            tab?: string;
-            frame?: string;
-            expect?: {
-              role?: string;
-              name?: string;
-            };
-          }
-        | {
-            command: "eval";
-            script: string;
-            timeout?: number;
-            tab?: string;
-          }
-        | {
-            command: "pdf";
-            tab?: string;
-            landscape?: boolean;
-            printBackground?: boolean;
-          }
-        | {
-            command: "scroll";
-            direction?: "up" | "down" | "left" | "right";
-            amount?: number;
-            target?:
-              | string
-              | {
-                  role?: string;
-                  name?: string;
-                  text?: string;
-                  label?: string;
-                  placeholder?: string;
-                  alt?: string;
-                  title?: string;
-                  testid?: string;
-                  css?: string;
-                  exact?: boolean;
-                  nth?: number;
-                };
-            tab?: string;
-            frame?: string;
-            expect?: {
-              role?: string;
-              name?: string;
-            };
-          }
-        | {
-            command: "find";
-            by: "role" | "text" | "label" | "placeholder" | "alt" | "title" | "testid" | "css";
-            value: string;
-            name?: string;
-            exact?: boolean;
-            tab?: string;
-            frame?: string;
-          }
-        | {
-            command: "tab";
-            action: "list" | "new" | "close";
-            tab?: string;
-            url?: string;
-          }
-        | {
-            command: "status";
-            execution: string;
-          }
-        | {
-            command: "cancel";
-            execution: string;
-          }
-        | {
-            command: "dialog";
-            dialog: string;
-            action: "accept" | "dismiss";
-            text?: string;
-          }
-      >;
-  eventsAfter?: string;
-  observe?: {
-    mode: "none" | "snapshot" | "diff";
-    base?: string;
-    tab?: string;
-    interactive?: boolean;
-    compact?: boolean;
-    depth?: number;
-  };
-};
-
-/**
- * CommandResponse
- */
-export type CommandResponse = {
-  /**
-   * Send it as after in the next request.
-   */
-  next?: string;
-  /**
-   * Goes up when the page changes or the browser restarts.
-   */
-  epoch: number;
-  /**
-   * Whether another client changed the session since after.
-   */
-  epochChanged?: boolean;
-  /**
-   * The tab the execution used.
-   */
-  page: {
-    tab: string;
-    url: string;
-    title: string;
-  } | null;
-  execution: {
-    id: string;
-    state: "queued" | "running" | "completed" | "failed" | "cancelled" | "timeout" | "expired";
-    /**
-     * What happened to the page: nothing, a change, or a possible change.
-     */
-    effect: "none" | "applied" | "unknown";
-    replayed: boolean;
-    /**
-     * Commands started.
-     */
-    ran: number;
-    error?: {
-      /**
-       * Error code, such as stale_ref or not_actionable.
-       */
-      code: string;
-      message: string;
-      /**
-       * More detail, such as covered or detached.
-       */
-      reason?: string;
-    };
-  };
-  results: Array<{
-    ok: boolean;
-    /**
-     * What happened to the page: nothing, a change, or a possible change.
-     */
-    effect: "none" | "applied" | "unknown";
-    error?: {
-      /**
-       * Error code, such as stale_ref or not_actionable.
-       */
-      code: string;
-      message: string;
-      /**
-       * More detail, such as covered or detached.
-       */
-      reason?: string;
-    };
-    [key: string]: unknown;
-  }>;
-  observe?: {
-    snapshotId?: string;
-    snapshot?: string;
-    base?: string;
-    diff?: string;
-    additions?: number;
-    removals?: number;
-    full?: boolean;
-    error?: {
-      /**
-       * Error code, such as stale_ref or not_actionable.
-       */
-      code: string;
-      message: string;
-      /**
-       * More detail, such as covered or detached.
-       */
-      reason?: string;
-    };
-  };
-  /**
-   * A dialog that is open on the tab and waits for an answer.
-   */
-  dialog?: {
-    id: string;
-    tab: string;
-    type: "alert" | "confirm" | "prompt" | "beforeunload";
-    message: string;
-    defaultPrompt?: string;
-    accepted?: boolean;
-    text?: string;
-    by?: "command" | "client" | "closed";
-  };
-  events?: {
-    cursor: string;
-    items: Array<{
-      id: string;
-      type: string;
-      tab: string;
-      at: string;
-      [key: string]: unknown;
-    }>;
-    more?: boolean;
-    truncated?: boolean;
-  };
-  bodyExpired?: boolean;
-};
-
-/**
- * CommandDialogResponse
- *
- * Response to the dialog command.
- */
-export type CommandDialogResponse = {
-  /**
-   * The dialog that the dialog command answered.
-   */
-  answered: {
-    id: string;
-    tab: string;
-    type: "alert" | "confirm" | "prompt" | "beforeunload";
-    message: string;
-    defaultPrompt?: string;
-    accepted?: boolean;
-    text?: string;
-    by?: "command" | "client" | "closed";
-  };
-  epoch: number;
-  events?: {
-    cursor: string;
-    items: Array<{
-      id: string;
-      type: string;
-      tab: string;
-      at: string;
-      [key: string]: unknown;
-    }>;
-    more?: boolean;
-    truncated?: boolean;
-  };
-};
-
-/**
- * CommandRequestError
- */
-export type CommandRequestError = {
-  error: {
-    code: string;
-    message: string;
-  };
-  [key: string]: unknown;
-};
-
-/**
- * CommandsSchemaResponse
- */
-export type CommandsSchemaResponse = {
-  version: number;
-  /**
-   * JSON Schema of the request body.
-   */
-  schema: {
-    [key: string]: unknown;
-  };
 };

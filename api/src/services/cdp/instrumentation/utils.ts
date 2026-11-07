@@ -2,7 +2,9 @@ import type { Target, Protocol } from "puppeteer-core";
 import { safeStringify } from "./storage/safe-json.js";
 
 export function extractTargetId(target: Target): string {
-  return (target as any)._targetId as string;
+  // Puppeteer and the quiet adapter expose this ID outside the public Target type.
+  if ("_targetId" in target && typeof target._targetId === "string") return target._targetId;
+  throw new Error("Browser target has no CDP target ID");
 }
 
 export function serializeRemoteObject(obj: Protocol.Runtime.RemoteObject): string {

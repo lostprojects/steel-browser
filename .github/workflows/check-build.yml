@@ -1,4 +1,4 @@
-name: Check Docker Build
+name: Verify and Build
 
 on:
   pull_request:
@@ -6,9 +6,89 @@ on:
       - main
 
 jobs:
-  check-docker-build:
-    name: Check Docker Build
+  local-client:
+    name: Local client (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node client/cli.mjs --help
+      - name: Check native publication and collision behavior
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+          import { tmpdir } from 'node:os';
+          import path from 'node:path';
+          import { saveBytes, portableName } from './client/index.mjs';
+          const root = await mkdtemp(path.join(tmpdir(), 'toolstack-client-'));
+          try {
+            const first = await saveBytes(Buffer.from('first'), 'CON.txt', root);
+            const again = await saveBytes(Buffer.from('first'), 'CON.txt', root);
+            const other = await saveBytes(Buffer.from('other'), 'CON.txt', root);
+            assert.equal(first.path, again.path);
+            assert.notEqual(first.path, other.path);
+            assert.equal((await readFile(first.path)).toString(), 'first');
+            assert.equal(portableName('CON.txt'), '_CON.txt');
+            assert.equal((await readdir(root)).filter(name => name.startsWith('.steel-delivery-')).length, 0);
+            console.log(JSON.stringify({ platform: process.platform, publication: 'passed', directorySynced: first.directorySynced }));
+          } finally { await rm(root, { recursive: true, force: true }); }
+          JS
+      - name: Pack the independent client
+        run: npm pack
+        working-directory: client
+
+  quality:
+    name: Types and existing tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: toolstack_test
+          POSTGRES_PASSWORD: fixture-only-ci-password
+          POSTGRES_DB: toolstack_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U toolstack_test -d toolstack_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TOOLSTACK_TEST_DATABASE_URL: postgres://toolstack_test:fixture-only-ci-password@127.0.0.1:5432/toolstack_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install curl_cffi==0.16.3
+      - run: npm run typecheck -w api && npm run typecheck -w ui
+      - name: Run existing tests with Chrome
+        run: |
+          export CHROME_EXECUTABLE_PATH="$(command -v google-chrome)"
+          export FETCH_PYTHON="$(command -v python)"
+          test -x "$CHROME_EXECUTABLE_PATH"
+          npm test
+
+  check-docker-build:
+    needs: quality
+    name: Check Docker Build (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image: [browser, gateway]
     steps:
       - name: Check out the repo
         uses: actions/checkout@v4
@@ -17,5 +97,5 @@ jobs:
         id: buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build the combined Steel Browser image
-        run: docker build --platform linux/amd64 -t steel-browser .
+      - name: Build the selected runtime
+        run: docker build --platform linux/amd64 --build-arg STEEL_IMAGE=${{ matrix.image }} -t toolstack-${{ matrix.image }} .

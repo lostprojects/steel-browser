@@ -19,6 +19,11 @@ test("quiet policy rejects instrumentation, paused targets and foreign execution
     "Log.enable",
     "Fetch.enable",
     "Page.addScriptToEvaluateOnNewDocument",
+    "Input.dispatchMouseEvent",
+    "Input.dispatchKeyEvent",
+    "Input.insertText",
+    "Page.captureScreenshot",
+    "Page.printToPDF",
   ])
     await expect(session.send(method)).rejects.toThrow("Quiet policy");
   await expect(
@@ -172,19 +177,18 @@ describe.skipIf(!process.env.CHROME_EXECUTABLE_PATH)(
       }
       browser = await QuietBrowser.connect(endpoint, new QuietInput(":test", 1920, 1080, native));
       engine = new CommandEngine({
-        browser: () => browser.asBrowser(),
-        waitForPageSetup: async () => {},
+        browser: () => browser,
         endSession: async () => {},
         filesRoot: () => profile,
         released: () => false,
         quickActionsDone: async () => {},
       });
       engine.prepare("quiet-test");
-      engine.browserLaunched(browser.asBrowser());
+      engine.browserLaunched(browser);
       engine.browserReady();
     });
     afterAll(async () => {
-      engine?.sessionEnded();
+      engine?.dispose();
       const exited =
         child && child.exitCode === null && child.signalCode === null
           ? new Promise<void>((resolve) => child.once("exit", () => resolve()))
@@ -220,6 +224,11 @@ describe.skipIf(!process.env.CHROME_EXECUTABLE_PATH)(
       });
       expect(browser.connection.methods.has("Accessibility.getFullAXTree")).toBe(true);
       expect(browser.connection.methods.has("Runtime.enable")).toBe(false);
+      const control = await browser.controlSession();
+      expect(control.id()).not.toBe(browser.connection.root.id());
+      await expect(control.send("Storage.getCookies")).resolves.toMatchObject({ cookies: [] });
+      await control.detach();
+      expect(browser.connection.connected).toBe(true);
     });
     test("routes commands clicks to the native display", async () => {
       const response = await engine.handle({
@@ -228,6 +237,42 @@ describe.skipIf(!process.env.CHROME_EXECUTABLE_PATH)(
       });
       expect(response.body.execution, JSON.stringify(response.body)).toMatchObject({
         state: "completed",
+      });
+      const before = native.mock.calls.length;
+      for (const command of [
+        { command: "screenshot", target: "button" },
+        { command: "screenshot", fullPage: true },
+        { command: "screenshot", format: "jpeg", quality: 70 },
+        { command: "pdf" },
+        { command: "wait", load: "networkidle" },
+      ]) {
+        const unsupported = await engine.handle({
+          sessionId: "quiet-test",
+          body: { commands: [command] },
+        });
+        expect(unsupported.body.results).toMatchObject([
+          { ok: false, effect: "none", error: { code: "not_actionable", reason: "unsupported" } },
+        ]);
+      }
+      expect(native.mock.calls.length).toBe(before);
+      const display = vi
+        .spyOn(browser.connection.input, "screenshot")
+        .mockResolvedValueOnce({ data: "display-image" });
+      try {
+        const captured = await engine.handle({
+          sessionId: "quiet-test",
+          body: { commands: [{ command: "screenshot" }] },
+        });
+        expect(captured.body.results).toMatchObject([{ ok: true, data: "display-image" }]);
+        expect(display).toHaveBeenCalledWith("png");
+        expect(browser.connection.methods.has("Page.captureScreenshot")).toBe(false);
+      } finally {
+        display.mockRestore();
+      }
+      expect(browser.capabilities).toMatchObject({
+        input: "native",
+        capture: "display",
+        pdf: false,
       });
       expect(native).toHaveBeenCalledWith(["mousedown", "1"]);
       expect(native).toHaveBeenCalledWith(["mouseup", "1"]);

@@ -1,4 +1,6 @@
-import type { Browser, Protocol } from "puppeteer-core";
+import { OperationRunner } from "../operations.js";
+import type { Protocol } from "devtools-protocol";
+import type { BrowserControl } from "../browser-control.js";
 import {
   commandHash,
   isControl,
@@ -51,12 +53,16 @@ const MAX_IDEMPOTENCY_KEY = 255;
 export interface EngineOptions {
   limits?: Partial<EngineLimits>;
   now?: () => number;
+  runner?: OperationRunner;
+  resource?: object;
 }
 
 export interface EngineRequest {
   sessionId: string;
   idempotencyKey?: string;
   body: unknown;
+  // Trusted application callback; never accepted from the JSON command body.
+  authorize?: () => Promise<void> | void;
 }
 
 export interface EngineResponse {
@@ -69,10 +75,13 @@ export class CommandEngine {
   private active: ActiveSession | null = null;
   private readonly counters = new Counters();
   private readonly openDialogs = new OpenDialogs();
-  private browser: Browser | null = null;
+  private browser: BrowserControl | null = null;
   private ready = false;
   private readonly limits: EngineLimits;
   private readonly now: () => number;
+  readonly runner: OperationRunner;
+  readonly resource: object;
+  private readyListeners = new Set<() => void>();
 
   constructor(
     private readonly host: EngineHost,
@@ -80,6 +89,8 @@ export class CommandEngine {
   ) {
     this.limits = { ...DEFAULT_ENGINE_LIMITS, ...options.limits };
     this.now = options.now ?? Date.now;
+    this.runner = options.runner ?? new OperationRunner(this.now);
+    this.resource = options.resource ?? this;
   }
 
   prepare(sessionId: string) {
@@ -88,7 +99,6 @@ export class CommandEngine {
     }
     const active: ActiveSession = new ActiveSession(
       sessionId,
-      this.host,
       this.limits,
       this.now,
       {
@@ -96,7 +106,8 @@ export class CommandEngine {
         dialogClosed: (tab, event) => this.dialogClosed(active, tab, event),
         downloadStarted: (tab, event) => {
           active.downloads.set(event.guid, {
-            file: event.suggestedFilename,
+            file: this.host.downloadsByGuid ? event.guid : event.suggestedFilename,
+            name: event.suggestedFilename,
             url: event.url,
             startedAt: Date.now(),
             taken: false,
@@ -149,7 +160,7 @@ export class CommandEngine {
     this.ready = false;
   }
 
-  browserLaunched(browser: Browser) {
+  browserLaunched(browser: BrowserControl) {
     if (this.browser === browser) {
       return;
     }
@@ -171,11 +182,12 @@ export class CommandEngine {
     if (active) {
       active.browser = browser;
       active.tabs.attach(browser);
-      void this.pump(active);
+      for (const resolve of this.readyListeners) resolve();
+      this.readyListeners.clear();
     }
   }
 
-  browserClosed(browser: Browser) {
+  browserClosed(browser: BrowserControl) {
     if (this.browser !== browser) {
       return;
     }
@@ -195,7 +207,7 @@ export class CommandEngine {
 
   busy(): boolean {
     const active = this.active;
-    return !!active && (active.running !== null || active.queue.length > 0);
+    return !!active && [...active.jobs.values()].some((job) => job.operation?.active);
   }
 
   sessionEnded() {
@@ -203,6 +215,15 @@ export class CommandEngine {
       this.end(this.active);
       this.active = null;
     }
+  }
+
+  // Session boundaries retain early dialog observation while Chrome is alive.
+  // Dispose when the engine itself is replaced or its browser is shutting down.
+  dispose() {
+    this.sessionEnded();
+    this.openDialogs.detach();
+    this.browser = null;
+    this.ready = false;
   }
 
   async handle(request: EngineRequest): Promise<EngineResponse> {
@@ -247,7 +268,15 @@ export class CommandEngine {
       }
       return this.control(active, body.commands[0], deadline, body.eventsAfter);
     }
-    return this.submit(active, key, body, deadline);
+    return this.submit(active, key, body, deadline, request.authorize);
+  }
+
+  private retry(active: ActiveSession, key: string, hash: string) {
+    // Check conflicts through the protocol record so callers keep its error code.
+    const record = active.records.byKey(key);
+    if (record && record.hash !== hash) return record;
+    const operation = this.runner.lookup(key, hash);
+    return operation ? active.records.get(operation.id) : record;
   }
 
   private async submit(
@@ -255,6 +284,7 @@ export class CommandEngine {
     idempotencyKey: string | undefined,
     body: CommandRequest,
     deadline: number,
+    authorize?: EngineRequest["authorize"],
   ): Promise<EngineResponse> {
     const records = active.records;
     const hash = commandHash(body.commands);
@@ -263,8 +293,8 @@ export class CommandEngine {
     const live = (execution: Execution | undefined) =>
       execution && execution.state !== "expired" ? execution : undefined;
     const existing =
-      live(headerKey ? records.byKey(headerKey) : undefined) ??
-      live(afterKey ? records.byKey(afterKey) : undefined);
+      live(headerKey ? this.retry(active, headerKey, hash) : undefined) ??
+      live(afterKey ? this.retry(active, afterKey, hash) : undefined);
     if (existing) {
       if (existing.hash !== hash) {
         return failure(
@@ -274,6 +304,8 @@ export class CommandEngine {
       }
       if (headerKey && live(records.byKey(headerKey)) !== existing) {
         records.link(headerKey, existing);
+        const operation = this.runner.lookup(`commands:${active.id}:${existing.id}`);
+        if (operation) this.runner.bind(headerKey, hash, operation);
       }
       return this.respond(active, existing, deadline, true, body.eventsAfter);
     }
@@ -287,7 +319,10 @@ export class CommandEngine {
         { next: records.issue() },
       );
     }
-    if (active.queue.length >= this.limits.maxQueued) {
+    if (
+      [...active.jobs.values()].filter((job) => job.operation?.state === "queued").length >=
+      this.limits.maxQueued
+    ) {
       return failure("queue_full", "Too many executions are waiting in this session.", {}, 1);
     }
     if (records.full()) {
@@ -301,18 +336,113 @@ export class CommandEngine {
       mutating: body.commands.some(isMutating),
       after: body.after,
     });
-    active.queue.push({
+    const job: Job = {
       execution,
       commands: body.commands,
       observe: body.observe,
-      expiresAt: deadline,
-      limitAt: Infinity,
       current: null,
       inflight: null,
       touched: false,
       cancelled: false,
-    });
-    void this.pump(active);
+    };
+    active.jobs.set(execution.id, job);
+    try {
+      job.operation = this.runner.start(
+        {
+          id: execution.id,
+          key: `commands:${active.id}:${execution.id}`,
+          resource: this.resource,
+          access: "exclusive",
+          queueDeadline: deadline,
+          timeoutMs: this.limits.executionLimitMs,
+          beforeStart: async (operation) => {
+            while (!this.ready && !active.ended) {
+              await operation.wait(
+                () =>
+                  new Promise<void>((resolve) => {
+                    this.readyListeners.add(resolve);
+                    operation.signal.addEventListener(
+                      "abort",
+                      () => {
+                        this.readyListeners.delete(resolve);
+                        resolve();
+                      },
+                      { once: true },
+                    );
+                  }),
+              );
+            }
+            operation.check();
+            await operation.wait(() => this.host.quickActionsDone());
+            await authorize?.();
+          },
+          onStop: async () => {
+            const operation = job.operation!;
+            if (execution.state === "queued") {
+              if (operation.state === "expired") this.expire(active, execution);
+              else
+                this.finish(active, execution, "cancelled", {
+                  code: "cancelled",
+                  message: "The execution was cancelled before it started.",
+                });
+              return;
+            }
+            if (isFinal(execution.state)) return;
+            job.cancelled = operation.state === "cancelled";
+            const error =
+              operation.state === "timeout"
+                ? this.overtime()
+                : { code: "cancelled", message: "The execution was cancelled." };
+            this.interrupted(job, error);
+            this.finish(
+              active,
+              execution,
+              operation.state === "timeout" ? "timeout" : "cancelled",
+              error,
+            );
+            job.interrupting = this.interrupt(active, job, this.limits.interruptGraceMs);
+            await job.interrupting;
+          },
+        },
+        async (operation) => {
+          try {
+            await this.run(active, job);
+          } catch (error) {
+            this.finish(active, execution, "failed", errorInfo(error));
+          } finally {
+            operation.state = execution.state;
+            operation.effect = execution.effect;
+            await job.interrupting;
+          }
+        },
+      );
+    } catch (error) {
+      active.jobs.delete(execution.id);
+      records.forget(execution);
+      execution.state = "expired";
+      execution.finishedAt = this.now();
+      records.changed(execution);
+      if ((error as { statusCode?: number }).statusCode === 429)
+        return failure(
+          "records_full",
+          "Too many operations retain retry protection. Try again later.",
+          {},
+          5,
+        );
+      throw error;
+    }
+    if (headerKey) this.runner.bind(headerKey, hash, job.operation);
+    if (afterKey) this.runner.bind(afterKey, hash, job.operation);
+    void job.operation.promise
+      .catch((error) => {
+        // Admission failures happen before run() owns the execution. Settle its
+        // public record too, so a refused queued operation cannot remain queued.
+        if (!isFinal(execution.state)) this.finish(active, execution, "failed", errorInfo(error));
+      })
+      .finally(() => {
+        if (isFinal(execution.state)) active.jobs.delete(execution.id);
+      })
+      .catch(() => undefined);
     return this.respond(active, execution, deadline, false, body.eventsAfter);
   }
 
@@ -361,27 +491,9 @@ export class CommandEngine {
     if (!execution) {
       return unknownExecution(id);
     }
-    const index = active.queue.findIndex((job) => job.execution === execution);
-    if (index >= 0) {
-      active.queue.splice(index, 1);
-      this.finish(active, execution, "cancelled", {
-        code: "cancelled",
-        message: "The execution was cancelled before it started.",
-      });
-    } else if (active.running?.execution === execution && !isFinal(execution.state)) {
-      const job = active.running;
-      job.cancelled = true;
-      const interrupting = this.interrupt(active, job, this.limits.interruptGraceMs);
-      job.interrupting = interrupting;
-      if (!(await interrupting)) {
-        const error = {
-          code: "cancelled",
-          message: "The execution was cancelled, but its last command did not stop.",
-        };
-        this.interrupted(job, error);
-        this.finish(active, execution, "cancelled", error);
-      }
-    }
+    const operation = active.jobs.get(execution.id)?.operation;
+    operation?.cancel();
+    await operation?.stoppedCleanup();
     await this.settle(active, execution, deadline);
     if (active.ended) {
       return ended(active.id);
@@ -454,10 +566,9 @@ export class CommandEngine {
   }
 
   private expire(active: ActiveSession, execution: Execution) {
-    const index = active.queue.findIndex((job) => job.execution === execution);
-    if (index >= 0) {
-      active.queue.splice(index, 1);
-    }
+    const job = active.jobs.get(execution.id);
+    if (job?.operation?.active)
+      job.operation.stop(new Error("Queued execution expired"), "expired");
     execution.state = "expired";
     execution.finishedAt = this.now();
     active.records.changed(execution);
@@ -473,8 +584,8 @@ export class CommandEngine {
       execution.page = (await within(pageInfo(active, execution.tab), STEP_MS)) ?? null;
     }
     const page = isFinal(execution.state)
-      ? execution.page ?? null
-      : (await within(pageInfo(active, execution.tab), STEP_MS)) ?? null;
+      ? (execution.page ?? null)
+      : ((await within(pageInfo(active, execution.tab), STEP_MS)) ?? null);
     return {
       ...(execution.next ? { next: execution.next } : {}),
       epoch: active.records.epoch,
@@ -533,52 +644,11 @@ export class CommandEngine {
     }
   }
 
-  private async pump(active: ActiveSession) {
-    if (active.pumping) {
-      return;
-    }
-    active.pumping = true;
-    try {
-      while (this.active === active && this.ready && active.queue.length > 0) {
-        const head = active.queue[0];
-        const drained = await within(
-          this.host.quickActionsDone().then(() => true),
-          head.expiresAt - this.now(),
-        );
-        if (this.active !== active || !this.ready || active.queue.length === 0) {
-          break;
-        }
-        if (!drained) {
-          if (active.queue.includes(head)) {
-            this.expire(active, head.execution);
-          }
-          continue;
-        }
-        const job = active.queue.shift()!;
-        if (this.now() >= job.expiresAt) {
-          this.expire(active, job.execution);
-          continue;
-        }
-        active.running = job;
-        try {
-          await this.run(active, job);
-        } catch (error) {
-          this.finish(active, job.execution, "failed", errorInfo(error));
-        } finally {
-          active.running = null;
-        }
-        await job.interrupting;
-      }
-    } finally {
-      active.pumping = false;
-    }
-  }
-
   private async run(active: ActiveSession, job: Job) {
     const { execution } = job;
     execution.state = "running";
     execution.startedAt = this.now();
-    job.limitAt = execution.startedAt + this.limits.executionLimitMs;
+
     if (execution.after) {
       execution.epochChanged = active.records.epochChangedSince(execution);
     }
@@ -649,8 +719,9 @@ export class CommandEngine {
       });
       return true;
     }
-    if (this.now() >= job.limitAt) {
-      this.finish(active, job.execution, "timeout", this.overtime());
+    if (this.now() >= job.operation!.deadline) {
+      job.operation!.stop(new Error(this.overtime().message), "timeout");
+      await job.operation!.stoppedCleanup();
       return true;
     }
     return false;
@@ -671,11 +742,12 @@ export class CommandEngine {
         if (active.ended || isFinal(job.execution.state)) {
           return undefined;
         }
-        const remaining = job.cancelled ? STEP_MS : Math.min(job.limitAt - this.now(), STEP_MS);
+        const remaining = job.cancelled
+          ? STEP_MS
+          : Math.min(job.operation!.deadline - this.now(), STEP_MS);
         if (remaining <= 0) {
-          this.interrupted(job, this.overtime());
-          this.finish(active, job.execution, "timeout", this.overtime());
-          await this.interrupt(active, job, this.limits.navigationTimeoutMs);
+          job.operation!.stop(new Error(this.overtime().message), "timeout");
+          await job.operation!.stoppedCleanup();
           return undefined;
         }
         const tab = job.tab ? active.tabs.get(job.tab) : undefined;
@@ -829,12 +901,10 @@ export class CommandEngine {
       code: "browser_restarted",
       message: "The browser restarted, so tabs and refs changed. Run tab list again.",
     };
-    for (const job of active.queue.splice(0)) {
+    for (const job of active.jobs.values()) {
+      this.interrupted(job, error);
       this.finish(active, job.execution, "failed", error);
-    }
-    if (active.running) {
-      this.interrupted(active.running, error);
-      this.finish(active, active.running.execution, "failed", error);
+      job.operation?.cancel(new Error(error.message));
     }
     this.closeDialogs(active);
     active.refs.retire();
@@ -845,12 +915,13 @@ export class CommandEngine {
   private end(active: ActiveSession) {
     active.ended = true;
     const error = { code: "session_ended", message: "The session ended." };
-    for (const job of active.queue.splice(0)) {
+    for (const job of active.jobs.values()) {
+      this.interrupted(job, error);
       this.finish(active, job.execution, "failed", error);
+      job.operation?.cancel(new Error(error.message));
     }
-    if (active.running) {
-      this.finish(active, active.running.execution, "failed", error);
-    }
+    for (const resolve of this.readyListeners) resolve();
+    this.readyListeners.clear();
     this.closeDialogs(active);
     active.tabs.detach();
   }
@@ -914,7 +985,7 @@ export class CommandEngine {
     }
     dialog.by = by;
     const promptText =
-      dialog.type === "prompt" && accept ? text ?? dialog.defaultPrompt ?? "" : undefined;
+      dialog.type === "prompt" && accept ? (text ?? dialog.defaultPrompt ?? "") : undefined;
     await active.tabs
       .get(dialog.tab)
       ?.answerDialog(accept, promptText)
