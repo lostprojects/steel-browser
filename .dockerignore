@@ -1,4 +1,6 @@
 **/node_modules/
+native/fetch/target/
+api/bin/
 **/.tmp/
 **/.venv/
 **/build

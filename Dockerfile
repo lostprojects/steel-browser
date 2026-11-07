@@ -16,10 +16,11 @@ WORKDIR /app
 
 # Copy root workspace files for UI build
 COPY --link package.json package-lock.json ./
-COPY --link ui/ ./ui/
+COPY --link ui/package.json ./ui/package.json
 
 # Install UI dependencies and build with correct base path
 RUN npm ci --include=dev -w ui --ignore-scripts
+COPY --link ui/ ./ui/
 RUN VITE_API_URL="" VITE_WS_URL="" npm run build -w ui -- --base=/ui
 
 # Stage 2: Build API
@@ -31,10 +32,11 @@ COPY --link package.json package-lock.json ./
 # Remove or override the prepare script to avoid husky in Docker
 RUN npm pkg set scripts.prepare="echo skip husky"
 
-COPY --link api/ ./api/
+COPY --link api/package.json ./api/package.json
 
 # Install dependencies for API
 RUN npm ci --include=dev --workspace=api
+COPY --link api/ ./api/
 
 # Build the API package
 RUN npm run build -w api && npm run package:gateway -w api && node api/scripts/package-gateway.mjs --jobs

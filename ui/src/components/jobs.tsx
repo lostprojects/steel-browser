@@ -43,8 +43,10 @@ export function Jobs({ railOpen, onToggleRail }: { railOpen: boolean; onToggleRa
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
+    let loading = false;
     const refresh = async () => {
-      if (document.visibilityState === "hidden") return;
+      if (controller.signal.aborted || document.visibilityState === "hidden" || loading) return;
+      loading = true;
       try {
         const [next, selected] = await Promise.all([
           listJobs(offset, controller.signal),
@@ -59,6 +61,8 @@ export function Jobs({ railOpen, onToggleRail }: { railOpen: boolean; onToggleRa
         if (!controller.signal.aborted)
           setError(cause instanceof Error ? cause.message : "Unable to load jobs");
       } finally {
+        loading = false;
+        clearTimeout(timer);
         if (!controller.signal.aborted) timer = setTimeout(() => void refresh(), 3000);
       }
     };
@@ -276,7 +280,12 @@ export function Jobs({ railOpen, onToggleRail }: { railOpen: boolean; onToggleRa
           </div>
         )}
       </div>
-      <dialog ref={dialog} onCancel={() => setConfirm(null)} aria-labelledby="cancel-job-title">
+      <dialog
+        className="library-confirm"
+        ref={dialog}
+        onCancel={() => setConfirm(null)}
+        aria-labelledby="cancel-job-title"
+      >
         <h2 id="cancel-job-title">
           {confirm === "remove" ? "Remove this result?" : "Cancel this job?"}
         </h2>
