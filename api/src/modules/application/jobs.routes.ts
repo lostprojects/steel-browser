@@ -41,6 +41,12 @@ export async function callJob<T>(run: () => Promise<T>) {
   }
 }
 export async function jobsRoutes(server: FastifyInstance) {
+  server.post("/internal/jobs/ready",async(req,reply)=>{
+    reply.header("cache-control","no-store");
+    if(!jobWorkerAuthorized(req.raw))return reply.code(401).send({ready:false});
+    await requireJobs(server.jobs).ready;
+    return {ready:true};
+  });
   server.post<{ Params: { id: string } }>("/internal/jobs/:id/authorize", async (req, reply) => {
     reply.header("cache-control", "no-store");
     if (!jobWorkerAuthorized(req.raw)) return reply.code(401).send({ active: false });
@@ -85,13 +91,17 @@ export async function jobsRoutes(server: FastifyInstance) {
     url: "/v1/jobs/:id/result",
     handler: async (req, reply) => {
       const { actor } = await jobRequest(req);
-      const file = await callJob(() => requireJobs(server.jobs).download(actor, req.params.id));
+      const file = await callJob(async () =>
+        req.method === "HEAD"
+          ? await requireJobs(server.jobs).resultInfo(actor, req.params.id)
+          : await requireJobs(server.jobs).download(actor, req.params.id),
+      );
       reply
         .header("cache-control", "no-store")
         .header("x-content-type-options", "nosniff")
         .header("content-type", "application/zip")
         .header("content-disposition", attachmentContentDisposition(file.name))
-        .header("content-length", file.bytes.length)
+        .header("content-length", typeof file.bytes === "number" ? file.bytes : file.bytes.length)
         .header("x-content-sha256", file.sha256);
       return req.method === "HEAD" ? reply.send() : reply.send(file.bytes);
     },

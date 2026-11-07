@@ -225,7 +225,7 @@ export class JobService implements Jobs {
       throw error;
     }
   }
-  async download(actor: LibraryActor, id: string) {
+  private async result(actor: LibraryActor, id: string) {
     const row = await this.row(actor, id);
     await this.source(row);
     if (row.state !== "completed" || !row.result_id) throw missing();
@@ -238,6 +238,14 @@ export class JobService implements Jobs {
         "This result has expired. Start another export.",
         410,
       );
+    return { row, file };
+  }
+  async resultInfo(actor: LibraryActor, id: string) {
+    const { file } = await this.result(actor, id);
+    return { name: file.name, bytes: Number(file.bytes), sha256: file.sha256 };
+  }
+  async download(actor: LibraryActor, id: string) {
+    const { row, file } = await this.result(actor, id);
     const bytes = await this.objects.get(file.object_key);
     if (bytes.length !== file.bytes || hash(bytes) !== file.sha256)
       throw new Error("Job result verification failed");

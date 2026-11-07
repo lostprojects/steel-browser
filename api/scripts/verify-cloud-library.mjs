@@ -16,6 +16,7 @@ const { values } = parseArgs({
   options: {
     apply: { type: "boolean", default: false },
     hosted: { type: "boolean", default: false },
+    jobs: { type: "boolean", default: false },
     env: { type: "string", default: "/Users/moi/nosync.nosync/-env/toolstack.env" },
     "global-env": { type: "string", default: "/Users/moi/nosync.nosync/-env/global.env" },
   },
@@ -80,6 +81,7 @@ let report;
 let stage = "service binding";
 const fixtureOwner = `verification_${randomBytes(8).toString("hex")}`,
   owned = [];
+const ownedJobs = [];
 const fixtureMembers = new Set([fixtureOwner, fixtureOwner + "_reader"]);
 try {
   const project = await gql("query($p:String!){project(id:$p){services{edges{node{id name}}}}}", {
@@ -388,6 +390,65 @@ try {
     );
     const history = await (await request(`/v1/library/${hosted.id}/history`)).json();
     assert.equal(history.versions.length, 3);
+    if (values.jobs) {
+      stage = "hosted durable job acceptance";
+      assert.ok(health.capabilities.includes("durable_jobs"));
+      const input = {
+        requestId: randomUUID(),
+        type: "library_export",
+        packageId: hosted.id,
+        version: hosted.version,
+      };
+      const job = await (await request("/v1/jobs", "POST", input)).json();
+      ownedJobs.push(job.id);
+      assert.equal((await (await request("/v1/jobs", "POST", input)).json()).id, job.id);
+      const end = Date.now() + 120000;
+      let result = job;
+      while (Date.now() < end && !["completed", "failed", "cancelled"].includes(result.state)) {
+        await new Promise((r) => setTimeout(r, 1000));
+        result = await (await request(`/v1/jobs/${job.id}`)).json();
+      }
+      assert.equal(result.state, "completed");
+      assert.equal(result.progress, 100);
+      const link = `/v1/jobs/${job.id}/result`,
+        head = await request(link, "HEAD");
+      const downloaded = Buffer.from(await (await request(link)).arrayBuffer());
+      assert.equal(downloaded.subarray(0, 2).toString(), "PK");
+      assert.equal(Number(head.headers.get("content-length")), downloaded.length);
+      const { createHash } = await import("node:crypto");
+      assert.equal(
+        head.headers.get("x-content-sha256"),
+        createHash("sha256").update(downloaded).digest("hex"),
+      );
+      assert.equal(
+        (await fetch(origin + link, { signal: AbortSignal.timeout(15000) })).status,
+        401,
+      );
+      const found = await (
+        await request("/mcp", "POST", {
+          jsonrpc: "2.0",
+          id: 4,
+          method: "tools/call",
+          params: { name: "jobs_get", arguments: { id: job.id } },
+        })
+      ).json();
+      assert.equal(JSON.parse(found.result.content[0].text).state, "completed");
+      const listed = await (await request("/v1/jobs")).json();
+      assert.ok(listed.jobs.some((item) => item.id === job.id));
+      assert.equal(listed.workerAvailable, true);
+      assert.equal(JSON.stringify(listed).includes("keyHash"), false);
+      report = {
+        jobChecks: [
+          "atomic-retry-replay",
+          "separate-executor",
+          "live-authorization",
+          "verified-encrypted-ZIP",
+          "private-result",
+          "MCP-job-status",
+        ],
+      };
+    }
+
     const { default: puppeteer } = await import("puppeteer-core");
     const browser = await puppeteer.launch({
       executablePath:
@@ -427,13 +488,37 @@ try {
           true,
         );
       }
+      if (values.jobs) {
+        await page.goto(origin + `/ui/#/jobs/${ownedJobs[0]}`, { waitUntil: "networkidle0" });
+        await page.waitForSelector('a[href$="/result"]');
+        for (const width of [1440, 390]) {
+          await page.setViewport({ width, height: 1000 });
+          assert.equal(
+            await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+            true,
+          );
+          if (process.env.TOOLSTACK_QA_OUTPUT)
+            await page.screenshot({
+              path: path.join(process.env.TOOLSTACK_QA_OUTPUT, `hosted-jobs-${width}.png`),
+              fullPage: true,
+            });
+        }
+      }
       assert.equal(errors.length, 0);
     } finally {
       await browser.close();
     }
     const after = await (await request("/v1/connections")).json();
     assert.deepEqual(after, before);
+    if (values.jobs) {
+      await request(`/v1/jobs/${ownedJobs[0]}/result`, "DELETE");
+      assert.equal(
+        (await (await request(`/v1/jobs/${ownedJobs[0]}`)).json()).resultAvailable,
+        false,
+      );
+    }
     report = {
+      ...report,
       hostedChecks: [
         "HTTPS-UI",
         "organization-membership-binding",
@@ -481,6 +566,27 @@ try {
   process.exitCode = 1;
 } finally {
   try {
+    if (appSql && ownedJobs.length) {
+      const bytes = objects();
+      try {
+        for (const id of ownedJobs) {
+          const [job] =
+            await appSql`SELECT state FROM toolstack_jobs WHERE id=${id} AND org_id=${state.TOOLSTACK_ORG_ID}`;
+          if (job && !["completed", "failed"].includes(job.state))
+            throw new Error("Verification job is still active; preserve its recovery records");
+          const rows =
+            await appSql`SELECT object_key FROM toolstack_job_artifacts WHERE job_id=${id} AND org_id=${state.TOOLSTACK_ORG_ID}`;
+          for (const row of rows) await bytes.remove(row.object_key);
+          await appSql.begin(async (tx) => {
+            await tx`DELETE FROM toolstack_job_artifacts WHERE job_id=${id} AND org_id=${state.TOOLSTACK_ORG_ID}`;
+            await tx`DELETE FROM toolstack_queue.job WHERE id=${id} AND name=${"toolstack-" + state.TOOLSTACK_ORG_ID}`;
+            await tx`DELETE FROM toolstack_jobs WHERE id=${id} AND org_id=${state.TOOLSTACK_ORG_ID}`;
+          });
+        }
+      } finally {
+        bytes.close();
+      }
+    }
     if (appSql && owned.length) {
       const bytes = objects();
       try {

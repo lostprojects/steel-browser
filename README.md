@@ -13,7 +13,7 @@ current implementation.
 See the [organization contract](ORGANIZATIONS.md) and
 [delivery sequence](TOOLSTACK-PLAN.md#organization-delivery) before expanding access.
 
-The application provides Library, Toolkits, Connections, Activity and Browser views.
+The application provides Library, Jobs, Toolkits, Connections, Activity and Browser views.
 Tool schemas drive the run forms; the UI and MCP use one catalog and executor.
 API connections support registered providers, account verification and reversible
 access controls. Exa search and explicitly installed owner content use the same
@@ -71,6 +71,7 @@ Twenty-one callers have verified first payloads. DTIC and HathiTrust lack qualif
 | [TOOLSTACK-PLAN.md](TOOLSTACK-PLAN.md) | Product direction, delivery sequence and acceptance requirements |
 | [ORGANIZATIONS.md](ORGANIZATIONS.md) | Current organization boundaries and future expansion requirements |
 | [USAGE.md](USAGE.md) | API authentication, sessions, downloads and MCP tools |
+| [JOBS.md](JOBS.md) | Durable jobs, private exports, results and executor operations |
 | [LIBRARY.md](LIBRARY.md) | Owned skills, files, sharing, version history and storage |
 | [TOOLKITS.md](TOOLKITS.md) | Tool discovery, generic execution and server-side extensions |
 | [SEARCH.md](SEARCH.md) | Native API connections, search tools and recorded verification |

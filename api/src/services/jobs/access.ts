@@ -20,7 +20,7 @@ export function activeJobCredential(row: any) {
 }
 export function jobWorkerAuthorized(req: IncomingMessage) {
   const path = new URL(req.url ?? "/", "http://localhost").pathname;
-  if (req.method !== "POST" || !/^\/internal\/jobs\/[a-f0-9-]{36}\/authorize$/.test(path))
+  if (req.method !== "POST" || !/^\/internal\/jobs\/(ready|[a-f0-9-]{36}\/authorize)$/.test(path))
     return false;
   const key = process.env.TOOLSTACK_JOBS_WORKER_KEY;
   const supplied = req.headers.authorization?.match(/^Bearer (\S+)$/)?.[1];

@@ -85,7 +85,7 @@ own and provide a foundation for later collaboration.
 | Application interface | Catalog-driven Toolkits, Connections and Activity with schema-driven forms, workflow methods and the existing Browser workspace | Hosted user acceptance and further business workflows |
 | Files and local client | Prepared deliveries, browser download links, dashboard downloads and an optional verified-save client | Hosted handoff deployment acceptance and optional client release; client is unpublished |
 | Browser callers | Twenty-one verified first payloads, with exact windows recorded in the caller ledger | Each caller's normal-use week; DTIC and HathiTrust have no qualifying remote start |
-| Substantial remote scripts | Trusted toolkit extension interface | First production workflow, durable jobs and persistent artifacts |
+| Substantial remote scripts | Trusted toolkit extension interface | Durable export jobs implemented; first substantial script runtime and its artifact acceptance remain open |
 
 The local Exa pilot preserved a fresh test profile across reopening and used one
 named agent's MCP endpoint for browser reads and API calls. It demonstrated usage
@@ -387,21 +387,17 @@ throughout future migrations.
 
 ### Durable jobs
 
-Add a job interface for work that can outlive an HTTP request or agent connection.
-Submission returns an owned job ID; the agent can inspect progress and retrieve
-results later. Cancellation and reconnection must have defined behavior.
+The pg-boss job layer and [Jobs interface](JOBS.md) implement persistent queue
+submission, owner-scoped progress, cancellation and encrypted results. Delivery
+and its application record commit atomically in the existing Toolstack Postgres.
+A separate executor recovers attempts after restart; browser lifetimes are
+independent. The first registered operation exports an exact owned Library
+version with its supporting files.
 
-Persist recovery inputs and the capability version in private job storage with
-the selected account binding and a retention policy. Resolve secrets from account
-references.
-
-Keep state transitions and validation results durable. Preserve uncertain external
-effects so restarting a worker cannot silently repeat a generation or submission.
-
-Start with one dedicated execution service and bounded concurrency. Add a durable
-queue when required for long-running work, using the Toolstack Postgres job
-store. The short-lived operation runner and its response cache do not constitute
-durable job recovery.
+Further runtimes must preserve durable state transitions, private inputs and
+account bindings. Reconcile uncertain external effects before retrying a provider
+submission. Generic uploaded-script execution and substantial modeling/slicing
+remain separate work; the export runtime grants no authority to execute content.
 
 ### Artifacts and budgets
 

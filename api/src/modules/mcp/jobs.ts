@@ -71,14 +71,15 @@ export function jobsToolkit(server: FastifyInstance): Toolkit {
             return textResult(await jobs.removeResult(actor, args.id as string));
           const job = await jobs.get(actor, args.id as string);
           if (definition.name !== "jobs_result" || !job.resultAvailable) return textResult(job);
-          // Reading the result here rechecks current source access and checksum.
-          const file = await jobs.download(actor, job.id);
+          // Metadata rechecks source access without fetching the whole object.
+          // The download endpoint verifies bytes against this saved checksum.
+          const file = await jobs.resultInfo(actor, job.id);
           return {
             content: [
               ...textResult({
                 job: job.id,
                 name: file.name,
-                bytes: file.bytes.length,
+                bytes: file.bytes,
                 sha256: file.sha256,
               }).content,
               {
