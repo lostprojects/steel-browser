@@ -176,7 +176,7 @@ encryption key and database unchanged during that move.
 ## Personal and global stores
 
 Here `global` names the existing shared store within this one organization.
-It must never become a platform-wide store of customer credentials. The tenant
+It must never become a platform-wide store of customer credentials. The
 encrypted store binds historical entries and grants to the configured organization
 on its version-1 migration. Internal reads require a matching organization header;
 signed claims with missing organization or membership fields are refused.

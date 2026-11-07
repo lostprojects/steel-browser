@@ -496,6 +496,22 @@ try {
           AND m.user_id=${user} AND NOT EXISTS(SELECT 1 FROM toolstack_packages p
             WHERE p.org_id=m.org_id AND p.owner_membership_id=m.id)`;
       }
+      const organizations = await appSql`SELECT id FROM toolstack_organizations`;
+      assert.deepEqual(
+        organizations.map((row) => row.id),
+        [state.TOOLSTACK_ORG_ID],
+      );
+      const memberships =
+        await appSql`SELECT user_id FROM toolstack_memberships WHERE org_id=${state.TOOLSTACK_ORG_ID}`;
+      assert.equal(
+        memberships.some((row) => fixtureMembers.has(row.user_id)),
+        false,
+      );
+      if (report)
+        Object.assign(report, {
+          organizationRecords: organizations.length,
+          retainedMemberships: memberships.length,
+        });
     }
   } catch (error) {
     console.error(
