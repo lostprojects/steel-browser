@@ -458,3 +458,36 @@ it("drains a pending allocation without retrying or publishing its route", async
   expect(f.servers).toHaveLength(1);
   expect((await f.service.totals()).activeLeases).toBe(0);
 });
+
+it("treats inherited object names as data, never as profiles, identities or spend", async () => {
+  const f = await fixture();
+  const owner = { ...alice, name: "toString" };
+  expect(f.service.remaining(owner)).toBe(owner.dailyBudgetBytes);
+  await expect(f.service.acquire({ profile: "valueOf" }, owner)).rejects.toMatchObject({
+    code: "proxy_profile_unavailable",
+  });
+  await expect(
+    f.service.putProfile("test", { fallback: ["valueOf"] }, admin),
+  ).rejects.toMatchObject({ code: "invalid_proxy_fallback" });
+  await f.service.putProfile("toString", {}, admin);
+  const lease = await f.service.acquire({ profile: "toString", identity: "valueOf" }, owner);
+  expect(lease.txBytes + lease.rxBytes).toBe(120);
+  expect((await f.service.totals()).agents[actor(owner)]).toBe(120);
+  await f.service.release(lease.id, owner);
+  await f.service.forgetIdentity("valueOf");
+  await f.service.deleteProfile("toString", admin);
+  const restarted = new ProxyService(f.root, f.options);
+  await restarted.ready;
+  expect(restarted.remaining(owner)).toBe(owner.dailyBudgetBytes - 120);
+});
+
+it("returns the final settled counters when releasing a live lease", async () => {
+  const f = await fixture(),
+    lease = await f.service.acquire({}, alice);
+  f.servers[0].close.mockImplementationOnce(async () => {
+    f.servers[0].rxBytes += 42;
+  });
+  const closed = await f.service.release(lease.id, alice);
+  expect(closed).toMatchObject({ status: "closed", reason: "released", rxBytes: 142, txBytes: 20 });
+  expect(closed).toEqual(await f.service.get(lease.id, alice));
+});

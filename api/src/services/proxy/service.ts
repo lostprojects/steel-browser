@@ -57,6 +57,8 @@ const min = (...values: Array<number | undefined>) =>
   Math.min(...values.filter((v): v is number => v !== undefined));
 const freshSticky = () => randomBytes(4).toString("hex");
 const snapshot = (r: LeaseRecord) => structuredClone(r);
+const lookup = <T>(record: Record<string, T>, key: string): T | undefined =>
+  Object.hasOwn(record, key) ? record[key] : undefined;
 
 export class ProxyService {
   private readonly store: ProxyStore;
@@ -76,7 +78,7 @@ export class ProxyService {
     return this.store.state;
   }
   private profile(name: string, agent: Agent) {
-    const value = this.state.profiles[name] ?? defaults[name];
+    const value = lookup(this.state.profiles, name) ?? lookup(defaults, name);
     if (!value || !permitted(value, agent)) throw new ProxyError("proxy_profile_unavailable", 403);
     return structuredClone(value);
   }
@@ -89,7 +91,9 @@ export class ProxyService {
         ...structuredClone(p),
         configured: configured(p),
         ...(proxyAdmin(agent)
-          ? { health: this.state.health[name] ?? { attempts: 0, successes: 0, failures: 0 } }
+          ? {
+              health: lookup(this.state.health, name) ?? { attempts: 0, successes: 0, failures: 0 },
+            }
           : {}),
       }));
   }
@@ -97,12 +101,12 @@ export class ProxyService {
     await this.ready;
     if (!proxyAdmin(agent)) throw new ProxyError("proxy_admin_required", 403);
     proxyName.parse(name);
-    if (!this.state.profiles[name] && Object.keys(this.state.profiles).length >= 256)
+    if (!lookup(this.state.profiles, name) && Object.keys(this.state.profiles).length >= 256)
       throw new ProxyError("proxy_profile_capacity", 429);
     const p = validateProfile(input);
     if (
       p.fallback.includes(name) ||
-      p.fallback.some((id) => !(this.state.profiles[id] ?? defaults[id]))
+      p.fallback.some((id) => !(lookup(this.state.profiles, id) ?? lookup(defaults, id)))
     )
       throw new ProxyError("invalid_proxy_fallback", 400);
     this.state.profiles[name] = p;
@@ -114,8 +118,8 @@ export class ProxyService {
   async deleteProfile(name: string, agent: Agent) {
     await this.ready;
     if (!proxyAdmin(agent)) throw new ProxyError("proxy_admin_required", 403);
-    if (defaults[name]) throw new ProxyError("builtin_proxy_profile_cannot_be_deleted");
-    if (!this.state.profiles[name]) throw new ProxyError("proxy_profile_not_found", 404);
+    if (lookup(defaults, name)) throw new ProxyError("builtin_proxy_profile_cannot_be_deleted");
+    if (!lookup(this.state.profiles, name)) throw new ProxyError("proxy_profile_not_found", 404);
     if (
       [...this.active.values()].some((v) => v.record.profile === name) ||
       Object.values(this.state.identities).some((i) => i.profile === name) ||
@@ -135,9 +139,9 @@ export class ProxyService {
         rx = Math.max(r.rxBytes, item.server.rxBytes);
       const delta = tx + rx - r.txBytes - r.rxBytes;
       if (delta > 0) {
-        today[r.owner] = (today[r.owner] ?? 0) + delta;
-        this.state.lifetime[r.owner] = (this.state.lifetime[r.owner] ?? 0) + delta;
-        this.state.products[r.product] = (this.state.products[r.product] ?? 0) + delta;
+        today[r.owner] = (lookup(today, r.owner) ?? 0) + delta;
+        this.state.lifetime[r.owner] = (lookup(this.state.lifetime, r.owner) ?? 0) + delta;
+        this.state.products[r.product] = (lookup(this.state.products, r.product) ?? 0) + delta;
         this.state.total += delta;
       }
       r.txBytes = tx;
@@ -147,7 +151,10 @@ export class ProxyService {
   }
   remaining(agent: Agent) {
     this.collect();
-    return Math.max(0, agent.dailyBudgetBytes - (this.state.days[utcDay()]?.[actor(agent)] ?? 0));
+    return Math.max(
+      0,
+      agent.dailyBudgetBytes - (lookup(this.state.days[utcDay()] ?? {}, actor(agent)) ?? 0),
+    );
   }
   private remainingLease(item: Runtime) {
     return Math.max(
@@ -162,7 +169,8 @@ export class ProxyService {
   }
   private allowed(item: Runtime) {
     this.collect();
-    const current = this.state.profiles[item.record.profile] ?? defaults[item.record.profile];
+    const current =
+      lookup(this.state.profiles, item.record.profile) ?? lookup(defaults, item.record.profile);
     const policy =
       item.ephemeral ||
       (current &&
@@ -199,7 +207,7 @@ export class ProxyService {
   async get(id: string, agent: Agent) {
     await this.ready;
     this.collect();
-    const row = this.state.leases[id];
+    const row = lookup(this.state.leases, id);
     if (!row || (row.owner !== actor(agent) && !proxyAdmin(agent)))
       throw new ProxyError("proxy_lease_not_found", 404);
     return snapshot(row);
@@ -236,7 +244,7 @@ export class ProxyService {
     if (request.identity) await this.dependencies.authorizeIdentity?.(request.identity, agent);
     if (
       request.identity &&
-      !this.state.identities[request.identity] &&
+      !lookup(this.state.identities, request.identity) &&
       Object.keys(this.state.identities).length >= 1000
     )
       throw new ProxyError("proxy_identity_capacity", 429);
@@ -267,7 +275,9 @@ export class ProxyService {
           [...this.active.values()].filter((v) => v.record.owner === actor(agent)).length >= 16
         )
           throw new ProxyError("proxy_lease_capacity", 429);
-        const existing = request.identity ? this.state.identities[request.identity] : undefined;
+        const existing = request.identity
+          ? lookup(this.state.identities, request.identity)
+          : undefined;
         if (
           existing &&
           (existing.country !== profile.target.country ||
@@ -316,7 +326,9 @@ export class ProxyService {
         this.active.set(id, item);
         this.state.leases[id] = record;
         if (request.identity) this.bindings.set(request.identity, id);
-        const health = (this.state.health[name] ??= { attempts: 0, successes: 0, failures: 0 });
+        const health =
+          lookup(this.state.health, name) ??
+          (this.state.health[name] = { attempts: 0, successes: 0, failures: 0 });
         health.attempts++;
         try {
           await this.store.persist();
@@ -371,6 +383,7 @@ export class ProxyService {
           health.lastSuccessAt = Date.now();
           this.collect();
           await this.store.persist();
+          if (!this.allowed(item)) throw new ProxyError("proxy_allocation_cancelled", 410);
           return snapshot(record);
         } catch (error) {
           health.failures++;
@@ -476,11 +489,11 @@ export class ProxyService {
   }
   async release(id: string, agent: Agent, reason = "released") {
     await this.ready;
-    const record = await this.get(id, agent);
+    await this.get(id, agent);
     const item = this.active.get(id);
     if (item?.session) throw new ProxyError("proxy_lease_attached_to_browser");
     if (item) await this.finish(item, reason);
-    return { ...record, status: "closed" as const, reason: record.reason ?? reason };
+    return this.get(id, agent);
   }
   async renew(id: string, seconds: number, agent: Agent) {
     await this.ready;
@@ -618,7 +631,7 @@ export class ProxyService {
     await this.ready;
     proxyName.parse(name);
     if (this.bindings.has(name)) throw new ProxyError("proxy_identity_in_use");
-    const existing = this.state.identities[name];
+    const existing = lookup(this.state.identities, name);
     if (
       existing &&
       (existing.country !== identity.country || existing.stickyId !== identity.stickyId)
@@ -647,7 +660,7 @@ export class ProxyService {
     proxyName.parse(name);
     if (!proxyAdmin(agent)) throw new ProxyError("proxy_admin_required", 403);
     if (this.bindings.has(name)) throw new ProxyError("proxy_identity_in_use");
-    const identity = this.state.identities[name];
+    const identity = lookup(this.state.identities, name);
     if (!identity) throw new ProxyError("proxy_identity_not_found", 404);
     this.state.identities[name] = {
       ...identity,

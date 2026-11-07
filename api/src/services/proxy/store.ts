@@ -112,7 +112,7 @@ export class ProxyStore {
           })
           .strict()
           .parse(value);
-        const lifetime: Record<string, number> = {};
+        const lifetime: Record<string, number> = Object.create(null);
         for (const day of Object.values(legacy.days))
           for (const [name, bytes] of Object.entries(day))
             lifetime[name] = (lifetime[name] ?? 0) + bytes;

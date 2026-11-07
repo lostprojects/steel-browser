@@ -173,7 +173,7 @@ export class ProxyError extends PublicError {
 export const actor = (agent: Agent) =>
   agent.connectedApp
     ? `app:${agent.connectedApp.orgId}:${agent.connectedApp.membershipId}:${agent.connectedApp.keyId}`
-    : ["__proto__", "prototype", "constructor"].includes(agent.name)
+    : Object.hasOwn(Object.prototype, agent.name) || agent.name === "prototype"
       ? `agent:${agent.name}`
       : agent.name;
 export const proxyAdmin = (agent: Agent) =>
