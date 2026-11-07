@@ -278,12 +278,15 @@ try {
         signal: AbortSignal.timeout(90_000),
         headers: {
           authorization: `Bearer ${variables.STEEL_API_KEY}`,
-          "content-type": "application/json",
+          ...(input ? { "content-type": "application/json" } : {}),
           accept: "application/json, text/event-stream",
         },
         ...(input ? { body: JSON.stringify(input) } : {}),
       });
-      if (!response.ok) throw new Error(`Hosted acceptance HTTP ${response.status}`);
+      if (!response.ok)
+        throw Object.assign(new Error("Hosted acceptance request failed"), {
+          httpStatus: response.status,
+        });
       return response;
     };
     const health = await (await request("/v1/health")).json();
@@ -391,7 +394,7 @@ try {
     const history = await (await request(`/v1/library/${hosted.id}/history`)).json();
     assert.equal(history.versions.length, 3);
     if (values.jobs) {
-      stage = "hosted durable job acceptance";
+      stage = "hosted durable job submission";
       assert.ok(health.capabilities.includes("durable_jobs"));
       const input = {
         requestId: randomUUID(),
@@ -402,6 +405,7 @@ try {
       const job = await (await request("/v1/jobs", "POST", input)).json();
       ownedJobs.push(job.id);
       assert.equal((await (await request("/v1/jobs", "POST", input)).json()).id, job.id);
+      stage = "hosted durable job execution";
       const end = Date.now() + 120000;
       let result = job;
       while (Date.now() < end && !["completed", "failed", "cancelled"].includes(result.state)) {
@@ -410,6 +414,9 @@ try {
       }
       assert.equal(result.state, "completed");
       assert.equal(result.progress, 100);
+      assert.ok(Number.isFinite(Date.parse(result.createdAt)));
+      assert.ok(Number.isFinite(Date.parse(result.finishedAt)));
+      stage = "hosted durable job download";
       const link = `/v1/jobs/${job.id}/result`,
         head = await request(link, "HEAD");
       const downloaded = Buffer.from(await (await request(link)).arrayBuffer());
@@ -424,6 +431,7 @@ try {
         (await fetch(origin + link, { signal: AbortSignal.timeout(15000) })).status,
         401,
       );
+      stage = "hosted durable job MCP";
       const found = await (
         await request("/mcp", "POST", {
           jsonrpc: "2.0",
@@ -491,6 +499,10 @@ try {
       if (values.jobs) {
         await page.goto(origin + `/ui/#/jobs/${ownedJobs[0]}`, { waitUntil: "networkidle0" });
         await page.waitForSelector('a[href$="/result"]');
+        assert.equal(
+          await page.evaluate(() => document.body.innerText.includes("Invalid Date")),
+          false,
+        );
         for (const width of [1440, 390]) {
           await page.setViewport({ width, height: 1000 });
           assert.equal(
@@ -511,6 +523,7 @@ try {
     const after = await (await request("/v1/connections")).json();
     assert.deepEqual(after, before);
     if (values.jobs) {
+      stage = "hosted durable job result removal";
       await request(`/v1/jobs/${ownedJobs[0]}/result`, "DELETE");
       assert.equal(
         (await (await request(`/v1/jobs/${ownedJobs[0]}`)).json()).resultAvailable,
@@ -562,7 +575,9 @@ try {
     publicProxyRemovedOnExit: true,
   };
 } catch (error) {
-  console.error(`Cloud verification failed during ${stage}: ${error.name}`);
+  console.error(
+    `Cloud verification failed during ${stage}: ${error.name}${Number.isInteger(error.httpStatus) ? ` HTTP ${error.httpStatus}` : ""}`,
+  );
   process.exitCode = 1;
 } finally {
   try {

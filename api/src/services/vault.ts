@@ -39,6 +39,7 @@ export function scrub(text: string): string {
 }
 export function scrubObject<T>(value: T): T {
   if (typeof value === "string") return scrub(value) as T;
+  if (value instanceof Date) return scrubObject(value.toJSON()) as T;
   if (Array.isArray(value)) return value.map(scrubObject) as T;
   if (value instanceof Error) return { name: value.name, message: scrub(value.message) } as T;
   if (value && typeof value === "object")
