@@ -34,7 +34,7 @@
       "/api/src/utils/content-disposition.ts"
     ],
     "builder": "RAILPACK",
-    "buildCommand": null,
+    "buildCommand": "",
     "startCommand": null,
     "rootDirectory": null,
     "railwayConfigFile": null

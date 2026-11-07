@@ -23,8 +23,8 @@
       "/.dockerignore"
     ],
     "builder": "RAILPACK",
-    "buildCommand": null,
-    "startCommand": null,
+    "buildCommand": "",
+    "startCommand": "caddy run --config /etc/caddy/Caddyfile --adapter caddyfile",
     "rootDirectory": null,
     "railwayConfigFile": null
   },
