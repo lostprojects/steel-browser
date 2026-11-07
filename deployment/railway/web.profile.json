@@ -1,0 +1,34 @@
+{
+  "serviceName": "Toolstack web",
+  "serviceId": null,
+  "projectId": "bbbe0a8e-81f7-41b9-9d64-76a38ad7d8fb",
+  "environmentId": "1ff52f6b-2c4d-4a5d-835d-fe90506420d2",
+  "source": {
+    "repo": "lostprojects/toolstack",
+    "branch": "deploy"
+  },
+  "settings": {
+    "healthcheckPath": "/web-health",
+    "healthcheckTimeout": 120,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3,
+    "numReplicas": 1,
+    "drainingSeconds": 30,
+    "dockerfilePath": "deployment/railway/web.Dockerfile",
+    "watchPatterns": [
+      "/package.json",
+      "/package-lock.json",
+      "/deployment/railway/web.*",
+      "/ui/**",
+      "/.dockerignore"
+    ],
+    "builder": "RAILPACK",
+    "buildCommand": null,
+    "startCommand": null,
+    "rootDirectory": null,
+    "railwayConfigFile": null
+  },
+  "variables": {
+    "PORT": "8080"
+  }
+}

@@ -1,5 +1,5 @@
 ARG NODE_VERSION=22.23.4
-ARG STEEL_IMAGE=browser
+ARG STEEL_IMAGE=standalone
 
 FROM node:${NODE_VERSION}-bookworm-slim AS base
 
@@ -119,9 +119,6 @@ COPY --from=api-build /app/api/build /app/api/build
 COPY --link api/fetch.py /app/api/fetch.py
 COPY --link LICENSE /app/LICENSE
 
-# Copy the built UI from ui-build stage into the API container
-COPY --from=ui-build /app/ui/dist /app/ui/dist
-
 # Copy entrypoint script
 COPY --chmod=755 api/entrypoint.sh api/chrome-launcher.sh /app/api/
 
@@ -132,6 +129,11 @@ ENV DBUS_SESSION_BUS_ADDRESS=autolaunch:
 # Tini runs as PID 1 to forward signals and reap zombies (like compose `init: true`)
 ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/app/api/entrypoint.sh"]
 
-# Railway passes declared build arguments from service variables. The default
-# remains the browser image; gateway services set STEEL_IMAGE=gateway.
+# Preserve the combined image for existing services and local Compose. Railway's
+# split browser service selects browser and has no dependency on the UI build.
+FROM browser AS standalone
+COPY --from=ui-build /app/ui/dist /app/ui/dist
+
+# Railway passes STEEL_IMAGE from service variables into this build argument.
+# Split services select browser, jobs or gateway explicitly.
 FROM ${STEEL_IMAGE} AS production

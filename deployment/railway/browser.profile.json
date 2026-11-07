@@ -1,0 +1,40 @@
+{
+  "serviceName": "Steel Browser",
+  "serviceId": "cb27d380-5f19-4057-b8b5-402bf34f2678",
+  "projectId": "bbbe0a8e-81f7-41b9-9d64-76a38ad7d8fb",
+  "environmentId": "1ff52f6b-2c4d-4a5d-835d-fe90506420d2",
+  "source": {
+    "repo": "lostprojects/toolstack",
+    "branch": "deploy"
+  },
+  "settings": {
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 120,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3,
+    "numReplicas": 1,
+    "drainingSeconds": 135,
+    "dockerfilePath": "Dockerfile",
+    "watchPatterns": [
+      "/package.json",
+      "/package-lock.json",
+      "/deployment/railway/browser.*",
+      "/Dockerfile",
+      "/.dockerignore",
+      "/api/package.json",
+      "/api/tsconfig*.json",
+      "/api/scripts/package-gateway.mjs",
+      "/api/**",
+      "/native/**"
+    ],
+    "builder": "RAILPACK",
+    "buildCommand": null,
+    "startCommand": null,
+    "rootDirectory": null,
+    "railwayConfigFile": null
+  },
+  "variables": {
+    "STEEL_IMAGE": "browser",
+    "TOOLSTACK_UI_ORIGIN": "http://toolstack-web.railway.internal:8080"
+  }
+}

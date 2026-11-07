@@ -1,0 +1,38 @@
+{
+	admin off
+	auto_https off
+}
+:{$PORT:8080} {
+	encode zstd gzip
+	handle /web-health {
+		respond "ok" 200
+	}
+	# This service is private. The existing public API authenticates dashboard
+	# requests before forwarding them here, preserving its URL and cookies.
+	handle /ui {
+		redir /ui/ 308
+	}
+	handle_path /ui/* {
+		root * {$TOOLSTACK_WEB_ROOT:/srv/toolstack}
+		route {
+			header Cache-Control "no-cache"
+			@assets path /assets/*
+			handle @assets {
+				@present file {path}
+				header @present Cache-Control "private, max-age=31536000, immutable"
+				file_server
+			}
+			@file path_regexp file \.\w{2,10}$
+			handle @file {
+				file_server
+			}
+			handle {
+				try_files {path} /index.html
+				file_server
+			}
+		}
+	}
+	handle {
+		respond "Not found" 404
+	}
+}
