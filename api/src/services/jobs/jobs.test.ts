@@ -122,6 +122,9 @@ test("an executor credential grants no browser access and cannot select a foreig
 });
 
 dbTest("submission is atomic, retry-safe and private to its organization membership", async () => {
+  const batch = await jobs.boss.getDb().executeSql("SELECT 1 AS one; SELECT 2 AS two");
+  expect(batch.rows).toEqual([{ one: 1 }, { two: 2 }]);
+  await jobs.boss.supervise(jobs.queue);
   const p = await create(),
     requestId = randomUUID();
   const [a, b] = await Promise.all([submit(p, requestId), submit(p, requestId)]);

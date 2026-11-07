@@ -14,7 +14,12 @@ import { jobsQuery, submitJob, type JobAuthorization, type Jobs } from "./contra
 const missing = () => new PublicError("job_unavailable", "Job is unavailable", 404);
 const hash = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
 const adapter = (sql: any): Db => ({
-  executeSql: async (query, values = []) => ({ rows: await sql.unsafe(query, values) }),
+  executeSql: async (query, values = []) => {
+    const result = await sql.unsafe(query, values);
+    // postgres.js returns a result array per statement in a batch. pg-boss
+    // requires rows from every statement, including maintenance lock claims.
+    return { rows: Array.isArray(result[0]) ? result.flat() : result };
+  },
 });
 const terminal = new Set(["completed", "failed", "cancelled"]);
 
