@@ -242,12 +242,14 @@ export function Jobs({ railOpen, onToggleRail }: { railOpen: boolean; onToggleRa
                   )}
                   {job.resultAvailable && (
                     <>
-                      <button className="button" onClick={() => setConfirm("remove")}>
-                        Remove result
-                      </button>
-                      <a className="button primary" href={jobResult(job.id)}>
-                        Download ZIP
-                      </a>
+                      <div className="library-actions">
+                        <a className="button" data-variant="primary" href={jobResult(job.id)}>
+                          Download ZIP
+                        </a>
+                        <button className="button" onClick={() => setConfirm("remove")}>
+                          Remove result
+                        </button>
+                      </div>
                       <p className="muted">
                         Instructions, package metadata and supporting files. The encrypted result is
                         kept for seven days.
@@ -265,7 +267,7 @@ export function Jobs({ railOpen, onToggleRail }: { railOpen: boolean; onToggleRa
                     </a>
                   )}
                   <dl className="job-facts">
-                    <dt>Started</dt>
+                    <dt>Submitted</dt>
                     <dd>{new Date(job.createdAt).toLocaleString()}</dd>
                     {job.finishedAt && (
                       <>
@@ -298,7 +300,7 @@ export function Jobs({ railOpen, onToggleRail }: { railOpen: boolean; onToggleRa
           <button className="button" disabled={busy} onClick={() => setConfirm(null)}>
             {confirm === "remove" ? "Keep result" : "Keep running"}
           </button>
-          <button className="button primary" disabled={busy} onClick={() => void stop()}>
+          <button className="button" data-variant="danger" disabled={busy} onClick={() => void stop()}>
             {busy ? "Saving…" : confirm === "remove" ? "Remove result" : "Cancel job"}
           </button>
         </div>
