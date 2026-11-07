@@ -55,8 +55,8 @@ path. There is no current requirement for Composio or a second MCP gateway.
 Evaluate another component when it solves a demonstrated gap without duplicating
 account ownership or permissions.
 
-The immediate priority is making the owner's organization an explicit sole tenant
-around the existing framework, then adding teammates safely. Billing, plan
+The owner's explicit sole-tenant foundation is deployed. The next priority is
+adding selected teammates safely around the existing framework. Billing, plan
 entitlements and customer signup are outside this implementation. Commercial use
 is a low-priority future possibility; preserve flexibility without building it.
 Exa remains an optional reference adapter; adding providers follows demonstrated
