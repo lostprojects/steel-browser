@@ -3,8 +3,8 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import puppeteer, { ProtocolError, type Browser, type Page } from "puppeteer-core";
-import { CdpCDPSession } from "puppeteer-core/internal/cdp/CDPSession.js";
+import puppeteer, { ProtocolError, type Browser, type Page, type CDPSession } from "puppeteer-core";
+import { CdpCDPSession } from "puppeteer-core/internal/cdp/CdpSession.js";
 import {
   afterAll,
   afterEach,
@@ -24,6 +24,7 @@ import {
 } from "./engine.js";
 import { PREPARE_EDIT } from "./forms.js";
 import { Tab } from "./tabs.js";
+import { AgentBrowser } from "../agent-browser.js";
 
 const chrome = process.env.CHROME_EXECUTABLE_PATH;
 
@@ -786,6 +787,20 @@ function sleep(ms: number) {
 }
 
 describe.skipIf(!chrome)("command engine", () => {
+  test("settles a refused admission without issuing the browser command", async () => {
+    const authorize = vi.fn(() => {
+      throw new Error("Access withdrawn");
+    });
+    const before = page.url();
+    const result = await engine.handle({
+      sessionId: SESSION,
+      authorize,
+      body: { commands: [{ command: "navigate", url: `${base}/never-dispatched` }] },
+    });
+    expect(authorize).toHaveBeenCalledOnce();
+    expect(result.body.execution).toMatchObject({ state: "failed", effect: "none" });
+    expect(page.url()).toBe(before);
+  });
   let server: Server;
   let port: number;
   let base: string;
@@ -794,7 +809,8 @@ describe.skipIf(!chrome)("command engine", () => {
   let page: Page;
   let engine: CommandEngine;
   let host: EngineHost;
-  let current: Browser;
+  let current: AgentBrowser;
+  let agent: AgentBrowser;
   let releasing = false;
   let quickActions: Promise<void> = Promise.resolve();
   let endedByEngine = 0;
@@ -856,10 +872,10 @@ describe.skipIf(!chrome)("command engine", () => {
     await writeFile(join(files, "data.csv"), "a,b\n");
     await writeFile(join(outside, "secret.txt"), "secret");
     await symlink(join(outside, "secret.txt"), join(files, "link.txt"));
-    current = browser;
+    agent = await AgentBrowser.connect(browser);
+    current = agent;
     host = {
       browser: () => current,
-      waitForPageSetup: async () => undefined,
       endSession: async () => {
         endedByEngine++;
       },
@@ -887,15 +903,15 @@ describe.skipIf(!chrome)("command engine", () => {
   });
 
   afterEach(() => {
-    engine.sessionEnded();
+    engine.dispose();
     endedByEngine = 0;
     releasing = false;
     quickActions = Promise.resolve();
-    current = browser;
+    current = agent;
   });
 
   function create(options: EngineOptions = {}): CommandEngine {
-    engine?.sessionEnded();
+    engine?.dispose();
     engine = new CommandEngine(host, options);
     engine.prepare(SESSION);
     engine.browserReady();
@@ -1850,10 +1866,9 @@ describe.skipIf(!chrome)("command engine", () => {
 
     test("does not click after the execution ran out of time", async () => {
       await open("/counter");
-      const setup = host.waitForPageSetup;
-      host.waitForPageSetup = async () => {
+      const setup = vi.spyOn(agent.page(page), "ready").mockImplementation(async () => {
         await sleep(1500);
-      };
+      });
       try {
         const short = create({ limits: { executionLimitMs: 300 } });
         const body = await run(
@@ -1866,7 +1881,7 @@ describe.skipIf(!chrome)("command engine", () => {
         expect(await count()).toBeUndefined();
         short.sessionEnded();
       } finally {
-        host.waitForPageSetup = setup;
+        setup.mockRestore();
       }
     });
 
@@ -2024,10 +2039,9 @@ describe.skipIf(!chrome)("command engine", () => {
 
     test("starts the next execution only after a cancel finished its steps", async () => {
       await open("/counter");
-      const setup = host.waitForPageSetup;
-      host.waitForPageSetup = async () => {
+      const setup = vi.spyOn(agent.page(page), "ready").mockImplementation(async () => {
         await sleep(1000);
-      };
+      });
       const original = CdpCDPSession.prototype.send;
       const spy = vi.spyOn(CdpCDPSession.prototype, "send").mockImplementation(async function (
         this: CdpCDPSession,
@@ -2066,7 +2080,7 @@ describe.skipIf(!chrome)("command engine", () => {
         quick.sessionEnded();
       } finally {
         spy.mockRestore();
-        host.waitForPageSetup = setup;
+        setup.mockRestore();
       }
     }, 30_000);
 
@@ -2570,6 +2584,27 @@ describe.skipIf(!chrome)("command engine", () => {
   });
 
   describe("crashed tabs", () => {
+    async function crashRenderer(client: Pick<CDPSession, "send" | "on" | "off">) {
+      await client.send("Inspector.enable");
+      await new Promise<void>((resolve, reject) => {
+        const cleanup = () => {
+          clearTimeout(timer);
+          client.off("Inspector.targetCrashed", crashed);
+        };
+        const crashed = () => {
+          cleanup();
+          resolve();
+        };
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error("The fixture renderer did not report its crash"));
+        }, 10_000);
+        client.on("Inspector.targetCrashed", crashed);
+        // Page.crash need not acknowledge its own renderer's termination.
+        // Measure recovery only after Chrome confirms the injected fault.
+        void client.send("Page.crash").catch(() => undefined);
+      });
+    }
     test("knows about a dialog that opened before the session started", async () => {
       const fresh = create({ limits: { responseDeadlineMs: 4000 } });
       fresh.sessionEnded();
@@ -2619,10 +2654,9 @@ describe.skipIf(!chrome)("command engine", () => {
       const inner = page
         .frames()
         .find((frame) => frame.url().includes("/deep-inner")) as unknown as {
-        client: { send(method: string): Promise<unknown> };
+        client: CDPSession;
       };
-      void inner.client.send("Page.crash").catch(() => undefined);
-      await sleep(1000);
+      await crashRenderer(inner.client);
       try {
         const clicked = await run({ command: "click", target: ref }, {}, quick);
         expect(clicked.execution.state, JSON.stringify(clicked)).toBe("failed");
@@ -2639,8 +2673,7 @@ describe.skipIf(!chrome)("command engine", () => {
       await fresh.goto(`${base}/counter`);
       const tab = await tabWith("/counter", quick);
       const cdp = await fresh.createCDPSession();
-      void cdp.send("Page.crash").catch(() => undefined);
-      await sleep(1000);
+      await crashRenderer(cdp);
       try {
         const back = await run({ command: "navigate", tab, url: `${base}/basic` }, {}, quick);
         expect(back.execution.state, JSON.stringify(back)).toBe("completed");
@@ -3290,8 +3323,7 @@ describe.skipIf(!chrome)("command engine", () => {
         const inner = page
           .frames()
           .find((frame) => frame.url().includes("/busy-inner")) as unknown as
-          | { client: { send(method: string): Promise<unknown> } }
-          | undefined;
+          { client: { send(method: string): Promise<unknown> } } | undefined;
         await inner?.client.send("Runtime.terminateExecution").catch(() => undefined);
         quick.sessionEnded();
       }
@@ -3472,7 +3504,7 @@ describe.skipIf(!chrome)("command engine", () => {
         ],
       });
       try {
-        current = uncached;
+        current = await AgentBrowser.connect(uncached);
         const quick = create({ limits: { responseDeadlineMs: 300 } });
         const home = `${base}/basic?again=9000`;
         await open("/basic?again=9000", quick);
@@ -3601,13 +3633,13 @@ describe.skipIf(!chrome)("command engine", () => {
       const slow = send({ commands: { command: "navigate", url: `${base}/slow?ms=3000` } });
       await sleep(100);
       try {
-        current = replacement;
-        engine.browserClosed(browser);
+        current = await AgentBrowser.connect(replacement);
+        engine.browserClosed(agent);
         expect((await slow).body).toMatchObject({
           execution: { state: "failed", effect: "unknown", error: { code: "browser_restarted" } },
         });
         const waiting = send({ commands: { command: "tab", action: "list" } });
-        engine.browserLaunched(replacement);
+        engine.browserLaunched(current);
         engine.browserReady();
         const listed = (await waiting).body as unknown as Envelope;
         expect(listed.results[0].tabs).toEqual([expect.objectContaining({ tab: "t2" })]);
@@ -4620,15 +4652,14 @@ describe.skipIf(!chrome)("command engine", () => {
   });
 
   describe("observe, events, and secrets", () => {
-    test("observes a diff against the last snapshot or a given base", async () => {
+    test("uses a smaller observation and validates its snapshot base", async () => {
       await open("/rows");
       const first = await run({ command: "snapshot" });
       const base = first.results[0].snapshotId as string;
       await page.evaluate(() => (window as unknown as { shift: () => void }).shift());
       const changed = await run({ command: "tab", action: "list" }, { observe: { mode: "diff" } });
-      expect(changed.observe).toMatchObject({ base, additions: 3, removals: 3 });
-      expect(changed.observe?.diff).toContain("-");
-      expect(changed.observe?.diff).toContain('+    - StaticText "Order 1003"');
+      expect(changed.observe).toMatchObject({ full: true });
+      expect(changed.observe?.snapshot).toContain('StaticText "Order 1003"');
       const same = await run({ command: "tab", action: "list" }, { observe: { mode: "diff" } });
       expect(same.observe).toMatchObject({ diff: "", additions: 0, removals: 0 });
       const unknown = await run(

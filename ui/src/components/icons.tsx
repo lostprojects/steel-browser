@@ -80,14 +80,6 @@ export function ArrowDownIcon(props: IconProps) {
   );
 }
 
-export function ChevronRightIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="m6.5 4.5 3.5 3.5-3.5 3.5" />
-    </Icon>
-  );
-}
-
 export function ChevronDownIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -114,15 +106,6 @@ export function ConsoleIcon(props: IconProps) {
   );
 }
 
-export function DevToolsIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2" />
-      <rect x="4.5" y="9" width="7" height="2.25" rx="0.75" fill="currentColor" stroke="none" />
-    </Icon>
-  );
-}
-
 export function WindowIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -138,14 +121,6 @@ export function BookIcon(props: IconProps) {
     <Icon {...props}>
       <path d="M8 4.5C6.7 3.5 5 3 2.75 3v9.5c2.25 0 3.95.5 5.25 1.5 1.3-1 3-1.5 5.25-1.5V3C11 3 9.3 3.5 8 4.5Z" />
       <path d="M8 4.5V14" />
-    </Icon>
-  );
-}
-
-export function ChatIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="M13.25 7.75c0 2.9-2.35 4.75-5.25 4.75-.8 0-1.56-.14-2.24-.4L2.75 13l.86-2.36a4.4 4.4 0 0 1-.86-2.89C2.75 4.85 5.1 3 8 3s5.25 1.85 5.25 4.75Z" />
     </Icon>
   );
 }
@@ -226,17 +201,22 @@ export function ActivityIcon(props: IconProps) {
   );
 }
 
-export function SteelLogo(props: IconProps) {
+export function ToolstackLogo(props: IconProps) {
   return (
     <svg
       width="16"
       height="16"
-      viewBox="0 0 39.9639 39.9639"
-      fill="currentColor"
+      viewBox="0 0 32 32"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
       aria-hidden="true"
       {...props}
     >
-      <path d="M36.9898 39.9639C38.0308 39.9639 38.5513 39.9639 38.9489 39.7613C39.2987 39.5831 39.5831 39.2987 39.7613 38.9489C39.9639 38.5513 39.9639 38.0308 39.9639 36.9898L39.9639 2.97406C39.9639 1.93304 39.9639 1.41253 39.7613 1.01492C39.5831 0.665164 39.2987 0.380806 38.949 0.202599C38.5513 3.11805e-06 38.0308 3.07255e-06 36.9898 2.98154e-06L2.97406 7.78848e-09C1.93304 -8.32201e-08 1.41253 -1.28724e-07 1.01492 0.202595C0.665166 0.380803 0.380808 0.665161 0.2026 1.01491C4.58068e-06 1.41253 4.53518e-06 1.93304 4.44417e-06 2.97405L1.47042e-06 36.9898C1.37941e-06 38.0308 1.33391e-06 38.5513 0.202597 38.9489C0.380805 39.2987 0.665162 39.5831 1.01492 39.7613C1.41253 39.9639 1.93304 39.9639 2.97406 39.9639L36.9898 39.9639ZM34.7682 6.66065C35.7464 6.66065 36.2355 6.66065 36.5578 6.86528C36.8399 7.04442 37.0432 7.32439 37.1261 7.64814C37.2208 8.01795 37.0693 8.48299 36.7662 9.41307L33.3964 19.7548C33.156 20.4925 33.0358 20.8614 32.8098 21.1343C32.6102 21.3753 32.353 21.562 32.0621 21.6771C31.7326 21.8074 31.3446 21.8074 30.5687 21.8074L5.45147 21.8074C4.28855 21.8074 3.70709 21.8074 3.445 21.58C3.21771 21.3828 3.09997 21.0878 3.12904 20.7883C3.16256 20.4429 3.58427 20.0426 4.42769 19.2419L15.9597 8.29483C16.5957 7.69108 16.9137 7.3892 17.2803 7.17362C17.6054 6.98246 17.9577 6.84188 18.3251 6.7567C18.7394 6.66065 19.1778 6.66065 20.0548 6.66065L34.7682 6.66065Z" />
+      <path d="m4 10 12-6 12 6-12 6-12-6Z" />
+      <path d="m4 16 12 6 12-6M4 22l12 6 12-6" />
     </svg>
   );
 }

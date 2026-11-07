@@ -1,60 +1,39 @@
-// Coordinate client work with service-owned login input. Normal work stays
-// concurrent; only a login waits for existing work and holds new REST requests.
-type Session = { loginBusy?: boolean; engine?: { busy(): boolean } };
-type Access = { operations: number; login?: Promise<void> };
-const access = new WeakMap<Session, Access>();
-function state(session: Session): Access {
-  let value = access.get(session);
-  if (!value) access.set(session, (value = { operations: 0 }));
-  return value;
-}
-const busy = () =>
-  Object.assign(new Error("Browser login is waiting for active work to finish"), {
-    statusCode: 409,
-  });
-
+// Compatibility entry points for HTTP and CDP adapters. Access policy belongs
+// to the operation runner; a login uses the same resource with exclusive access.
+import { operations, type Operation } from "./operations.js";
+type Session = { loginBusy?: boolean };
 export function beginSessionOperation(session: Session): () => void {
-  const value = state(session);
-  if (session.loginBusy || value.login) throw busy();
-  value.operations++;
-  let finished = false;
-  return () => {
-    if (!finished) value.operations--;
-    finished = true;
-  };
+  return operations.enter(session);
 }
-
-export async function withSessionOperation<T>(session: Session, run: () => Promise<T>): Promise<T> {
-  const value = state(session);
-  while (value.login) await value.login;
-  const finish = beginSessionOperation(session);
-  try {
-    return await run();
-  } finally {
-    finish();
-  }
-}
-
-export async function withSessionLogin<T>(session: Session, run: () => Promise<T>): Promise<T> {
-  const value = state(session);
-  if (session.loginBusy || value.login) throw busy();
-  let finish!: () => void;
-  value.login = new Promise<void>((resolve) => {
-    finish = resolve;
+export function withSessionOperation<T>(
+  session: Session,
+  run: (operation: Operation<any>) => Promise<T>,
+): Promise<T> {
+  return operations.run({ resource: session, timeoutMs: 180_000 }, async (operation) => {
+    operation.markActed();
+    return run(operation);
   });
+}
+export async function withSessionLogin<T>(
+  session: Session,
+  run: (operation: Operation<any>) => Promise<T>,
+): Promise<T> {
+  if (session.loginBusy)
+    throw Object.assign(new Error("Login already running"), { statusCode: 409 });
   session.loginBusy = true;
-  const deadline = Date.now() + 30_000;
-  try {
-    // CDP replies and HTTP operations release their own entries. A queued
-    // commands job can outlive its HTTP response, so also wait for that engine.
-    while (value.operations || session.engine?.busy()) {
-      if (Date.now() >= deadline) throw busy();
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    return await run();
-  } finally {
+  const operation = operations.start<T>(
+    {
+      resource: session,
+      access: "exclusive",
+      queueDeadline: Date.now() + 30_000,
+      timeoutMs: 600_000,
+    },
+    async (operation) => {
+      return run(operation);
+    },
+  );
+  void operation.done.then(() => {
     session.loginBusy = false;
-    value.login = undefined;
-    finish();
-  }
+  });
+  return operation.promise;
 }

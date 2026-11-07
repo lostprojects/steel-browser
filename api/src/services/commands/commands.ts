@@ -1,18 +1,12 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import { LOCATOR_KINDS } from "./targets.js";
+import { MAX_TEXT_LIMIT } from "../../utils/text.js";
 
 const tab = z
   .string()
   .regex(/^t\d+$/)
   .optional();
-
-const snapshotOptions = {
-  interactive: z.boolean().optional(),
-  compact: z.boolean().optional(),
-  depth: z.number().int().nonnegative().optional(),
-};
 
 const filled = z.string().regex(/\S/, "Must contain more than spaces.");
 
@@ -38,9 +32,9 @@ const locator = z
     message: "name works only with role.",
   });
 
-const target = z.union([filled, locator]);
+export const target = z.union([filled, locator]);
 
-const scoped = {
+export const scoped = {
   tab,
   frame: z.string().min(1).optional(),
   expect: z
@@ -51,6 +45,24 @@ const scoped = {
 
 const element = { target, ...scoped };
 
+export const readOptions = {
+  offset: z.number().int().nonnegative().optional().describe("Offset in Unicode code points."),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_TEXT_LIMIT)
+    .optional()
+    .describe("Maximum Unicode code points to return."),
+};
+
+export const snapshotOptions = {
+  interactive: z.boolean().optional(),
+  compact: z.boolean().optional(),
+  depth: z.number().int().nonnegative().optional(),
+  ...readOptions,
+};
+
 function strict<T extends z.ZodRawShape>(shape: T) {
   return z.object(shape).strict();
 }
@@ -60,7 +72,15 @@ export const commandSchema = z.discriminatedUnion("command", [
   strict({ command: z.literal("back"), tab }),
   strict({ command: z.literal("forward"), tab }),
   strict({ command: z.literal("reload"), tab }),
-  strict({ command: z.literal("snapshot"), tab, ...snapshotOptions }),
+  strict({
+    command: z.literal("snapshot"),
+    tab,
+    snapshotId: z
+      .string()
+      .regex(/^s-\d+$/)
+      .optional(),
+    ...snapshotOptions,
+  }),
   strict({ command: z.literal("click"), ...element }),
   strict({ command: z.literal("dblclick"), ...element }),
   strict({ command: z.literal("hover"), ...element }),
@@ -116,6 +136,7 @@ export const commandSchema = z.discriminatedUnion("command", [
     what: z.enum(["text", "html", "markdown", "value", "attr", "title", "url", "count", "box"]),
     target: target.optional(),
     attribute: z.string().min(1).optional(),
+    ...readOptions,
     ...scoped,
   }),
   strict({
@@ -223,9 +244,10 @@ export const publishedRequestSchema = requestSchema.extend({
 export const COMMANDS_API_VERSION = 1;
 
 export function requestJsonSchema() {
-  return zodToJsonSchema(publishedRequestSchema, {
-    name: "CommandRequest",
-    definitions: { Command: commandSchema },
+  return z.toJSONSchema(publishedRequestSchema, {
+    target: "draft-07",
+    io: "input",
+    reused: "inline",
   });
 }
 

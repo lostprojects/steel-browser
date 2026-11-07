@@ -5,7 +5,27 @@ import { once } from "node:events";
 
 vi.mock("../env.js", () => ({ env: {} }));
 
-import { ProxyServer, identityHostRoute } from "./proxy.js";
+import { ProxyServer, identityHostRoute, proxyHostAllowed } from "./proxy.js";
+
+it("refuses private literal destinations and local metadata names", () => {
+  for (const host of [
+    "localhost",
+    "LOCALHOST.",
+    "api.localhost",
+    "metadata.google.internal",
+    "127.0.0.1",
+    "10.0.0.1",
+    "169.254.169.254",
+    "192.168.1.1",
+    "100.64.0.1",
+    "[::1]",
+    "fc00::1",
+    "::ffff:127.0.0.1",
+  ])
+    expect(proxyHostAllowed(host), host).toBe(false);
+  for (const host of ["example.com", "1.1.1.1", "2606:4700:4700::1111"])
+    expect(proxyHostAllowed(host), host).toBe(true);
+});
 
 it("refuses Bizapedia ad hosts only and retains Cloudflare challenge traffic", () => {
   for (const host of [
@@ -51,6 +71,7 @@ describe("ProxyServer close", () => {
     });
     socket.write(Buffer.alloc(size));
     await vi.waitFor(() => expect(echoed).toBe(size), { timeout: 5_000 });
+    return socket;
   }
 
   it("includes open tunnel bytes and settles them once when force-closing", async () => {
@@ -95,6 +116,39 @@ describe("ProxyServer close", () => {
       expect(server.traffic).toEqual(traffic);
     } finally {
       await server.close(true).catch(() => undefined);
+      upstream.close();
+      echo.close();
+    }
+  });
+
+  it("cuts an already open tunnel when its lease policy is revoked", async () => {
+    const echo = net.createServer((socket) => {
+      socket.on("error", () => undefined);
+      socket.pipe(socket);
+    });
+    const echoPort = await listen(echo);
+    const upstream = http.createServer();
+    upstream.on("connect", (_req, client) => {
+      client.on("error", () => undefined);
+      const target = net.connect(echoPort, "127.0.0.1", () => {
+        client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+        target.pipe(client).pipe(target);
+      });
+      target.on("error", () => client.destroy());
+    });
+    const port = await listen(upstream);
+    let permitted = true;
+    const server = new ProxyServer(`http://user:pass@127.0.0.1:${port}`, false, () => permitted);
+    await server.listen();
+    try {
+      const socket = await tunnel(server.port, "example.com:443", 1000);
+      const before = server.rxBytes + server.txBytes;
+      permitted = false;
+      await vi.waitFor(() => expect(socket.destroyed).toBe(true), { timeout: 2000 });
+      await server.close(true);
+      expect(server.rxBytes + server.txBytes).toBeGreaterThanOrEqual(before);
+    } finally {
+      await server.close(true);
       upstream.close();
       echo.close();
     }

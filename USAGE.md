@@ -1,7 +1,18 @@
 # Using the service
 
-The service runs Google Chrome 156.0.8078.79 with three independent browser sessions.
-Browserbase is Mosaic's temporary fallback until phase 6 moves the callers.
+The service runs Google Chrome 156.0.8078.79 with twelve independent browser sessions (`MAX_SESSIONS=12`).
+Browserbase remains available. [The plan](TOOLSTACK-PLAN.md#caller-review-and-browserbase-retirement)
+defines migration acceptance and retirement requirements.
+
+These interfaces use the deployment's fixed organization. Existing client keys
+retain their owner workspace; team-mode keys and OAuth apps resolve to their
+registered membership and private worker. `global` sharing applies within this
+organization. Authenticated `GET /v1/organization` returns the current organization
+and membership. An explicit foreign `x-toolstack-org-id` is refused.
+
+Production requires `TOOLSTACK_ORG_ID`. Missing or forged organization/membership
+fields in signed downstream claims are refused. There is one real tenant and no
+organization switcher; [ORGANIZATIONS.md](ORGANIZATIONS.md) records expansion work.
 
 ## Sessions and identities
 
@@ -11,8 +22,12 @@ bytes). The day changes at midnight UTC. Direct traffic does not use that budget
 
 Create a direct session with `POST /v1/sessions {"mode":"agent"}`. For a managed
 residential exit, send `{"mode":"quiet","residential":{"country":"US"}}`.
-The service allocates a Core sticky exit, looks up its IP and timezone through
+The service allocates a Core lease, verifies its IP, country and timezone through
 that exit with ipwho.is, then starts Chrome with the returned timezone.
+Use `proxyProfile` for another permitted provider profile or `proxyLeaseId` to
+reuse a standalone lease. [PROXIES.md](PROXIES.md) documents management, shared
+HTTP requests, targeting, fallback and accounting. Per-action proxy overrides
+are unavailable; actions inherit the session route.
 
 Add a named `identity` to keep a profile on `/data/profiles`. Ancestry,
 Newspapers.com and Fold3 use `identity: "ancestry"` for both login and collection.
@@ -51,6 +66,19 @@ Temporary profiles are removed. A budget termination reports
 `residential_budget_exceeded`; a busy stream without navigation can end as
 `stream_without_navigation`.
 
+## Dashboard and browser logs
+
+Open `/ui/?apiKey=<key>` once to authenticate, then select the session in the
+Sessions menu. Starting a browser selects its new ID. Ended sessions retain
+metadata; protected profiles show no live view. The dashboard supports both
+browser modes and managed residential allocations.
+
+Agent logs use `/v1/sessions/{id}/logs` over WebSocket. HTTP clients can query
+`GET /v1/logs/query?sessionId={id}` or stream `/v1/logs/stream?sessionId={id}`.
+Browser events are bounded to 1,000 per session in memory. Quiet sessions have no
+instrumentation stream. The old Parquet export endpoint returns 501; use JSON
+queries for exports. The legacy inspector URL redirects to the live viewer.
+
 ## Routing and downloads
 
 `POST /v1/fetch` accepts `url`, an optional collector `route`, `identity` and
@@ -82,11 +110,53 @@ hosts, plus Google advertising and analytics hosts, at the forwarder. Cloudflare
 challenge hosts retain the residential exit.
 This policy does not enable browser request interception or service-wide ad blocking.
 
-`POST /v1/sessions/{id}/download {"url":"https://..."}` fetches from Railway with
-the browser's cookies and User-Agent. It retries through the session's exit when
-direct fetching fails. Cookies retain their domain/path/secure rules across redirects.
-The response contains base64 bytes, headers and the route used; one transfer is
-limited to 64 MB. Larger files need a later streaming interface.
+The delivery API stages each file once, then streams its immutable bytes to a
+local receiver. Browser downloads use unique Chrome download IDs, preserving
+separate files with the same suggested name. Payloads remain private to their
+session and agent.
+
+Check [deployment status](TOOLSTACK-PLAN.md#current-baseline) for this protocol.
+A server advertising `deliveryVersion: 1` in its session response supports it. The hosted
+browser download page receives these deliveries on macOS and Windows without
+a local installation. The [automation client](client/README.md) remains optional. Mosaic retains its legacy path for older deployments.
+
+| Request | Result |
+| --- | --- |
+| `POST /v1/sessions/{id}/transfers` with `{"file":"SESSION_FILE"}` or `{"url":"https://…"}` | Delivery metadata; URL jobs can return `receiving` |
+| `GET /v1/sessions/{id}/transfers/{delivery}` | State, original name, byte count, SHA-256 and expiry |
+| `POST /v1/sessions/{id}/transfers/{delivery}/share` | Publish a private browser download link that survives browser-session close |
+| `GET /v1/sessions/{id}/transfers/{delivery}/content` | Raw streamed bytes; supports `Range` with `If-Match` |
+| `POST /v1/sessions/{id}/transfers/{delivery}/ack` with `{"sha256":"…"}` | Consume the remote payload after verified local publication; repeat acknowledgements are safe |
+| `DELETE /v1/sessions/{id}/transfers/{delivery}` | Cancel preparation or discard an unwanted payload |
+
+A source URL uses the browser's cookies and managed exit policy. The HTTP helper
+writes directly to disk through curl's synchronous callback, applying disk
+backpressure without building a base64 body. Delivery metadata contains no
+cookies or source URL. Metadata includes status, content and acknowledgement
+URLs as applicable. A client must authenticate each request and verify the
+advertised digest before acknowledging it.
+
+Deliveries expire after 30 minutes. An active content stream can finish within
+its ten-minute read deadline. Session release aborts unfinished preparation
+and removes raw session files, unshared payloads and ZIP archives. A shared
+handoff keeps only its prepared payload until receipt, explicit removal or
+expiry; it keeps no browser running. The existing expiry
+timer also removes inactive orphan directories older than 24 hours, including
+remnants of an abrupt service failure. Graceful worker shutdown deletes its
+remaining handoffs immediately. No additional daemon runs.
+
+`DOWNLOAD_MAX_BYTES` defaults to 512 MiB per file; `DOWNLOAD_PENDING_BYTES`
+defaults to 1 GiB reserved per session, including uncollected browser downloads.
+Preparations reserve capacity before starting; Chrome cancels downloads that
+exceed the limits. `FILES_ROOT` overrides the default `/files` root. ZIP archives are
+created only when explicitly requested. Published handoffs share a worker-wide
+`DOWNLOAD_HANDOFF_BYTES` budget of 2 GiB and a limit of 1,024 entries.
+
+The legacy `POST /v1/sessions/{id}/download` JSON/base64 endpoint remains for
+compatibility, with its 64 MB limit. The portable client and MCP downloads use
+deliveries on supporting servers. Byte-returning Python methods still allocate the requested
+bytes in memory and keep the remote payload until session cleanup; use
+`Browser.download_to(target, directory)` for a streamed local file.
 
 ## Challenges and manual input
 
@@ -214,7 +284,7 @@ infrastructure register until it releases the browser.
 
 ## Phase 6 interface and caller observations
 
-`bb.py` and `steel.py` are the shared Python client; no parallel `remote.py` is
+`bb.py` and `toolstack.py` are the shared Python client; no parallel `remote.py` is
 needed. Use `Browser(site="bizapedia", caller="companies_fetch.py")` for interaction
 or `fetch_page(url, site="udn", caller="fetch_news.py")` for one page. The fast path
 climbs the measured routing ladder and releases any allocated browser. Callers can
@@ -234,29 +304,140 @@ permissions and session ownership as REST. Send `steel-api-key` or a Bearer toke
 in a header. A supplied Origin must match the configured service origin. GET and
 DELETE return 405; the service provides no standalone SSE stream.
 
+The browser tools are registered as the `browser` toolkit. `tools_search` finds
+available tools by keywords; `tools_describe` returns a tool's input schema and
+toolkit version. `tools_execute` takes `name`, `arguments` and an optional `version`,
+then returns the same result as a direct call. Both execution paths enforce the
+existing session and vault permissions.
+
+Set `MCP_TOOL_EXPOSURE=discovery` to list only the discovery tools. The default
+`all` also lists the existing tools for client compatibility. See
+[toolkits and discovery](TOOLKITS.md) for examples and extension registration.
+
+The `connections` toolkit exposes `connections_list`, `connections_get` and the
+admin-only `connections_configure`. Existing accounts have stable IDs such as
+`browser:ancestry`; pass one as `connection` to `browser_open` or
+`POST /v1/sessions`. REST account metadata is available at `/v1/connections`.
+Saved profiles and recorded login outcomes are reported separately; listing
+accounts does not verify a live login. Explicit profile grants apply to new
+sessions opened through connection IDs or raw identities.
+
 | Tool | Operation |
 | --- | --- |
-| `browser_open` | Open by site or URL, with optional identity, mode and residential override |
-| `browser_snapshot`, `browser_act` | Element references and batched navigation/input/wait commands |
-| `browser_read` | Markdown, visible text or masked HTML |
-| `browser_screenshot` | PNG; protected identities refuse capture |
+| `browser_sessions` | List your live sessions for resuming work or cleanup |
+| `browser_open` | Open by site or URL and return a compact snapshot with the page and continuation token; optional identity, mode and residential override |
+| `browser_snapshot` | Stable element refs, with tab selection, interactive/compact filtering and depth |
+| `browser_act` | The full [command request](COMMANDS.md#request), including tabs, locators, drag/upload, eval and status/cancel/dialog controls |
+| `browser_read` | Pageable markdown, visible text or masked HTML, with optional target and frame |
+| `browser_screenshot` | PNG, JPEG or WebP, with agent-mode full-page and element capture; protected identities refuse images |
 | `browser_download` | Fetch a URL or click a reference and return a session-scoped files link |
-| `browser_login` | Run the configured vault flow; local email/SMS codes use Mosaic's code-only helper |
+| `browser_login` | Run the configured vault flow; verification codes belong to its waiting login |
 | `browser_handoff` | Require the owner's explicit agreement before returning an authenticated view |
 | `browser_network` | Agent-mode request metadata, omitting headers, bodies and query strings |
 | `browser_close` | Release and report settled bytes and estimated residential cost |
 | `fetch` | Read one page as markdown and close its browser |
 
-A download includes a suggested local INBOX path. Copy its authenticated files
-response through the local client before closing the MCP session:
+Reuse the session returned by `browser_open`. When its execution completes, its
+`observe` field contains the initial snapshot; send `observe:{"mode":"none"}` to
+skip it. Batch related actions and request the changed outline in the same call:
 
-```bash
-.venv/bin/python scripts/browser/steel.py --receive-download SESSION_ID --file FILE_NAME
+```json
+{
+  "session": "SESSION_UUID",
+  "after": "NEXT_FROM_PREVIOUS_RESPONSE",
+  "idempotencyKey": "UNIQUE_ACTION_KEY",
+  "commands": [
+    { "command": "fill", "target": { "label": "Search" }, "value": "Echo Flight" },
+    { "command": "press", "target": { "label": "Search" }, "key": "Enter" }
+  ],
+  "observe": { "mode": "diff", "compact": true },
+  "eventsAfter": "c-0"
+}
 ```
 
-This saves into `Source Data/-INBOX/browser-downloads` and prints the path and byte
-count. `--out DIR` selects another directory; existing files are preserved. Files
-URLs and listing paths are relative to the selected session.
+`browser_act` uses the REST command schema directly. It accepts one command or a
+list of up to 50, plus `after`, `observe` and `eventsAfter`. Reuse an
+`idempotencyKey` for a transport retry; choose a new key for new work. The HTTP
+`Idempotency-Key` header remains supported. Pass each response's `next` as the
+next request's `after`, and advance `eventsAfter` to `events.cursor`.
+`browser_open` also accepts `idempotencyKey`; reuse it on retry to recover the
+same session. `browser_download` accepts it to avoid repeating a reference click.
+
+Each command-based tool uses one engine exchange with its normal 20-second
+response window. Opening a browser and downloading by reference follow this
+same rule, with no additional polling loop in MCP.
+A `queued` or `running` execution continues on the service. Send
+`{"command":"status","execution":"x-…"}` or `cancel` alone through `browser_act`.
+Answer a pending dialog with its `dialog` command. These controls run outside
+the execution queue. A successful cancellation returns a normal tool response,
+with the original execution's effects and cancelled results. Unfinished work
+records an unknown caller outcome.
+
+Failed batches return `isError:true` and preserve the command envelope, including
+partial results and each action's effect. Inspect those results before retrying.
+An observation failure preserves the completed actions. Request errors retain
+their error code and recovery fields, including `next` or `retryAfter` when supplied.
+If the initial navigation or observation fails, `browser_open` returns the
+session with the error so you can recover or release it.
+
+`browser_read` returns at most 20,000 characters by default. Set `limit` (up to
+100,000) and use a result's `nextOffset` as the next `offset`, keeping its format
+and target. Offsets and limits count Unicode code points, so a page boundary
+preserves emoji and other characters outside the basic multilingual plane.
+`total` counts the full masked text. Reads use the current document;
+if the page changes, begin again. REST `get text/html/markdown` accepts the same
+optional paging fields and retains its full-output default.
+
+MCP snapshots, including action observations, use the same 20,000-code-point
+default. Continue an outline through `browser_snapshot` with its `snapshotId`
+and `offset: nextOffset`; this reads the retained outline. Diff observations
+return the smaller complete response, and fall back to the paged outline when
+either outline is partial.
+
+MCP `fetch` also accepts `offset` and `limit`. Continue with its returned
+`requestId` and `offset: nextOffset`, keeping the other arguments unchanged.
+This reuses the existing request cache for up to ten minutes while the entry
+remains retained. After expiry or eviction, begin the read again.
+
+Screenshots use native MCP image content. Printed PDFs and completed browser
+downloads return a `delivery` object containing the transfer ID and checksum.
+A pending reference click returns its engine execution for `browser_act` status
+or cancellation. A URL preparation returns a delivery ID; poll it with
+`browser_download` using `transfer`, or set `cancel:true` to discard it.
+Protected identities refuse screen and print capture.
+
+For normal use, add the hosted `/mcp` URL to an OAuth-capable agent and
+approve its connection through `/connect`. No local runtime is required. The
+gateway publishes OAuth discovery and dynamic registration; clients keep
+rotating refresh tokens. Account access uses the existing invitation or access
+key. Manage connected apps at `/account`; direct API keys remain an advanced
+option. See [team connection](TEAM.md#teammate-connection).
+
+A ready file includes `webUri`. Open it in a signed-in browser and click
+**Download**, or use **Downloads** in the dashboard. The browser uses its normal
+save location and controls. It does not send a claim that the OS durably saved
+the file; the server removes its copy at expiry or when explicitly removed.
+Ready MCP handoffs remain available until thirty minutes after publication,
+so the agent can release the remote browser before the user saves the file.
+Temporary links can become unavailable earlier if the worker restarts.
+
+Scripts needing automatic, checksum-verified local publication can use the
+[optional automation client](client/README.md):
+
+```sh
+toolstack receive --session SESSION_ID --transfer DELIVERY_ID
+```
+
+Its local stdio bridge adds `browser_save`. Both paths stream and verify size
+and SHA-256, then publish atomically before acknowledging deletion. Existing
+files are preserved; matching retries reuse the saved bytes. Normal failure
+removes staging data, and the next receive removes dead-owner crash remnants.
+Hosted connections and ordinary downloads use the service and browser directly.
+
+Mosaic's `bb.py --download DIR` and `toolstack.py --receive-download` adapt to the
+automation receiver while retaining their INBOX default and legacy-server
+behavior. Byte-returning `download()` and `fetch_bytes()` still allocate their
+requested bytes in memory and leave local persistence to their caller.
 
 After the owner agrees to a particular handoff, an administrator may record that
 agreement with `POST /v1/sessions/{id}/handoff-approval` and
@@ -289,25 +470,23 @@ and retries it at the next result, preserving the original observation time.
 Clear that queue through successful sync before judging a window:
 
 ```bash
-.venv/bin/python scripts/browser/steel.py --flush-outcomes
-.venv/bin/python scripts/browser/steel.py --outcomes --from 2026-11-05T00:00:00Z --to 2026-11-13T00:00:00Z
+.venv/bin/python scripts/browser/toolstack.py --flush-outcomes
+.venv/bin/python scripts/browser/toolstack.py --outcomes --from 2026-11-05T00:00:00Z --to 2026-11-13T00:00:00Z
 ```
 
-Each moved caller needs seven days of normal use with less than 10% failures or
-fallbacks. A single successful check starts its observation; it cannot establish
-a week's reliability.
-The exact UTC windows and unresolved source blocks are in `mosaic/CALLERS.md`.
+The exact UTC windows and unresolved source blocks are in
+[mosaic/CALLERS.md](mosaic/CALLERS.md). Evaluation requirements are maintained in
+[the plan](TOOLSTACK-PLAN.md#caller-review-and-browserbase-retirement).
 Ancestry general search and Utah failures remain counted after their parser fixes.
 Utah's explicit empty-search heading and suggestion list are valid even when
 the result table is absent; the real caller verified this on `4bf8e12`.
 PICRYL and Legacy use measured quiet US host policies with throwaway profiles;
 these policies do not change other hosts or protected logins.
 
-Keep Browserbase branches, contexts and credentials until every moved caller
-passes. The before-change inventory and current results are in
+The before-change inventory and current results are in
 [mosaic/CALLERS.md](mosaic/CALLERS.md).
 
-Steel caller cleanup releases the shared browser before waiting for the local CDP
+Toolstack caller cleanup releases the shared browser before waiting for the local CDP
 driver to stop. The serial checks exposed a stalled driver after SIGINT; this order
 keeps that local cleanup from holding a pool slot.
 

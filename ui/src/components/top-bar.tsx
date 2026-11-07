@@ -1,31 +1,35 @@
 import type { SessionDetails } from "../api";
 import { CopyButton } from "./copy-button";
-import { ChevronRightIcon, ConsoleIcon, DevToolsIcon, RailIcon } from "./icons";
+import { ConsoleIcon, RailIcon } from "./icons";
 import { NewSessionButton } from "./new-session";
 import { ReleaseButton } from "./release-button";
 
 export function TopBar({
   session,
+  sessions,
+  onSelect,
   railOpen,
   onToggleRail,
   consoleOpen,
   onToggleConsole,
-  devtoolsOpen,
-  onToggleDevtools,
+  downloadsOpen,
+  onToggleDownloads,
   onSessionChange,
+  onStarted,
 }: {
   session: SessionDetails | null | undefined;
+  sessions: SessionDetails[];
+  onSelect: (id: string) => void;
   railOpen: boolean;
   onToggleRail: () => void;
   consoleOpen: boolean;
   onToggleConsole: () => void;
-  devtoolsOpen: boolean;
-  onToggleDevtools: () => void;
+  downloadsOpen: boolean;
+  onToggleDownloads: () => void;
   onSessionChange: () => void;
+  onStarted: (id: string) => void;
 }) {
   const consoleLabel = consoleOpen ? "Hide logs" : "Show logs";
-  const devtoolsLabel = devtoolsOpen ? "Hide DevTools" : "Show DevTools";
-
   return (
     <header className="top-bar">
       {!railOpen && (
@@ -52,38 +56,45 @@ export function TopBar({
           <ConsoleIcon />
         </button>
       )}
-      {session?.debugUrl && (
-        <button
-          type="button"
-          className="bar-button devtools-toggle"
-          aria-label={devtoolsLabel}
-          aria-pressed={devtoolsOpen}
-          title={devtoolsLabel}
-          onClick={onToggleDevtools}
-        >
-          <DevToolsIcon />
-        </button>
-      )}
-      <nav className="crumbs" aria-label="Breadcrumb">
-        <span className="crumb-parent">Sessions</span>
+      <div className="crumbs">
+        <label className="crumb-parent" htmlFor="session-picker">
+          Sessions
+        </label>
         {session && (
           <>
-            <ChevronRightIcon className="crumb-sep" />
-            <span className="crumb-current" aria-current="page" title={session.id}>
-              {session.id}
-            </span>
+            <select
+              id="session-picker"
+              className="input session-picker"
+              aria-label="Selected session"
+              value={session.id}
+              onChange={(event) => onSelect(event.target.value)}
+            >
+              {sessions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.identity ?? item.site ?? item.mode} · {item.id.slice(0, 8)} · {item.status}
+                </option>
+              ))}
+            </select>
             <CopyButton className="crumb-copy" value={session.id} label="Copy session ID" />
           </>
         )}
-      </nav>
-      {session && (
-        <div className="top-bar-actions">
-          {session.status === "live" && (
-            <ReleaseButton sessionId={session.id} onReleased={onSessionChange} />
-          )}
-          <NewSessionButton onStarted={onSessionChange} />
-        </div>
-      )}
+      </div>
+      <div className="top-bar-actions">
+        {session && (
+          <button
+            type="button"
+            className="bar-button"
+            aria-pressed={downloadsOpen}
+            onClick={onToggleDownloads}
+          >
+            Downloads
+          </button>
+        )}
+        {session?.status === "live" && (
+          <ReleaseButton key={session.id} sessionId={session.id} onReleased={onSessionChange} />
+        )}
+        <NewSessionButton onStarted={onStarted} />
+      </div>
     </header>
   );
 }

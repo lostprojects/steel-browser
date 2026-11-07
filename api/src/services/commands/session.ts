@@ -1,11 +1,14 @@
-import type { Browser } from "puppeteer-core";
+import type { Operation } from "../operations.js";
+import type { BrowserControl } from "../browser-control.js";
 import type { Command, CommandRequest } from "./commands.js";
 import type { Dialog } from "./dialogs.js";
 import { DEFAULT_RECORD_LIMITS, Records, type Execution, type RecordLimits } from "./records.js";
 import { RefTable } from "./refs.js";
-import { TabRegistry, type BrowserHost, type OpenDialogs, type TabEvents } from "./tabs.js";
+import { TabRegistry, type OpenDialogs, type TabEvents } from "./tabs.js";
 
-export interface EngineHost extends BrowserHost {
+export interface EngineHost {
+  browser(): BrowserControl | null;
+  downloadsByGuid?: boolean;
   endSession(id: string): Promise<void>;
   filesRoot(): string;
   released(id: string): boolean;
@@ -51,8 +54,7 @@ export interface Job {
   execution: Execution;
   commands: Command[];
   observe?: Observe;
-  expiresAt: number;
-  limitAt: number;
+  operation?: Operation<void>;
   tab?: string;
   interrupting?: Promise<boolean>;
   current: Command | null;
@@ -71,6 +73,7 @@ export interface SessionEvent {
 
 export interface Download {
   file: string;
+  name?: string;
   url: string;
   startedAt: number;
   state?: "completed" | "canceled";
@@ -97,21 +100,18 @@ export class ActiveSession {
   readonly records: Records;
   readonly refs: RefTable;
   readonly tabs: TabRegistry;
-  readonly queue: Job[] = [];
+  readonly jobs = new Map<string, Job>();
   readonly dialogs = new Map<string, Dialog>();
   readonly kept = new Map<string, KeptSnapshot>();
   readonly latest = new Map<string, string>();
   readonly events: SessionEvent[] = [];
   readonly downloads = new Map<string, Download>();
-  running: Job | null = null;
-  browser: Browser | null = null;
-  pumping = false;
+  browser: BrowserControl | null = null;
   ended = false;
   ending = false;
 
   constructor(
     readonly id: string,
-    host: BrowserHost,
     limits: EngineLimits,
     now: () => number,
     events: TabEvents,
@@ -120,7 +120,7 @@ export class ActiveSession {
   ) {
     this.records = new Records(limits, now, counters);
     this.refs = new RefTable(limits.maxRefs, counters);
-    this.tabs = new TabRegistry(host, events, counters, dialogs);
+    this.tabs = new TabRegistry(events, counters, dialogs);
   }
 
   get snapshots(): number {

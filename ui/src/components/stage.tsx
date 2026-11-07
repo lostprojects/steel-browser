@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
-import { apiUrl, type SessionDetails } from "../api";
-import { useColorScheme, usePageId } from "../hooks";
+import type { SessionDetails } from "../api";
+import { useColorScheme } from "../hooks";
 import { Details } from "./details";
 import { Notice } from "./notice";
 
@@ -92,40 +92,26 @@ function LiveFrame({ url }: { url: string }) {
   );
 }
 
-function DevTools() {
-  const pageId = usePageId();
-  const query = pageId ? `?pageId=${encodeURIComponent(pageId)}` : "";
-
+export function Stage({ session }: { session: SessionDetails }) {
+  const starting = session.status === "starting";
+  const live = session.status === "live";
   return (
-    <div className="dock">
-      <iframe
-        title="Chrome DevTools"
-        className="dock-frame"
-        src={apiUrl(`/v1/devtools/inspector.html${query}`)}
-      />
-    </div>
-  );
-}
-
-export function Stage({
-  session,
-  devtoolsOpen,
-}: {
-  session: SessionDetails;
-  devtoolsOpen: boolean;
-}) {
-  const docked = devtoolsOpen && Boolean(session.debugUrl);
-
-  return (
-    <section className="stage" data-devtools={docked ? "open" : "closed"} aria-label="Live view">
-      {session.debugUrl ? (
+    <section className="stage" aria-label="Live view">
+      {session.status === "live" && session.viewAvailable && session.debugUrl ? (
         <LiveFrame url={session.debugUrl} />
       ) : (
         <div className="player">
-          <Notice title="No live view">This session doesn't have a live view.</Notice>
+          <Notice
+            title={starting ? "Starting session" : live ? "Protected profile" : "Session ended"}
+          >
+            {starting
+              ? "The browser is starting."
+              : live
+              ? "Live viewing is unavailable for this profile."
+              : "Saved session details are shown below."}
+          </Notice>
         </div>
       )}
-      {docked && <DevTools />}
       <div className="stage-details">
         <Details session={session} />
       </div>

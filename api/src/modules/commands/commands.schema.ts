@@ -71,6 +71,9 @@ const CommandResponse = z.object({
       additions: z.number().int(),
       removals: z.number().int(),
       full: z.boolean(),
+      offset: z.number().int(),
+      total: z.number().int(),
+      nextOffset: z.number().int(),
       error: ErrorInfo,
     })
     .partial()
@@ -96,7 +99,7 @@ const CommandRequestError = z
 
 const CommandsSchemaResponse = z.object({
   version: z.number().int(),
-  schema: z.record(z.unknown()).describe("JSON Schema of the request body."),
+  schema: z.record(z.string(), z.unknown()).describe("JSON Schema of the request body."),
 });
 
 export const commandsSchemas = {

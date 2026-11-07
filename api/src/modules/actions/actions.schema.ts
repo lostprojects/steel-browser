@@ -4,23 +4,22 @@ import { ScrapeFormat } from "../../types/enums.js";
 
 const ScrapeRequest = z.object({
   url: z.string().optional(),
-  format: z.array(z.nativeEnum(ScrapeFormat)).optional(),
+  format: z.array(z.enum(ScrapeFormat)).optional(),
   screenshot: z.boolean().optional(),
   pdf: z.boolean().optional(),
   removeBase64Images: z.boolean().optional(),
   proxyUrl: z
-    .string()
-    .nullable()
+    .null()
     .optional()
     .describe(
-      "Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.",
+      "Choose a proxy profile or lease when opening the session; actions inherit its route.",
     ),
   delay: z.number().optional(),
   logUrl: z.string().optional(),
 });
 
 const ScrapeResponse = z.object({
-  content: z.record(z.nativeEnum(ScrapeFormat), z.any()),
+  content: z.partialRecord(z.enum(ScrapeFormat), z.any()),
   metadata: z.object({
     title: z.string().optional(),
     language: z.string().optional(),
@@ -61,11 +60,10 @@ const ScrapeResponse = z.object({
 const ScreenshotRequest = z.object({
   url: z.string().optional(),
   proxyUrl: z
-    .string()
-    .nullable()
+    .null()
     .optional()
     .describe(
-      "Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.",
+      "Choose a proxy profile or lease when opening the session; actions inherit its route.",
     ),
   delay: z.number().optional(),
   fullPage: z.boolean().optional(),
@@ -77,11 +75,10 @@ const ScreenshotResponse = z.any();
 const PDFRequest = z.object({
   url: z.string().optional(),
   proxyUrl: z
-    .string()
-    .nullable()
+    .null()
     .optional()
     .describe(
-      "Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.",
+      "Choose a proxy profile or lease when opening the session; actions inherit its route.",
     ),
   delay: z.number().optional(),
   logUrl: z.string().optional(),
@@ -90,11 +87,10 @@ const PDFRequest = z.object({
 const SearchRequest = z.object({
   query: z.string(),
   proxyUrl: z
-    .string()
-    .nullable()
+    .null()
     .optional()
     .describe(
-      "Proxy URL to use for the scrape. Provide `null` to disable proxy. If not provided, current session proxy settings will be used.",
+      "Choose a proxy profile or lease when opening the session; actions inherit its route.",
     ),
   logUrl: z.string().optional(),
 });

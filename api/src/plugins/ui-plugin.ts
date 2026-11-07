@@ -34,7 +34,7 @@ const uiPlugin: FastifyPluginAsync<UIPluginOptions> = async (fastify, opts) => {
       return reply.redirect(uiPrefix);
     }
 
-    return { message: "Steel Browser API", ui: uiPrefix };
+    return { message: "Toolstack API", ui: uiPrefix };
   });
 
   fastify.setNotFoundHandler((request: FastifyRequest, reply: FastifyReply) => {

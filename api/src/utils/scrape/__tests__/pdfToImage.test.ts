@@ -14,7 +14,7 @@ function pdfWithPages(sizes: [number, number][]): Buffer {
       const page = doc.addPage([0, 0, width, height], 0, {}, "0 0 1 rg 10 10 50 50 re f");
       doc.insertPage(-1, page);
     }
-    return Buffer.from(doc.saveToBuffer().asUint8Array());
+    return Buffer.from(doc.saveToBuffer({}).asUint8Array());
   } finally {
     doc.destroy();
   }

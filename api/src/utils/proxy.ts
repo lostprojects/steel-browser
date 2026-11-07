@@ -1,6 +1,44 @@
-import { env } from "../env.js";
-import { makePassthrough, PassthroughServer } from "./passthough-proxy.js";
 import { Server } from "proxy-chain";
+import { BlockList, isIP } from "node:net";
+
+const privateNetworks = new BlockList();
+for (const [address, prefix] of [
+  ["0.0.0.0", 8],
+  ["10.0.0.0", 8],
+  ["100.64.0.0", 10],
+  ["127.0.0.0", 8],
+  ["169.254.0.0", 16],
+  ["172.16.0.0", 12],
+  ["192.168.0.0", 16],
+  ["224.0.0.0", 4],
+  ["240.0.0.0", 4],
+] as const)
+  privateNetworks.addSubnet(address, prefix, "ipv4");
+for (const [address, prefix] of [
+  ["::", 128],
+  ["::1", 128],
+  ["fc00::", 7],
+  ["fe80::", 10],
+  ["ff00::", 8],
+] as const)
+  privateNetworks.addSubnet(address, prefix, "ipv6");
+export function proxyHostAllowed(host: string) {
+  host = host
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.$/, "");
+  if (
+    !host ||
+    ["localhost", "metadata.google.internal"].includes(host) ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal")
+  )
+    return false;
+  const family = isIP(host);
+  if (family === 6 && host.startsWith("::ffff:")) return false;
+  return !family || !privateNetworks.check(host, family === 4 ? "ipv4" : "ipv6");
+}
 
 export interface IProxyServer {
   readonly url: string;
@@ -62,7 +100,8 @@ export class ProxyServer extends Server implements IProxyServer {
   public upstreamProxyUrl: string;
   private settledTxBytes = 0;
   private settledRxBytes = 0;
-  private hostConnections = new Set<number>();
+  private budgetTimer?: NodeJS.Timeout;
+  private admission: () => boolean;
   private connectionHosts = new Map<number, string>();
   private settledHosts = new Map<string, { txBytes: number; rxBytes: number }>();
   private routes = new Map<number, HostRoute>();
@@ -94,7 +133,7 @@ export class ProxyServer extends Server implements IProxyServer {
 
   private openBytes(field: "trgTxBytes" | "trgRxBytes"): number {
     return this.getConnectionIds().reduce((total, id) => {
-      if (this.hostConnections.has(id) || this.routes.get(id) !== "residential") return total;
+      if (this.routes.get(id) !== "residential") return total;
       return total + (this.getConnectionStats(id)?.[field] ?? 0);
     }, 0);
   }
@@ -120,24 +159,7 @@ export class ProxyServer extends Server implements IProxyServer {
       prepareRequestFunction: (options) => {
         const { connectionId, hostname } = options;
         if (!allowed()) throw new Error("Residential byte budget exhausted");
-
-        const internalBypassTests = new Set(["0.0.0.0", process.env.HOST]);
-
-        if (env.PROXY_INTERNAL_BYPASS) {
-          for (const host of env.PROXY_INTERNAL_BYPASS.split(",")) {
-            internalBypassTests.add(host.trim());
-          }
-        }
-
-        const isInternalBypass = internalBypassTests.has(hostname);
-
-        if (isInternalBypass) {
-          this.hostConnections.add(connectionId);
-          return {
-            customConnectServer: PassthroughServer,
-            customResponseFunction: makePassthrough(options),
-          };
-        }
+        if (!proxyHostAllowed(hostname)) throw new Error("Private proxy destination refused");
         this.connectionHosts.set(connectionId, hostname);
         const siteRoute = identityHostRoute(hostname, identity);
         const route =
@@ -154,11 +176,7 @@ export class ProxyServer extends Server implements IProxyServer {
     this.on("connectionClosed", ({ connectionId, stats }) => {
       if (stats && this.routes.get(connectionId) === "direct")
         this.settledDirect += (stats.trgTxBytes ?? 0) + (stats.trgRxBytes ?? 0);
-      if (
-        stats &&
-        !this.hostConnections.has(connectionId) &&
-        this.routes.get(connectionId) === "residential"
-      ) {
+      if (stats && this.routes.get(connectionId) === "residential") {
         this.settledTxBytes += stats.trgTxBytes ?? 0;
         this.settledRxBytes += stats.trgRxBytes ?? 0;
         const host = this.connectionHosts.get(connectionId);
@@ -170,20 +188,25 @@ export class ProxyServer extends Server implements IProxyServer {
         }
       }
       this.connectionHosts.delete(connectionId);
-      this.hostConnections.delete(connectionId);
       this.routes.delete(connectionId);
     });
 
     this.url = `http://127.0.0.1:${this.port}`;
     this.upstreamProxyUrl = proxyUrl;
+    this.admission = allowed;
   }
 
   async listen(): Promise<void> {
     await super.listen();
     this.url = `http://127.0.0.1:${this.port}`;
+    this.budgetTimer = setInterval(() => {
+      if (!this.admission()) for (const socket of this.connections.values()) socket.destroy();
+    }, 50);
+    this.budgetTimer.unref();
   }
 
   async close(force = false): Promise<void> {
+    clearInterval(this.budgetTimer);
     const socketsClosed = [...this.connections.values()].map(
       (socket) => new Promise<void>((resolve) => socket.once("close", () => resolve())),
     );

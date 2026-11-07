@@ -8,7 +8,7 @@ import path from "node:path";
 import { SessionDisplay, unusedPort } from "./session-display.js";
 import type { Duplex } from "node:stream";
 import type { IncomingMessage } from "node:http";
-import puppeteer, { type Browser, type Page, type Target, type CDPSession } from "puppeteer-core";
+import puppeteer, { type Browser, type Page, type Target } from "puppeteer-core";
 import { WebSocket, WebSocketServer } from "ws";
 import { scrubObject, protectedDisplays, protect } from "./vault.js";
 import { identityVault } from "./login.js";
@@ -24,24 +24,34 @@ import {
   groupSessionStorageByOrigin,
   injectStorageOnNewDocument,
 } from "../utils/context.js";
-import { ProxyServer, type IProxyServer } from "../utils/proxy.js";
+import type { IProxyServer } from "../utils/proxy.js";
 import { getBaseUrl, getUrl } from "../utils/url.js";
 import { FileService } from "./file.service.js";
+import { FileTransfers } from "./file-transfers.js";
 import { CommandEngine } from "./commands/engine.js";
-import { quickActionsDone } from "../modules/commands/commands.guard.js";
+import { operations } from "./operations.js";
 import { PluginManager } from "./cdp/plugins/core/plugin-manager.js";
 import { BasePlugin, ShutdownReason } from "./cdp/plugins/core/base-plugin.js";
 import { TargetInstrumentationManager } from "./cdp/instrumentation/target-manager.js";
+import { extractTargetId } from "./cdp/instrumentation/utils.js";
 import { createBrowserLogger } from "./cdp/instrumentation/browser-logger.js";
 import { InMemoryStorage } from "./cdp/instrumentation/storage/in-memory-storage.js";
 import type { BrowserLauncherOptions } from "../types/browser.js";
 import type { SessionData } from "./context/types.js";
 import type { SessionOptions } from "./session-pool.js";
+import { AgentBrowser } from "./agent-browser.js";
+import {
+  AGENT_CAPABILITIES,
+  QUIET_CAPABILITIES,
+  type BrowserControl,
+  type PageRead,
+} from "./browser-control.js";
 import { QuietBrowser } from "./quiet-browser.js";
 import { QuietInput } from "./quiet-input.js";
-import type { Exit } from "./proxy-manager.js";
+import type { Exit } from "./proxy/service.js";
 import { scopeClientFiles } from "./commands/policy.js";
 import { beginSessionOperation } from "./session-access.js";
+import { runCleanup } from "../utils/cleanup.js";
 
 export class BrowserSession extends EventEmitter {
   readonly createdAt = new Date().toISOString();
@@ -64,10 +74,13 @@ export class BrowserSession extends EventEmitter {
   private warnedHosts = new Set<string>();
   challenge?: { status: string; kind: string; url: string };
   readonly filesPath: string;
+  readonly transfers: FileTransfers;
   readonly engine: CommandEngine;
   readonly display = new SessionDisplay();
   private browser: Browser | null = null;
   private quiet?: QuietBrowser;
+  private control: BrowserControl | null = null;
+  private readPrimary: PageRead | null = null;
   private chrome?: ChildProcess;
   private commandSetup?: Promise<void>;
   private primary: Page | null = null;
@@ -107,14 +120,13 @@ export class BrowserSession extends EventEmitter {
       });
     if (!cookies.length || this.options.sessionContext) return;
     await this.prepareCommands();
-    const client = await this.getBrowserInstance()!.target().createCDPSession();
+    const client = await this.control!.controlSession();
     try {
       await client.send("Storage.setCookies", { cookies });
     } finally {
       await client.detach().catch(() => undefined);
     }
   }
-  proxyFactory = (url: string): IProxyServer => new ProxyServer(url);
 
   constructor(
     readonly id: string,
@@ -125,6 +137,7 @@ export class BrowserSession extends EventEmitter {
   ) {
     super();
     this.filesPath = path.join(FileService.getInstance().getBaseFilesPath(), id);
+    this.transfers = new FileTransfers(id, this.filesPath, this);
     this.instrumentation = createBrowserLogger({
       baseLogger: logger,
       initialContext: { sessionId: id },
@@ -138,14 +151,17 @@ export class BrowserSession extends EventEmitter {
       {},
       this.plugins.onTargetSession.bind(this.plugins),
     );
-    this.engine = new CommandEngine({
-      browser: () => this.browser ?? this.quiet?.asBrowser() ?? null,
-      waitForPageSetup: (page) => this.waitForPageSetup(page),
-      endSession: async () => this.end("command"),
-      filesRoot: () => this.filesPath,
-      released: () => this.status !== "live",
-      quickActionsDone: () => quickActionsDone(this.engine),
-    });
+    this.engine = new CommandEngine(
+      {
+        browser: () => this.control,
+        endSession: async () => this.end("command"),
+        filesRoot: () => this.filesPath,
+        downloadsByGuid: true,
+        released: () => this.stopping || this.status !== "live",
+        quickActionsDone: () => Promise.resolve(),
+      },
+      { runner: operations, resource: this },
+    );
   }
 
   async launch(): Promise<Browser | void> {
@@ -155,10 +171,8 @@ export class BrowserSession extends EventEmitter {
     await mkdir(path.join(this.profilePath, "Default"), { recursive: true });
     await mkdir(this.filesPath, { recursive: true });
     await this.storage.initialize();
-    if (this.options.proxyUrl && !this.proxyServer) {
-      this.proxyServer = this.proxyFactory(this.options.proxyUrl);
-      await this.proxyServer.listen();
-    }
+    if ((this.options.proxyUrl || this.options.residential || this.options.proxyProfile || this.options.proxyLeaseId) && !this.proxyServer)
+      throw new Error("A proxy lease must be prepared before launching Chrome");
     const timezone = this.options.timezone ?? env.DEFAULT_TIMEZONE ?? "UTC";
     Intl.DateTimeFormat("en-US", { timeZone: timezone });
     this.launchConfig = {
@@ -249,6 +263,11 @@ export class BrowserSession extends EventEmitter {
       userDataDir: this.profilePath,
       defaultViewport: null,
       headless: this.launchConfig.options.headless,
+      // The service drains the pool before stopping Chrome. Puppeteer's process
+      // signal handlers would otherwise close browsers as soon as a signal arrives.
+      handleSIGINT: false,
+      handleSIGTERM: false,
+      handleSIGHUP: false,
       ignoreDefaultArgs: [
         "--enable-automation",
         "--disable-popup-blocking",
@@ -258,6 +277,7 @@ export class BrowserSession extends EventEmitter {
       env: browserProcessEnv({ TZ: timezone, DISPLAY: this.display.name ?? env.DISPLAY }),
       args,
     });
+    if (process.platform !== "win32") this.chromeGroup = this.browser.process()?.pid;
     this.endpoint = this.browser.wsEndpoint();
     this.userAgent = await this.browser.userAgent();
     this.browser.once("disconnected", () => {
@@ -269,16 +289,13 @@ export class BrowserSession extends EventEmitter {
         this.logger.warn({ sessionId: this.id }, "Page setup failed"),
       );
     });
-    this.browser.on("targetdestroyed", (target) =>
-      this.setups.delete((target as unknown as { _targetId: string })._targetId),
-    );
-    const control = await this.browser.target().createCDPSession();
-    await control.send("Browser.setDownloadBehavior", {
-      behavior: "allow",
-      downloadPath: this.filesPath,
-      eventsEnabled: true,
+    this.browser.on("targetdestroyed", (target) => {
+      const id = extractTargetId(target);
+      this.setups.delete(id);
+      this.targets.detach(id);
     });
-    await control.detach();
+    this.control = await AgentBrowser.connect(this.browser, (page) => this.waitForPageSetup(page));
+    await this.configureDownloads(this.control);
     if (this.options.sessionContext?.cookies?.length) {
       const session = await this.browser.target().createCDPSession();
       await session.send("Storage.setCookies", {
@@ -289,7 +306,7 @@ export class BrowserSession extends EventEmitter {
     await Promise.all(this.browser.targets().map((target) => this.setup(target)));
     this.primary = (await this.browser.pages())[0] ?? (await this.createPage());
     await this.plugins.onBrowserLaunch(this.browser);
-    this.engine.browserLaunched(this.browser);
+    this.engine.browserLaunched(this.control);
     this.status = "live";
     await this.restoreSessionCookies();
     this.engine.browserReady();
@@ -324,6 +341,29 @@ export class BrowserSession extends EventEmitter {
     ];
   }
 
+  private async configureDownloads(browser: BrowserControl) {
+    // Chrome resets this policy when its CDP session detaches. The browser's
+    // connection owns the control session and releases it when the browser ends.
+    const control = await browser.controlSession();
+    await control.send("Browser.setDownloadBehavior", {
+      behavior: "allowAndName",
+      downloadPath: this.filesPath,
+      eventsEnabled: true,
+    });
+    this.transfers.cancelBrowserDownload = async (guid) => {
+      await control
+        .send("Browser.cancelDownload", { guid })
+        .catch(() => this.logger.warn("Download cancellation failed"));
+    };
+    control.on("Browser.downloadWillBegin", (event) =>
+      this.transfers.noteDownload(event.guid, event.suggestedFilename),
+    );
+    control.on("Browser.downloadProgress", (event) => {
+      if (this.transfers.noteProgress(event.guid, event.state, event.receivedBytes))
+        void this.transfers.cancelBrowserDownload?.(event.guid);
+    });
+  }
+
   async prepareCommands() {
     if (this.options.mode !== "quiet") return;
     this.commandSetup ??= (async () => {
@@ -334,22 +374,31 @@ export class BrowserSession extends EventEmitter {
         this.endpoint,
         new QuietInput(this.display.name, width, height),
       );
-      this.engine.browserLaunched(this.quiet.asBrowser());
+      this.control = this.quiet;
+      await this.configureDownloads(this.control);
+      this.engine.browserLaunched(this.control);
       this.engine.browserReady();
     })();
     return this.commandSetup;
   }
 
   private setup(target: Target): Promise<void> {
-    const id = (target as unknown as { _targetId: string })._targetId;
-    if (!this.setups.has(id)) this.setups.set(id, this.prepareTarget(target));
-    return this.setups.get(id)!;
+    if (this.stopping) return Promise.resolve();
+    const id = extractTargetId(target);
+    const existing = this.setups.get(id);
+    if (existing) return existing;
+    const setup = this.prepareTarget(target);
+    this.setups.set(id, setup);
+    void setup.catch(() => {
+      if (this.setups.get(id) === setup) this.setups.delete(id);
+    });
+    return setup;
   }
   private async prepareTarget(target: Target) {
     await this.targets.attach(target, target.type());
-    if (target.type() !== "page") return;
+    if (this.stopping || target.type() !== "page") return;
     const page = await target.page();
-    if (!page) return;
+    if (this.stopping || !page || page.isClosed()) return;
     if (this.options.sessionContext) {
       const data = groupSessionStorageByOrigin(
         this.options.sessionContext as BrowserLauncherOptions["sessionContext"],
@@ -367,7 +416,7 @@ export class BrowserSession extends EventEmitter {
   }
   async trafficReason(now: number) {
     if (!this.proxyServer || now - this.trafficWindow.at < 30_000) return;
-    const page = await this.getPrimaryPage();
+    const page = await this.getPrimaryReadPage();
     const url = page.url();
     if (url !== this.lastUrl) {
       this.lastUrl = url;
@@ -393,7 +442,7 @@ export class BrowserSession extends EventEmitter {
       return "stream_without_navigation";
   }
   getBrowserInstance() {
-    return this.browser ?? this.quiet?.asBrowser() ?? null;
+    return this.browser;
   }
   async diagnostics() {
     const processes = this.chromeGroup ? await chromeProcesses(this.chromeGroup) : [];
@@ -452,6 +501,7 @@ export class BrowserSession extends EventEmitter {
   }
   isRunning() {
     return (
+      !this.stopping &&
       this.status === "live" &&
       (this.chrome
         ? this.chrome.exitCode === null && this.chrome.signalCode === null
@@ -466,11 +516,24 @@ export class BrowserSession extends EventEmitter {
   }
   async getAllPages() {
     await this.prepareCommands();
-    return this.getBrowserInstance()?.pages() ?? [];
+    return this.control?.pages() ?? [];
   }
-  async getPrimaryPage() {
+  async getPrimaryReadPage(): Promise<PageRead> {
+    await this.prepareCommands();
+    if (!this.control) throw new Error("Browser is not running");
+    if (!this.readPrimary || this.readPrimary.isClosed())
+      this.readPrimary = (await this.control.pages())[0] ?? (await this.control.newPage());
+    return this.readPrimary;
+  }
+  async createReadPage(): Promise<PageRead> {
+    await this.prepareCommands();
+    if (!this.control) throw new Error("Browser is not running");
+    return this.control.newPage();
+  }
+  async getPrimaryPage(): Promise<Page> {
+    if (!this.browser) throw new Error("Puppeteer pages require agent mode");
     if (!this.primary || this.primary.isClosed())
-      this.primary = (await this.getAllPages())[0] ?? (await this.createPage());
+      this.primary = (await this.browser.pages())[0] ?? (await this.createPage());
     return this.primary;
   }
   async createPage() {
@@ -494,15 +557,11 @@ export class BrowserSession extends EventEmitter {
     this.primary = page;
     if (old && !old.isClosed()) await old.close();
   }
-  async createBrowserContext(proxyUrl: string) {
-    if (!this.browser) throw new Error("Browser is not running");
-    return this.browser.createBrowserContext({ proxyServer: proxyUrl });
-  }
   async getCookies() {
     await this.prepareCommands();
-    const browser = this.getBrowserInstance();
+    const browser = this.control;
     if (!browser) throw new Error("Browser is not running");
-    const session = await browser.target().createCDPSession();
+    const session = await browser.controlSession();
     try {
       const cookies = (await session.send("Storage.getCookies")).cookies;
       if (identityVault(this.options.identity))
@@ -606,7 +665,11 @@ export class BrowserSession extends EventEmitter {
               if (pending.has(messageKey(message))) throw new Error("Duplicate browser command ID");
               if (!(this.loginBusy && setup)) finish = beginSessionOperation(this);
               await scopeClientFiles(message, this.filesPath);
-              if (client.readyState !== WebSocket.OPEN || upstream.readyState > WebSocket.OPEN) {
+              if (
+                this.stopping ||
+                client.readyState !== WebSocket.OPEN ||
+                upstream.readyState > WebSocket.OPEN
+              ) {
                 finish();
                 return;
               }
@@ -670,6 +733,8 @@ export class BrowserSession extends EventEmitter {
 
   info() {
     return {
+      deliveryVersion: 1,
+      browserCapabilities: this.options.mode === "quiet" ? QUIET_CAPABILITIES : AGENT_CAPABILITIES,
       id: this.id,
       createdAt: this.createdAt,
       status: this.status,
@@ -678,6 +743,7 @@ export class BrowserSession extends EventEmitter {
       site: this.options.site,
       caller: this.options.caller,
       last_login_ok: this.lastLoginOk,
+      viewAvailable: !identityVault(this.options.identity),
       duration: (this.endedAt ?? Date.now()) - this.startedAt,
       endReason: this.endReason,
       temporaryProfileRemoved: this.temporaryProfileRemoved,
@@ -691,6 +757,7 @@ export class BrowserSession extends EventEmitter {
       display: this.display.name,
       noVncUrl: getUrl(`v1/sessions/${this.id}/view`),
       exit: this.exit,
+      proxyLeaseId: this.options.proxyLeaseId,
       challenge: this.challenge,
       proxyTxBytes: this.priorProxyTxBytes + (this.proxyServer?.txBytes ?? 0),
       proxyRxBytes: this.priorProxyRxBytes + (this.proxyServer?.rxBytes ?? 0),
@@ -704,7 +771,12 @@ export class BrowserSession extends EventEmitter {
     };
   }
   close(reason: string): Promise<void> {
-    this.closing ??= this.closeResources(reason);
+    this.stopping = true;
+    operations.cancelResource(
+      this,
+      Object.assign(new Error("The session ended."), { statusCode: 410 }),
+    );
+    this.closing ??= Promise.resolve().then(() => this.closeResources(reason));
     return this.closing;
   }
   private async closeResources(reason: string) {
@@ -742,39 +814,75 @@ export class BrowserSession extends EventEmitter {
         );
       }
     }
-    this.engine.sessionEnded();
-    for (const socket of this.sockets) socket.destroy();
-    if (this.launchConfig && this.options.mode === "agent")
-      await this.plugins.onBeforeSessionEnd(this.launchConfig);
     const browser = this.browser;
-    if (browser) await this.plugins.onBrowserClose(browser);
     const child = this.chrome ?? browser?.process();
-    const kill = setTimeout(() => child?.kill("SIGKILL"), 8000);
-    try {
-      await browser?.close();
-      if (this.chrome?.pid && this.chrome.exitCode === null && this.chrome.signalCode === null) {
-        const exited = new Promise<void>((resolve) => this.chrome!.once("exit", () => resolve()));
-        if (this.quiet) await this.quiet.close();
-        else this.chrome.kill("SIGTERM");
-        await exited;
-      }
-    } finally {
-      clearTimeout(kill);
-      this.browser = null;
-      if (this.display.name) protectedDisplays.delete(this.display.name);
-      if (this.chromeGroup) this.chromeCleanup = await killChromeGroup(this.chromeGroup);
-      await this.display.close();
-      await this.proxyServer?.close(true);
-      for (const client of this.cdpRelay.clients) client.terminate();
-      this.cdpRelay.close();
-      this.status = reason === "launch_failed" || reason === "chrome_exit" ? "failed" : "released";
-      this.endedAt = Date.now();
-      for (const hook of this.shutdownHooks) await hook(this.launchConfig ?? null);
-      if (this.options.mode === "agent") await this.plugins.onShutdown(ShutdownReason.SESSION_END);
-      if (this.launchConfig && this.options.mode === "agent") {
-        await this.plugins.onSessionEnd(this.launchConfig);
-        await this.plugins.onAfterSessionEnd(this.launchConfig);
-      }
-    }
+    const agentConfig = this.options.mode === "agent" ? this.launchConfig : undefined;
+    await runCleanup(
+      [
+        () => this.engine.dispose(),
+        () => this.transfers.stop(),
+        () => {
+          for (const socket of this.sockets) socket.destroy();
+          this.sockets.clear();
+        },
+        () => agentConfig && this.plugins.onBeforeSessionEnd(agentConfig),
+        () => browser && this.plugins.onBrowserClose(browser),
+        async () => {
+          const kill = setTimeout(() => child?.kill("SIGKILL"), 8000);
+          try {
+            await runCleanup(
+              [() => browser?.close(), () => this.quiet?.close()],
+              "Browser connection cleanup failed",
+            );
+          } finally {
+            try {
+              // A failed CDP close still needs OS process cleanup. Subscribe
+              // before signalling so an immediate exit cannot be missed.
+              if (child?.pid && child.exitCode === null && child.signalCode === null) {
+                const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+                child.kill("SIGTERM");
+                await exited;
+              }
+            } finally {
+              clearTimeout(kill);
+            }
+          }
+        },
+        async () => {
+          if (this.chromeGroup) this.chromeCleanup = await killChromeGroup(this.chromeGroup);
+        },
+        () => {
+          this.targets.clear();
+          this.setups.clear();
+          this.browser = null;
+          this.control = null;
+          this.readPrimary = null;
+          this.quiet = undefined;
+          if (this.display.name) protectedDisplays.delete(this.display.name);
+        },
+        () => this.display.close(),
+        () => this.proxyServer?.close(true),
+        () => {
+          for (const client of this.cdpRelay.clients) client.terminate();
+          this.cdpRelay.close();
+        },
+        () => {
+          this.status =
+            reason === "launch_failed" || reason === "chrome_exit" ? "failed" : "released";
+          this.endedAt = Date.now();
+        },
+        ...this.shutdownHooks.map((hook) => () => hook(this.launchConfig ?? null)),
+        () =>
+          this.options.mode === "agent" &&
+          this.plugins.onShutdown(
+            reason === "launch_failed" ? ShutdownReason.LAUNCH_FAILURE : ShutdownReason.SESSION_END,
+          ),
+        () => agentConfig && this.plugins.onSessionEnd(agentConfig),
+        () => agentConfig && this.plugins.onAfterSessionEnd(agentConfig),
+        () => this.storage.close(),
+        () => this.transfers.close(),
+      ],
+      "Browser session cleanup failed",
+    );
   }
 }

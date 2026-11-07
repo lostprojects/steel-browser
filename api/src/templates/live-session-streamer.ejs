@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Steel Session Player</title>
+    <title>Toolstack Session Player</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2039.9639%2039.9639%22%3E%3Cstyle%3Epath%7Bfill%3A%2321201C%7D%40media%20(prefers-color-scheme%3Adark)%7Bpath%7Bfill%3A%23FFFFFF%7D%7D%3C%2Fstyle%3E%3Cpath%20d%3D%22M36.9898%2039.9639C38.0308%2039.9639%2038.5513%2039.9639%2038.9489%2039.7613C39.2987%2039.5831%2039.5831%2039.2987%2039.7613%2038.9489C39.9639%2038.5513%2039.9639%2038.0308%2039.9639%2036.9898L39.9639%202.97406C39.9639%201.93304%2039.9639%201.41253%2039.7613%201.01492C39.5831%200.665164%2039.2987%200.380806%2038.949%200.202599C38.5513%203.11805e-06%2038.0308%203.07255e-06%2036.9898%202.98154e-06L2.97406%207.78848e-09C1.93304%20-8.32201e-08%201.41253%20-1.28724e-07%201.01492%200.202595C0.665166%200.380803%200.380808%200.665161%200.2026%201.01491C4.58068e-06%201.41253%204.53518e-06%201.93304%204.44417e-06%202.97405L1.47042e-06%2036.9898C1.37941e-06%2038.0308%201.33391e-06%2038.5513%200.202597%2038.9489C0.380805%2039.2987%200.665162%2039.5831%201.01492%2039.7613C1.41253%2039.9639%201.93304%2039.9639%202.97406%2039.9639L36.9898%2039.9639ZM34.7682%206.66065C35.7464%206.66065%2036.2355%206.66065%2036.5578%206.86528C36.8399%207.04442%2037.0432%207.32439%2037.1261%207.64814C37.2208%208.01795%2037.0693%208.48299%2036.7662%209.41307L33.3964%2019.7548C33.156%2020.4925%2033.0358%2020.8614%2032.8098%2021.1343C32.6102%2021.3753%2032.353%2021.562%2032.0621%2021.6771C31.7326%2021.8074%2031.3446%2021.8074%2030.5687%2021.8074L5.45147%2021.8074C4.28855%2021.8074%203.70709%2021.8074%203.445%2021.58C3.21771%2021.3828%203.09997%2021.0878%203.12904%2020.7883C3.16256%2020.4429%203.58427%2020.0426%204.42769%2019.2419L15.9597%208.29483C16.5957%207.69108%2016.9137%207.3892%2017.2803%207.17362C17.6054%206.98246%2017.9577%206.84188%2018.3251%206.7567C18.7394%206.66065%2019.1778%206.66065%2020.0548%206.66065L34.7682%206.66065Z%22%2F%3E%3C%2Fsvg%3E">
     <style>
         html[data-theme="dark"] {
@@ -98,12 +98,6 @@
         }
         .url-bar:focus-within {
             border-color: var(--focus-ring);
-        }
-        .favicon {
-            width: 14px;
-            height: 14px;
-            object-fit: contain;
-            margin-right: 4px;
         }
         .url-input {
             flex: 1;
@@ -224,22 +218,6 @@
             background: var(--tab-hover-bg);
             color: var(--icon-hover-color);
         }
-        .new-tab-button {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 28px;
-            min-width: 28px;
-            height: 28px;
-            border-radius: 6px;
-            color: var(--icon-color);
-            cursor: pointer;
-            font-size: 16px;
-        }
-        .new-tab-button:hover {
-            background: var(--tab-hover-bg);
-            color: var(--icon-hover-color);
-        }
 
         .nav-buttons {
             display: flex;
@@ -302,11 +280,6 @@
             stroke-width: 1.5;
             stroke-linecap: round;
             stroke-linejoin: round;
-        }
-        .icon-container {
-            display: flex;
-            align-items: center;
-            justify-content: center;
         }
 
         .connection-status {
@@ -467,9 +440,6 @@
                       <span>Session Offline</span>
                   </div>
                   <!-- Tabs will be dynamically added here -->
-                  <!-- New tab button commented out as requested
-                  <div class="new-tab-button" id="new-tab-button">+</div>
-                  -->
               </div>
               <% } %>
               <div class="address-bar">
@@ -521,8 +491,6 @@
           const interactive = <%= interactive %>;
 
           // Tab and page management
-          const tabBar = document.getElementById('tab-bar');
-          const contentContainer = document.getElementById('content');
           const urlText = document.getElementById('url-text');
           const backButton = document.getElementById('back-button');
           const forwardButton = document.getElementById('forward-button');
@@ -534,14 +502,12 @@
 
           // WebSocket connection management
           const baseWsUrl = '<%= wsUrl %>';
-          let tabDiscoveryWebSocket = null; // WebSocket for discovering tabs (multi-page mode)
-          let activeConnectionRetries = {}; // Track reconnection attempts
           let tabDiscoveryRetries = 0;
           let tabDiscoveryRetryTimer = null;
 
           // Default dimensions until we get first image
           const defaultWidth = <%= dimensions?.width || 1920 %>;
-          const defaultHeight = <%= dimensions?.width || 1080 %>;
+          const defaultHeight = <%= dimensions?.height || 1080 %>;
 
           // Function to set connection status
           function setConnectionStatus(online) {
@@ -635,9 +601,6 @@
                       tabs[pageId].reconnecting = false;
                       tabs[pageId].canvasContainer.classList.remove('loading');
                       tabs[pageId].canvasContainer.classList.remove('error');
-
-                      // Reset retry counter on successful connection
-                      activeConnectionRetries[pageId] = 0;
 
                       if (pageId !== 'tab-discovery') {
                           // Remove loading indicator
@@ -838,8 +801,7 @@
                   navigationKey: null,
                   receivedFirstFrame: false,
                   isLoading: false,
-                  frameCount: 0,
-                  lastNavigationUrl: null
+                  frameCount: 0
               };
 
               return tabs[pageId];
@@ -903,65 +865,6 @@
               updateCanvasSize(pageId);
           }
 
-          // Function to attempt reconnection for a tab WebSocket
-          function attemptReconnect(pageId) {
-              // Make sure tab still exists
-              if (!tabs[pageId]) return;
-
-              // Prevent multiple reconnection attempts
-              if (tabs[pageId].reconnecting) {
-                  console.log(`Already attempting to reconnect tab ${pageId}, ignoring duplicate request`);
-                  return;
-              }
-
-              // Initialize retry counter if not set
-              if (!activeConnectionRetries[pageId]) {
-                  activeConnectionRetries[pageId] = 0;
-              }
-
-              const maxRetries = 5;
-              const retryDelay = Math.min(2000 * Math.pow(1.5, activeConnectionRetries[pageId]), 30000);
-
-              // Add exponential backoff with jitter to prevent synchronized reconnection attempts
-              const jitter = Math.random() * 1000;
-              const delay = retryDelay + jitter;
-
-              if (activeConnectionRetries[pageId] < maxRetries) {
-                  console.log(`Attempting to reconnect ${pageId} in ${Math.round(delay)}ms (attempt ${activeConnectionRetries[pageId] + 1}/${maxRetries})`);
-
-                  // Mark tab as reconnecting to prevent duplicate attempts
-                  tabs[pageId].reconnecting = true;
-
-                  // If this is the active tab, update the connection status to show we're offline
-                  if (activeTabId === pageId) {
-                      setConnectionStatus(false);
-                  }
-
-                  setTimeout(() => {
-                      activeConnectionRetries[pageId]++;
-
-                      // Reconnect only if the tab still exists and we should still be reconnecting
-                      if (tabs[pageId]) {
-                          connectTabWebSocket(pageId);
-                      }
-                  }, delay);
-              } else {
-                  console.error(`Maximum retry attempts (${maxRetries}) reached for ${pageId}`);
-
-                  // Mark tab as error state but clear reconnecting flag
-                  if (tabs[pageId]) {
-                      tabs[pageId].reconnecting = false;
-                      tabs[pageId].canvasContainer.classList.remove('loading');
-                      tabs[pageId].canvasContainer.classList.add('error');
-
-                      // Ensure offline status is shown after max retries
-                      if (activeTabId === pageId) {
-                          setConnectionStatus(false);
-                      }
-                  }
-              }
-          }
-
           // Set up WebSocket-related event listeners for a canvas
           function setupCanvasEventListeners(canvas, pageId, ws) {
               if (!canvas || !ws || !interactive) return;
@@ -969,7 +872,7 @@
               // Remove any existing event listeners first to prevent duplicates
               canvas.removeEventListener('mousedown', canvas._mouseDownHandler);
               canvas.removeEventListener('mouseup', canvas._mouseUpHandler);
-              canvas.removeEventListener('mousemove', canvas._mouseMoveHandler);
+              canvas.removeEventListener('mousemove', canvas._debouncedMouseMoveHandler);
               canvas.removeEventListener('wheel', canvas._wheelHandler);
 
               // Helper function for scaled coordinates
@@ -1044,25 +947,6 @@
                   console.log(`Mouse up at ${coords.x},${coords.y} with button ${e.button}`);
               };
               canvas.addEventListener('mouseup', canvas._mouseUpHandler);
-
-              // MouseMove event
-              canvas._mouseMoveHandler = (e) => {
-                  if (ws.readyState !== WebSocket.OPEN) return;
-
-                  const coords = getScaledCoordinates(e, canvas, pageId);
-
-                  ws.send(JSON.stringify({
-                      type: 'mouseEvent',
-                      pageId: pageId,
-                      event: {
-                          type: 'mouseMoved',
-                          x: coords.x,
-                          y: coords.y,
-                          button: 'none',
-                          modifiers: (e.ctrlKey ? 2 : 0) | (e.shiftKey ? 8 : 0) | (e.altKey ? 1 : 0) | (e.metaKey ? 4 : 0)
-                      }
-                  }));
-              };
 
               // Debounce function to limit how often events are sent
               function debounce(func, wait) {
@@ -1187,7 +1071,7 @@
                           if (ws.readyState !== WebSocket.OPEN) return;
 
                           // Set tab loading state when navigation starts
-                          setTabLoadingState(activeTabId, true, url);
+                          setTabLoadingState(activeTabId, true);
 
                           ws.send(JSON.stringify({
                               type: 'navigation',
@@ -1278,8 +1162,6 @@
           function handleTabList(tabList, firstTabId = null) {
               if (!tabList || !Array.isArray(tabList)) return;
 
-              // console.log("Received tab list:", tabList);
-
               // Create any tabs that don't exist
               tabList.forEach((tab, index) => {
                   if (!tabs[tab.id]) {
@@ -1319,8 +1201,6 @@
                   console.error(`Attempted to update tab ${pageId} which doesn't exist`);
                   return;
               }
-
-              // console.log(`Updating tab ${pageId}:`, {url, title, favicon});
 
               const tabData = tabs[pageId];
 
@@ -1366,8 +1246,6 @@
               if (tabIndexes.length <= 1) {
                   return;
               }
-
-              const tabIndex = tabIndexes.indexOf(pageId);
 
               console.log(`Closing tab ${pageId}`);
 
@@ -1427,18 +1305,12 @@
 
           // Function to update the URL input field
           function updateUrlBar(url) {
-              const urlInput = document.getElementById('url-input');
-              if (urlInput && urlInput.value !== url) {
-                  urlInput.value = url || '';
-              } else {
-                  const urlText = document.getElementById('url-text');
-                  if (urlText && urlText.value !== url) {
-                      urlText.value = url || 'Session not connected';
-                  }
+              if (urlText && urlText.value !== url) {
+                  urlText.value = url || 'Session not connected';
               }
           }
 
-          // Add the updateSecurityIcon function that's being referenced but was missing
+          // Reflect the displayed page URL in the address bar.
           function updateSecurityIcon(url) {
               const lockIcon = document.getElementById('lock-icon');
               const unlockIcon = document.getElementById('unlock-icon');
@@ -1458,7 +1330,7 @@
               }
           }
 
-          // Add the missing updateCanvasSize function
+          // Fit the frame to its available display area.
           function updateCanvasSize(pageId) {
               if (!tabs[pageId]) return;
 
@@ -1596,13 +1468,12 @@
           });
 
           // Add a function to handle tab loading state
-          function setTabLoadingState(pageId, isLoading, navigationUrl = null) {
+          function setTabLoadingState(pageId, isLoading) {
               if (!tabs[pageId]) return;
               // If we're starting to load
               if (isLoading) {
                   tabs[pageId].isLoading = true;
                   tabs[pageId].frameCount = 0;
-                  tabs[pageId].lastNavigationUrl = navigationUrl || tabs[pageId].url;
                   tabs[pageId].tab.classList.add('loading');
               } else {
                   // If we're finishing loading
@@ -1731,8 +1602,6 @@
               }
 
               // Override existing keyboard handlers to intercept copy/paste
-              const originalKeydownHandler = document.onkeydown;
-
               document.addEventListener('keydown', (e) => {
                   // Skip if URL input is focused
                   if (urlText && document.activeElement === urlText) {

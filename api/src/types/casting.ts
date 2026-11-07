@@ -40,19 +40,6 @@ export type CloseTabEvent = {
   pageId: string;
 };
 
-export type ClipboardWriteEvent = {
-  type: "clipboardWrite";
-  pageId: string;
-  event: {
-    text: string;
-  };
-};
-
-export type ClipboardReadEvent = {
-  type: "clipboardRead";
-  pageId: string;
-};
-
 export type GetSelectedTextEvent = {
   type: "getSelectedText";
   pageId: string;

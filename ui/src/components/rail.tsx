@@ -1,13 +1,14 @@
+import { useEffect, useState } from "react";
 import type { Tone } from "../format";
 import {
   ArrowUpRightIcon,
   BookIcon,
   BranchIcon,
-  ChatIcon,
   RailIcon,
-  SteelLogo,
+  ToolstackLogo,
   WindowIcon,
 } from "./icons";
+import type { View } from "./capabilities";
 
 export type ApiStatus = "connecting" | "online" | "reconnecting" | "offline";
 
@@ -17,23 +18,52 @@ const problems: Partial<Record<ApiStatus, { label: string; tone: Tone }>> = {
 };
 
 const links = [
-  { href: "https://docs.steel.dev", label: "Docs", icon: BookIcon },
-  { href: "https://discord.gg/steel-dev", label: "Discord", icon: ChatIcon },
-  { href: "https://github.com/steel-dev/steel-browser", label: "GitHub", icon: BranchIcon },
+  {
+    href: "https://github.com/lostprojects/toolstack/blob/main/USAGE.md",
+    label: "Docs",
+    icon: BookIcon,
+  },
+  { href: "https://github.com/lostprojects/toolstack", label: "GitHub", icon: BranchIcon },
 ];
 
-export function Rail({ status, onCollapse }: { status: ApiStatus; onCollapse: () => void }) {
+export function Rail({
+  status,
+  onCollapse,
+  view,
+}: {
+  status: ApiStatus;
+  onCollapse: () => void;
+  view: View;
+}) {
   const problem = problems[status];
+  const [team, setTeam] = useState(false);
+  const [organization, setOrganization] = useState<string>();
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/v1/organization", { signal: controller.signal })
+      .then(async (response) => {
+        if (response.ok) {
+          const value = await response.json();
+          if (typeof value.organization?.name === "string")
+            setOrganization(value.organization.name);
+        }
+      })
+      .catch(() => {});
+    void fetch("/v1/me", { signal: controller.signal })
+      .then(async (response) => {
+        if (response.ok && (await response.json()).userId) setTeam(true);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
 
   return (
     <aside className="rail" aria-label="Sidebar">
       <div className="rail-head">
-        <SteelLogo
-          className="rail-logo"
-          role="img"
-          aria-hidden={false}
-          aria-label="Steel Browser"
-        />
+        <span className="rail-brand">
+          <ToolstackLogo className="rail-logo" />
+          <span>Toolstack</span>
+        </span>
         <button
           type="button"
           className="bar-button"
@@ -45,14 +75,43 @@ export function Rail({ status, onCollapse }: { status: ApiStatus; onCollapse: ()
           <RailIcon />
         </button>
       </div>
+      {organization && (
+        <div className="rail-organization" aria-label="Organization">
+          <span>{organization}</span>
+        </div>
+      )}
       <nav className="rail-nav" aria-label="Main">
         <div className="rail-group">
-          <p className="rail-group-title">Browsers</p>
+          <p className="rail-group-title">My workspace</p>
           <div className="rail-items">
-            <a className="rail-item" href={import.meta.env.BASE_URL} aria-current="page">
-              <WindowIcon />
-              <span className="rail-item-label">Sessions</span>
-            </a>
+            {(
+              [
+                ["toolkits", "Toolkits", "⌘"],
+                ["library", "Library", "▤"],
+                ["jobs", "Jobs", "◴"],
+                ["connections", "Connections", "◇"],
+                ["activity", "Activity", "◷"],
+                ["browser", "Browser", "↗"],
+              ] as const
+            ).map(([id, label, symbol]) => (
+              <a
+                key={id}
+                className="rail-item"
+                href={`#/${id}`}
+                aria-current={view === id ? "page" : undefined}
+              >
+                <span className="nav-symbol" aria-hidden="true">
+                  {symbol}
+                </span>
+                <span className="rail-item-label">{label}</span>
+              </a>
+            ))}
+            {team && (
+              <a className="rail-item" href="/account">
+                <WindowIcon />
+                <span className="rail-item-label">Account & agent keys</span>
+              </a>
+            )}
           </div>
         </div>
         <div className="rail-group">

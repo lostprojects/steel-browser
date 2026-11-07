@@ -74,12 +74,11 @@ describe("FileService session archives", () => {
   async function createFileService() {
     testDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "steel-files-archive-"));
     const baseFilesPath = path.join(testDirectory, "files");
-    const prebuiltArchiveDir = path.join(testDirectory, "archive");
+    const archiveDir = path.join(testDirectory, "archive");
 
     return new FileService({
       baseFilesPath,
-      prebuiltArchiveDir,
-      watchFiles: false,
+      archiveDir,
     });
   }
 
@@ -88,7 +87,7 @@ describe("FileService session archives", () => {
     const baseFilesPath = fileService.getBaseFilesPath();
 
     await fs.promises.writeFile(path.join(baseFilesPath, "stale.txt"), "stale content");
-    await fileService.getPrebuiltArchivePath();
+    await fileService.getArchivePath();
     await fs.promises.rm(path.join(baseFilesPath, "stale.txt"));
 
     await fileService.saveFile({
@@ -101,8 +100,8 @@ describe("FileService session archives", () => {
     });
 
     const [archivePath, concurrentArchivePath] = await Promise.all([
-      fileService.getPrebuiltArchivePath(),
-      fileService.getPrebuiltArchivePath(),
+      fileService.getArchivePath(),
+      fileService.getArchivePath(),
     ]);
     const archive = unzipFiles(await fs.promises.readFile(archivePath));
 
@@ -137,8 +136,8 @@ describe("FileService session archives", () => {
     });
 
     const archiveRequests = Promise.all([
-      fileService.getPrebuiltArchivePath(),
-      fileService.getPrebuiltArchivePath(),
+      fileService.getArchivePath(),
+      fileService.getArchivePath(),
     ]);
     await renameStarted;
     await fileService.saveFile({
@@ -157,19 +156,19 @@ describe("FileService session archives", () => {
   it("retries archive creation after an early failure", async () => {
     testDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "steel-files-archive-"));
     const baseFilesPath = path.join(testDirectory, "files");
-    const prebuiltArchiveDir = path.join(testDirectory, "blocked-archive");
-    const fileService = new FileService({ baseFilesPath, prebuiltArchiveDir, watchFiles: false });
+    const archiveDir = path.join(testDirectory, "blocked-archive");
+    const fileService = new FileService({ baseFilesPath, archiveDir });
 
     await fileService.saveFile({
       filePath: "zip1.txt",
       stream: Readable.from("zip content 1"),
     });
-    await fs.promises.writeFile(prebuiltArchiveDir, "not a directory");
+    await fs.promises.writeFile(archiveDir, "not a directory");
 
-    await expect(fileService.getPrebuiltArchivePath()).rejects.toThrow();
+    await expect(fileService.getArchivePath()).rejects.toThrow();
 
-    await fs.promises.rm(prebuiltArchiveDir);
-    const archivePath = await fileService.getPrebuiltArchivePath();
+    await fs.promises.rm(archiveDir);
+    const archivePath = await fileService.getArchivePath();
     expect([...unzipFiles(await fs.promises.readFile(archivePath)).entries()]).toEqual([
       ["zip1.txt", "zip content 1"],
     ]);

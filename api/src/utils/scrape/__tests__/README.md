@@ -6,7 +6,7 @@ conversion code against **frozen** HTML fixtures and assert on properties, so a
 silent quality regression — most importantly a bad `defuddle` version bump — fails CI.
 
 This is the fast per-PR gate. It is intentionally separate from the competitive,
-LLM-judge benchmark (Steel vs Firecrawl/Jina), which is slow, costs money, needs a
+LLM-judge benchmark (Toolstack vs Firecrawl/Jina), which is slow, costs money, needs a
 live deploy, and is run occasionally by hand.
 
 ## Run

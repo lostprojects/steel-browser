@@ -1,13 +1,11 @@
 import { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import fastifySwagger from "@fastify/swagger";
-import fastifyScalar from "@scalar/fastify-api-reference";
-import { titleCase } from "../utils/text.js";
+import { renderApiReference } from "./api-reference.js";
 import actionSchemas from "../modules/actions/actions.schema.js";
 import cdpSchemas from "../modules/cdp/cdp.schemas.js";
 import logsSchemas from "../modules/logs/logs.schema.js";
 import browserSchemas from "../modules/sessions/sessions.schema.js";
-import scalarTheme from "./scalar-theme.js";
 import { buildJsonSchemas } from "../utils/schema.js";
 import filesSchemas from "../modules/files/files.schema.js";
 import commandsSchemas from "../modules/commands/commands.schema.js";
@@ -36,8 +34,8 @@ const schemaPlugin: FastifyPluginAsync = async (fastify) => {
   await fastify.register(fastifySwagger, {
     openapi: {
       info: {
-        title: "Steel Browser Instance API",
-        description: "Documentation for controlling a single instance of Steel Browser",
+        title: "Toolstack Instance API",
+        description: "Documentation for controlling a single instance of Toolstack",
         version: "0.0.1",
       },
       servers: [
@@ -53,18 +51,34 @@ const schemaPlugin: FastifyPluginAsync = async (fastify) => {
     },
     refResolver: {
       buildLocalReference: (json, baseUri, fragment, i) => {
-        return titleCase(json.$id as string) || `Fragment${i}`;
+        return (json.$id as string) || `Fragment${i}`;
       },
     },
   });
 
-  await fastify.register(fastifyScalar as any, {
-    // scalar still uses fastify v4
-    routePrefix: "/documentation",
-    configuration: {
-      customCss: scalarTheme,
-    },
+  const hidden = { schema: { hide: true } };
+  let reference: string | undefined;
+  const ignoreTrailingSlash =
+    fastify.initialConfig.routerOptions?.ignoreTrailingSlash ??
+    fastify.initialConfig.ignoreTrailingSlash;
+  if (!ignoreTrailingSlash)
+    fastify.get("/documentation", hidden, (_request, reply) =>
+      reply.redirect("/documentation/", 301),
+    );
+  fastify.get("/documentation/", hidden, (_request, reply) => {
+    reference ??= renderApiReference(fastify.swagger());
+    return reply
+      .type("text/html; charset=utf-8")
+      .header(
+        "content-security-policy",
+        "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+      )
+      .send(reference);
   });
+  fastify.get("/documentation/openapi.json", hidden, () => fastify.swagger());
+  fastify.get("/documentation/openapi.yaml", hidden, (_request, reply) =>
+    reply.type("application/yaml").send(fastify.swagger({ yaml: true })),
+  );
 };
 
 export default fp(schemaPlugin);

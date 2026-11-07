@@ -1,14 +1,14 @@
 import fastify from "fastify";
 import fastifyCors from "@fastify/cors";
-import fastifySensible from "@fastify/sensible";
-import steelBrowserPlugin from "./steel-browser-plugin.js";
+import toolstackPlugin from "./toolstack-plugin.js";
 import uiPlugin from "./plugins/ui-plugin.js";
-import { ShutdownReason } from "./services/cdp/plugins/core/base-plugin.js";
 import { loggingConfig } from "./config.js";
 import { MB } from "./utils/size.js";
 import path from "node:path";
 import type { Duplex } from "node:stream";
 import { env } from "./env.js";
+import { requireWorkerBoundary } from "./services/worker-boundary.js";
+import { runCleanup } from "./utils/cleanup.js";
 import {
   API_KEY_COOKIE,
   isAuthorized,
@@ -16,6 +16,8 @@ import {
   requireApiKey,
   browserOriginAllowed,
 } from "./utils/api-key.js";
+
+import { jobWorkerAuthorized } from "./services/jobs/access.js";
 
 const HOST = process.env.HOST ?? "0.0.0.0";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -30,15 +32,15 @@ export const server = fastify({
 });
 
 const setupServer = async () => {
+  await requireWorkerBoundary();
   requireApiKey();
-  await server.register(fastifySensible);
   await server.register(fastifyCors, { origin: true });
 
   server.addHook("onRequest", async (request, reply) => {
     if (!browserOriginAllowed(request.raw))
       return reply.code(403).send({ error: "Origin is not allowed" });
     if (request.method === "OPTIONS") return;
-    if (!isAuthorized(request.raw)) {
+    if (!isAuthorized(request.raw) && !jobWorkerAuthorized(request.raw)) {
       return reply.code(401).send({ error: "Unauthorized" });
     }
     // Opening the UI with ?apiKey= stores the key so its own calls carry it
@@ -69,7 +71,7 @@ const setupServer = async () => {
     });
   }
 
-  await server.register(steelBrowserPlugin, {
+  await server.register(toolstackPlugin, {
     fileStorage: {
       maxSizePerSession: 100 * MB,
     },
@@ -110,13 +112,17 @@ const shutdown = async (signal: NodeJS.Signals) => {
     server.log.error(`Shutdown took longer than ${SHUTDOWN_TIMEOUT_MS}ms, exiting`);
     process.exit(1);
   }, SHUTDOWN_TIMEOUT_MS).unref();
+  let exitCode = 0;
   try {
-    await server.sessionPool.drain();
-    await server.close();
+    await runCleanup(
+      [() => server.sessionPool?.drain(), () => server.close()],
+      "Service shutdown failed",
+    );
   } catch (err) {
     server.log.error(err);
+    exitCode = 1;
   }
-  process.exit(0);
+  process.exit(exitCode);
 };
 
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {

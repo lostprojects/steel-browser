@@ -10,7 +10,7 @@ function fixture(
 ) {
   const page = {
     evaluate: vi.fn(async () => ({ title: "", text: "", solved: false, frames: [], ...state })),
-    createCDPSession: async () => ({ send, detach: async () => {} }),
+    createSession: async () => ({ send, detach: async () => {} }),
   };
   return { getAllPages: async () => [page] } as unknown as BrowserSession;
 }

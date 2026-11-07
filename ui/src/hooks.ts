@@ -6,7 +6,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { getActiveSession, wsUrl, type SessionDetails } from "./api";
+import { getSessions, wsUrl, type SessionDetails } from "./api";
 import { describeEvent, isBrowserEvent, type BrowserEvent, type EventSummary } from "./format";
 
 export type LogEntry = {
@@ -16,24 +16,27 @@ export type LogEntry = {
 };
 
 type SessionState = {
-  session: SessionDetails | null | undefined;
+  sessions: SessionDetails[] | undefined;
   error: string | null;
 };
 
-export function useActiveSession(intervalMs = 1000) {
-  const [state, setState] = useState<SessionState>({ session: undefined, error: null });
+export function useSessions(intervalMs = 1000) {
+  const [state, setState] = useState<SessionState>({ sessions: undefined, error: null });
   const [version, setVersion] = useState(0);
   const refresh = useCallback(() => setVersion((value) => value + 1), []);
 
   useEffect(() => {
     const controller = new AbortController();
     let timer: number | undefined;
+    let polling = false;
 
     const poll = async () => {
+      if (polling || controller.signal.aborted) return;
+      polling = true;
       if (document.visibilityState === "visible") {
         try {
-          const session = await getActiveSession(controller.signal);
-          setState({ session, error: null });
+          const sessions = await getSessions(controller.signal);
+          if (!controller.signal.aborted) setState({ sessions, error: null });
         } catch (error) {
           if (controller.signal.aborted) return;
           setState((current) => ({
@@ -42,23 +45,33 @@ export function useActiveSession(intervalMs = 1000) {
           }));
         }
       }
+      polling = false;
       if (!controller.signal.aborted) timer = window.setTimeout(poll, intervalMs);
     };
 
     void poll();
+    const visible = () => {
+      if (document.visibilityState === "visible") {
+        window.clearTimeout(timer);
+        void poll();
+      }
+    };
+    document.addEventListener("visibilitychange", visible);
     return () => {
       controller.abort();
       window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", visible);
     };
   }, [intervalMs, version]);
 
   return { ...state, refresh };
 }
 
-export function useSocket(path: string, onMessage: (data: unknown) => void) {
+export function useSocket(path: string | null, onMessage: (data: unknown) => void) {
   const onData = useEffectEvent(onMessage);
 
   useEffect(() => {
+    if (!path) return;
     let socket: WebSocket | undefined;
     let timer: number | undefined;
     let attempt = 0;
@@ -95,13 +108,17 @@ export function useSocket(path: string, onMessage: (data: unknown) => void) {
   }, [path]);
 }
 
-export function useLogs(limit = 1000) {
+export function useLogs(session: SessionDetails, limit = 1000) {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const sequence = useRef(0);
   const pending = useRef<LogEntry[]>([]);
   const frame = useRef<number | null>(null);
 
-  useSocket("/v1/sessions/logs", (data) => {
+  const path =
+    session.mode === "agent" && session.status === "live"
+      ? `/v1/sessions/${encodeURIComponent(session.id)}/logs`
+      : null;
+  useSocket(path, (data) => {
     const events = (Array.isArray(data) ? data : [data]).filter(isBrowserEvent);
     if (events.length === 0) return;
     const next = events.map((event) => ({
@@ -127,18 +144,6 @@ export function useLogs(limit = 1000) {
   );
 
   return entries;
-}
-
-export function usePageId() {
-  const [pageId, setPageId] = useState<string | null>(null);
-
-  useSocket("/v1/sessions/pageId", (data) => {
-    if (typeof data === "object" && data !== null && "pageId" in data) {
-      if (typeof data.pageId === "string") setPageId(data.pageId);
-    }
-  });
-
-  return pageId;
 }
 
 export function useStoredToggle(key: string, initial: boolean) {

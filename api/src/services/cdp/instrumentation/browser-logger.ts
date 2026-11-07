@@ -1,7 +1,7 @@
 import { BrowserEventUnion } from "./types.js";
 import type { LogStorage } from "./storage/index.js";
 import { EventEmitter } from "events";
-import { BrowserEventType, EmitEvent } from "../../../types/enums.js";
+import { EmitEvent } from "../../../types/enums.js";
 
 export type Context = Record<string, any>;
 
@@ -70,7 +70,7 @@ export function createBrowserLogger(options: CreateBrowserLoggerOptions): Browse
       });
     }
 
-    if (event.type !== BrowserEventType.Recording) eventEmitter.emit(EmitEvent.Log, event, context);
+    eventEmitter.emit(EmitEvent.Log, event, context);
   };
 
   const flush = async () => {

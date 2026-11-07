@@ -20,7 +20,7 @@ export type CommandErrorCode =
   | "unknown_command"
   | "internal_error";
 
-export type CommandEffect = "none" | "applied" | "unknown";
+export type CommandEffect = import("../operations.js").OperationEffect;
 
 export class CommandError extends Error {
   constructor(

@@ -7,19 +7,15 @@
     "moduleResolution": "Node16",
     "skipLibCheck": true,
     "sourceMap": true,
+    "rootDir": "src",
     "outDir": "build",
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": false,
     "strict": true,
     "declaration": true,
-    "declarationMap": true,
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true
+    "declarationMap": true
   },
   "include": ["src"],
-  "files": [
-    "./src/types/fastify.d.ts",
-    "src/services/cdp/plugins/pptr-extensions.d.ts"
-  ],
-  "exclude": ["node_modules", "build", "src/**/__tests__/**"]
+  "files": ["./src/types/fastify.d.ts"],
+  "exclude": ["node_modules", "build", "src/**/__tests__/**", "src/**/*.test.ts"]
 }

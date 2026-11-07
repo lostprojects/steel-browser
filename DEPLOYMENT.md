@@ -1,117 +1,200 @@
 # Deployment
 
-Production runs the phase 4 implementation with Google Chrome 156.0.8078.79. Live acceptance gaps are recorded in `STEALTH.md`.
+Railway runs the combined API and dashboard from the root Dockerfile. Read `/v1/health` for the deployed revision and installed Chrome version; measurement history is in [STEALTH.md](STEALTH.md).
 
-Phase 3 passed 20 complete fingerprint results on distinct exits, with owner-approved replacements for incomplete transport and fixture attempts. Documentation and measurement-client pushes remain excluded from deployments.
+For team deployment, use the [gateway and private-worker procedure](TEAM.md#provisioning). The gateway and each worker require separate volumes and keys. Set `STEEL_IMAGE=gateway` on the gateway service to select its smaller Docker image; workers use the default `browser` image. Railway supplies declared [Docker build arguments from service variables](https://docs.railway.com/builds/dockerfiles#using-variables-at-build-time).
+
+`STEEL_ROLE` selects `gateway`, `worker`, the dedicated `executor`, or the existing `standalone` behavior; it defaults to standalone in the browser image. The gateway image requires the gateway role and has its own start command. Worker health responses contain readiness only. Both runtime images use the pinned Debian Bookworm slim Node base and a UTF-8 locale for file names.
 
 ## Service
 
+This is the current single-org deployment. Its one database, content key and
+bucket do not establish isolation for multiple customer organizations. Follow
+the [organization delivery sequence](TOOLSTACK-PLAN.md#organization-delivery)
+before expanding access; [ORGANIZATIONS.md](ORGANIZATIONS.md) defines the target.
+
 | Item | Value |
-|---|---|
-| Railway project / service | `vigilant-peace` / `Steel Browser` |
-| Source | `lostprojects/steel-browser`, branch `deploy`. Keep `main` at the same commit. Railway watches `/api/**`, `/ui/**`, `/Dockerfile`, `/package.json`, `/package-lock.json`, excluding `!/**/*.md`; documentation and `mosaic/` changes do not deploy |
-| Build | Root `Dockerfile`, which Railway detects |
-| URL | `https://steel-browser-production-e8d5.up.railway.app` |
-| Health check | `/v1/health` and `/health` |
-| Dashboard | `/ui/?apiKey=<key>` once per browser; an HttpOnly cookie keeps it working |
+| --- | --- |
+| Project / service | `vigilant-peace` / `Steel Browser` (Toolstack) |
+| Source | `lostprojects/toolstack`, branch `deploy`; synchronize `main` when pushing |
+| Watched paths | `/api/**`, `/ui/**`, `/Dockerfile`, `/package.json`, `/package-lock.json`, excluding Markdown; documentation and `mosaic/` changes do not deploy |
+| Public URL | `https://steel-browser-production-e8d5.up.railway.app` |
+| Health | `/health` and `/v1/health`, public |
+| Dashboard | `/ui/?apiKey=<key>` once per browser; an HttpOnly cookie authenticates subsequent requests |
+| Persistent volume | `/data`, mounted by one replica |
 
-Before a deployment push, check `GET /v1/sessions` and recent Railway HTTP logs for active jobs. Record the last healthy deployment for `rw rollback`. Railway draining is set to 120 seconds. SIGTERM stops new sessions, lets existing jobs finish during that interval, then closes their browsers and flushes profiles.
+The API relays session-specific CDP and VNC traffic on its service port. Each browser has its own loopback debugging port. An idle service has no browser process.
 
-`MAX_SESSIONS=3` caps independent browsers. A volume at `/data` holds named profiles; throwaway profiles use unique temporary directories. Railway cannot overlap deployments with this volume, so each deployment causes a short outage.
+## Deployment and rollback
 
-Health reports the installed Google Chrome version, active session count and free memory. An idle service has no browser process. `ENABLE_COMMANDS_API=true` exposes the per-session commands engine. Only one Railway replica may mount the profile volume.
+The sole-organization release is live from review branch
+`codex/sole-organization-20261107`, runtime source revision `ba67027`, uploaded to
+the existing service through the Railway CLI. The source was not pushed to the
+public GitHub repository. Fresh database and owner-volume backups named
+`Before organization binding` precede migration. Hosted Library, MCP and UI checks
+passed with one organization and one owner membership after fixture cleanup.
 
-Manage the service with the `rw` CLI (`rw status`, `rw logs vigilant-peace "Steel Browser"`, `rw vars …`). Every `rw` write is a dry run until repeated with `--commit`.
 
-## Railway variables
+Check live sessions and recent Railway HTTP traffic before pushing application changes. Compare log timestamps locally and omit query strings from diagnostic output, since CDP URLs can contain keys.
 
-| Variable | Value | Purpose |
-|---|---|---|
-| `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | `120` | Time allowed for the service to drain during deployment |
-| `DOMAIN` | `${{RAILWAY_PUBLIC_DOMAIN}}` | Session URLs use the public domain |
-| `USE_SSL` | `true` | Session URLs use `https` and `wss` |
-| `STEEL_API_KEY` | secret | Required at startup. Missing or empty values stop startup; anonymous callers cannot become administrators |
-| `CHROME_HEADLESS` | `false` | Headful Chrome on Xvfb. Headless mode exposes `HeadlessChrome` in the user agent, an 800×600 screen and no plugins |
-| `MAX_SESSIONS` | `3` | Maximum concurrent browser processes |
-| `ENABLE_COMMANDS_API` | `true` | Per-session commands API |
-| `CAPTURE_CONSOLE_EVENTS` | `false` | Stops Steel listening to page and worker consoles, which pages detect. Page console output no longer reaches Steel's logs |
-| `ENABLE_PDF_VIEWER` | `true` | Keeps Chrome's PDF viewer, so `navigator.plugins` lists the usual five entries. PDFs open in the viewer instead of downloading |
+Record the currently healthy deployment and verify that its persisted-state formats match the proposed update. Select that recent compatible deployment for rollback. Early phase images may lack the current vault and caller APIs and are unsuitable as routine fallback targets.
 
-Session `dimensions` set its own Xvfb screen (default 1920×1080×24). Each session owns Xvfb and x11vnc children, which close when it ends. noVNC assets and the VNC WebSocket require the API key.
+SIGTERM stops new sessions, waits up to 120 seconds for current work, then closes browsers and flushes named profiles. Railway cannot overlap deployments using this volume, so allow a brief outage. After deployment, verify health and fresh session creation/release; changes to login behavior also need a retained-login observation.
 
-The Docker build installs Google Chrome stable `156.0.8078.79-1`, with its SHA-256 pinned in `CHROME_SHA256`. Update both build arguments together; an unavailable version fails with a message to bump it. The launcher limits Chrome and its children to eight available CPUs using `taskset`. No JavaScript fingerprint values are injected. The earlier phase 1 image uses Debian Chromium 156.0.8078.73 and a shared Xvfb display.
+Use `rw status vigilant-peace`, `rw deploys vigilant-peace "Steel Browser"` and `rw logs …` for inspection. `rw` mutations are dry runs until repeated with `--commit`. Preserve the recorded rollback target until the new revision has passed its relevant checks.
 
-## Credentials
+Organization migration adds Library schema version 2 and encrypted gateway format
+version 2. Retain a current organization-aware image for rollback; an earlier image
+cannot safely write the migrated schema. Restore an earlier release only with its
+matching database and volume backups in an isolated destination. Preserve the
+organization ID, content key and vault key through deployment and restoration.
 
-Values live in two files and nowhere else, under the same names:
+## Railway configuration
 
-- `/Users/moi/nosync.nosync/-env/global.env`, for any project on this machine
-- `/Users/moi/nosync.nosync/Mosaic/.env`, because Mosaic scripts read only their own project file
+| Variable | Value or role |
+| --- | --- |
+| `DOMAIN` | `${{RAILWAY_PUBLIC_DOMAIN}}`, the canonical browser origin |
+| `USE_SSL` | `true` |
+| `STEEL_API_KEY` | Required admin secret; absent or blank values stop startup |
+| `STEEL_AGENT_KEYS` | JSON named-key configuration; production includes `mosaic` |
+| `VAULT_KEY` | 32 random bytes encoded as 64 hexadecimal characters |
+| `EVOMI_RESIDENTIAL_PROXY_URL` | Core consumption credentials |
+| `EVOMI_PREMIUM_PROXY_URL`, `EVOMI_MOBILE_PROXY_URL`, `EVOMI_DATACENTER_PROXY_URL` | Optional consumption credentials for additional profiles |
+| `TOOLSTACK_PROXY_*` | Optional custom gateway credentials, referenced by profile |
+| `RESIDENTIAL_DAILY_BUDGET_BYTES` | `1000000000` per named key, reset at midnight UTC |
+| `MAX_SESSIONS` | `3` for new workers; preserve `12` on the existing owner worker |
+| `MAX_HTTP_FETCHES` | Optional concurrency override, 1–64; default is four helpers per detected CPU, capped at 64 |
+| `HTTP_MEMORY_BUDGET_MB` | Optional HTTP memory reservation budget in MiB; default is one quarter of the worker's detected memory limit |
+| `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | `120` |
+| `CHROME_HEADLESS` | `false` |
+| `ENABLE_COMMANDS_API` | `true` |
+| `CAPTURE_CONSOLE_EVENTS` | `false`; avoids Runtime/Log console subscriptions |
+| `ENABLE_PDF_VIEWER` | `true` |
 
-| Name | What |
-|---|---|
-| `STEEL_URL` | The service URL |
-| `STEEL_API_KEY` | Admin key. Must match Railway and both local files |
-| `STEEL_AGENT_KEY` | Named `mosaic` key in both local files; matches its entry in Railway `STEEL_AGENT_KEYS` |
-| `EVOMI_RESIDENTIAL_PROXY_URL` | Evomi Core Residential, `http://user:pass@core-residential.evomi.com:1000`. The default for every job |
-| `EVOMI_PREMIUM_PROXY_URL` | Evomi Premium Residential. In testing it passed nothing that Core failed, so reserve it for a site that blocks Core's IPs |
+For local Evomi account management, credential verification and consumption keys in the shared environment, see [PROXIES.md](PROXIES.md). Deploy consumption URLs only for products enabled on that worker; account-management credentials stay local. Proxy state migrates in place to version 2: back up `/data/routing/proxy-state.json` before deploying. Rollback needs a compatible image or a matching state backup; do not let old code overwrite the new ledger.
 
-The Railway token for `rw` is `RAILWAY_TOKEN` in `global.env`, a workspace token for the "Projects" workspace.
+The Dockerfile pins Chrome's package version and SHA-256. Update both together and repeat the relevant browser checks before deployment. Chrome's launcher limits its process group to eight available CPUs. Python HTTP fetching uses pinned `curl_cffi` in `/opt/browser-fetch`.
 
-The launch profile now includes the measured WebGL and WebRTC flags in code. Legacy fingerprint and extra Chrome-argument variables are unused. Browserbase is a temporary client fallback until phase 6 moves the callers.
+HTTP admission reserves memory for the helper and its bounded response copies.
+Streamed files reserve only a small response prefix. New work also needs spare
+V8 heap and, on Linux, physical memory headroom within the host and worker
+limits. The Linux check allows for reclaimable filesystem cache.
+The remaining memory budget is available to Chrome and the API.
 
-## Quiet mode
+Bursts wait in arrival order for up to five seconds within the existing request
+deadline. The queue holds at most twice the concurrency limit; cancellation
+removes waiting work immediately, and active reservations last until the helper
+exits. A full or expired queue returns 429 with `Retry-After: 1`. A buffered request larger than the
+memory budget returns 413; use streamed file delivery for large files. Neither
+condition changes the target's working route or triggers browser escalation.
 
-Quiet Chrome starts directly with the pinned binary and its own display. The commands connection starts when first requested.
+The admin response from `GET /v1/usage` includes `http` capacity, active/queued
+counts, reservations and cumulative wait/rejection counters. These defaults
+are starting budgets; size overrides from representative load measurements.
 
-It permits isolated-world reads, refuses instrumentation subscriptions and sends input through `xdotool`; `ffmpeg` captures the display. No new Railway variables are required.
+Sessions own their Xvfb and x11vnc children. Native input uses `xdotool`; display capture uses `ffmpeg`. The API key protects viewer assets and connections, and protected identities refuse live viewing.
 
-The quiet launch disables `OptimizationHints`, matching the agent launch, because Chrome otherwise downloads Optimization Guide data in the background. Live byte getters include open proxy tunnels, and `proxyTraffic` reports hostname totals without paths or credentials. Released totals remain the final accounting record.
+For durable background jobs, deploy the separate browser-free executor described
+in [Jobs](JOBS.md#deployment). Its control key supplies no browser or vault access.
 
-The preceding cleanup application was commit `5174f4d`, deployment `097d4bac-9c8c-4e1e-8230-31f06fb72a0b`. The full phase 3 acceptance measurements came from `bfbc39f`, deployment `89b38d9f-9008-45a5-86e3-4557db263f17`, which remains a known-good rollback target. The older phase 2 target is `6ffa7417-bc73-4f16-8090-59ed3c929e4a`; that older image lacks quiet mode and includes open-tunnel bytes only on release.
+## Content storage
 
-The `rw rollback` wrapper now uses the scalar rollback result. Its dry run was
-checked against the accepted phase 3 deployment; repeat with `--commit` only when
-a rollback is needed.
+The resources below belong to the initial organization. Startup backfills legacy
+content and refuses a database already bound to another organization. Future organizations require independently
+provisioned data services, database services and private buckets, each with its
+own credentials and encryption keys. Shared control services need separate
+storage for identity, membership and subscription metadata.
 
-The pre-vault application commit `c364bd5` was deployment `83f16f3c-d9a8-443a-8eb1-e017d6afe797`. Health and direct quiet-session creation/release passed with zero residential bytes.
+The dedicated `Toolstack Postgres` service in `vigilant-peace` uses its own
+`/var/lib/postgresql/data` volume and pinned PostgreSQL 18 SSL image. The application
+connects as `toolstack_app` over TLS. Daily and weekly Railway volume backups are
+enabled; an initialization backup is recorded. PMS and Mosaic databases are
+independent.
 
-## Phase 4 settings
+Wasabi bucket `toolstack-content-bbbe0a8e` in `us-east-1` holds encrypted package
+files. Its dedicated IAM key permits access only to that bucket and its
+`packages/*` objects. Operator bootstrap configuration stays in
+`~/nosync.nosync/-env/toolstack.env` with mode 0600. The application receives
+only the eight runtime variables in [Library configuration](LIBRARY.md#configuration-and-operation);
+root database credentials and Wasabi administration keys stay outside its runtime.
 
-Applied with `--skip-deploy` after a dry run, then activated by the phase 4 deployment:
+Before multi-tenant rollout, split schema/migration ownership from the request
+role and enforce organization/personal-resource row policies. Today `toolstack_app`
+owns the Library tables and runs their additive migration. Its restricted server
+privileges do not establish a tenant isolation boundary.
 
-| Variable | Value | Purpose |
-|---|---|---|
-| `EVOMI_RESIDENTIAL_PROXY_URL` | secret | Server-owned Evomi Core allocation and exit checks |
-| `STEEL_AGENT_KEYS` | secret JSON | Named `mosaic` client key; the existing key remains admin |
-| `RESIDENTIAL_DAILY_BUDGET_BYTES` | `1000000000` | Daily residential budget per key; midnight UTC reset |
+The standalone owner service hosts the library initially. Move this configuration
+to the gateway before converting the owner service to `STEEL_ROLE=worker`. Workers
+use their assigned reader key and refuse central database/encryption credentials.
 
-The existing `/data` volume and `MAX_SESSIONS=3` are unchanged. `/data/routing`
-holds sticky identity metadata, durable spend and the seven-day host table.
-It contains no proxy credentials. Profile cookies remain credentials, including `mosaic-session-cookies.json` in each named profile. The service writes that file on release so session cookies survive Chrome restarts.
+That gateway arrangement is the existing single-org team path. The multi-tenant
+target separates storage authority into an organization data service. Current
+worker readers require the organization header, and signed claims include the
+organization and membership. Preserve
+the current endpoint, volume and vault key during the initial migration. Keep
+legacy keys mapped to that organization only; remove unscoped fallback behavior
+from tenant-aware paths. Backups, restore and key rotation need organization-bound
+procedures before serving an unrelated customer.
 
-The existing one-second expiry timer also samples budgets and settles the ledger.
-A thirty-second check flags hosts above 10 MB and ends traffic above 5 MB per
-interval after two minutes without navigation. No separate daemon was added.
-The image adds Python and pinned `curl_cffi==0.16.3` for bounded HTTP reads.
+API keys and logins retain the existing encrypted vault and profile storage below.
+The new database stores content ownership, instructions, grants and file metadata;
+publishing content leaves account access unchanged.
 
-Use accepted phase 3 deployment `89b38d9f-9008-45a5-86e3-4557db263f17` as the
-first rollback target if phase 4 fails health or session creation.
+## Persistent state
 
-The tested splitting policy is enabled for `annas-archive.pk`, `www.bizapedia.com`,
-`newspapers.lib.utah.edu`, `www.ancestry.com`, `www.newspapers.com` and `www.fold3.com`.
-Those persisted policy writes changed no Railway variables or volumes.
+| Path | Purpose |
+| --- | --- |
+| `/data/.toolstack-organization` | Immutable organization binding; startup refuses reuse across organizations |
+| `/data/.toolstack-membership` | Team worker membership binding, alongside its legacy `.steel-user` marker |
+| `/data/profiles` | Named Chrome profiles and `mosaic-session-cookies.json` files |
+| `/data/vault` | AES-256-GCM encrypted login entries |
+| `/data/connections.json` | Profile metadata and API credential references, grants and limits; no credentials |
+| `/data/api-executions.jsonl` | Durable API reservations and execution metadata; no queries, response bodies or credentials |
+| `/data/routing` | Sticky allocations, byte accounting, host policies and caller outcomes |
+| `/data/logins.json` | Last successful login metadata |
+| `/data/login-daily.json` | Daily-check scheduling state |
+| `/data/login-checks.jsonl` | Read-only member observations and device-check metadata |
+| `/data/hathitrust-google-attempt.json` | Persistent single-attempt limit for Google login |
 
-## Vault and automatic login
+API tools require the existing `VAULT_KEY` and a permitted vault entry. Preserve
+`api-executions.jsonl` with that key to retain retry protection. One worker owns
+the journal; replicas must not share its volume. Old connection files load with
+an empty API catalog. Once the new format writes `apis`, rollback requires a
+version that understands that field. See [SEARCH.md](SEARCH.md) for limits and
+retention.
 
-`VAULT_KEY` is a 32-byte random key encoded as 64 hexadecimal characters. It was staged with `--skip-deploy`, activated with the 4 November deployment, and stored in both local env files. Values are never printed. The existing `/data` volume holds the AES-256-GCM file `/data/vault`; no new volume is required. A missing or invalid key, or failed authentication of the encrypted file, leaves the vault locked.
+The application framework adds disabled/disconnected connection state and optional
+capability, account-binding and connected-app metadata to the API journal. The
+gateway adds shared-entry grants to its encrypted state. Existing records load
+without changing IDs or grants; new shared entries default to the owner.
+After these fields are written, rollback requires a build that accepts them.
+Keep gateway and worker signed-identity contracts compatible. A catalog manifest
+describes installed contracts; it does not install code.
 
-The login timer checks previously authenticated identities once per UTC day when the pool is idle. `/data/login-daily.json` prevents repeats across deployments; `/data/login-checks.jsonl` records the outcome, device-check classification and exit IP. `/data/logins.json` preserves each site's last successful login. The timer ends with the API process.
+The owner service received the framework and Library release from isolated source
+branch `codex/library-storage-20261107` on 7 November 2026. The existing public
+address, profiles, vault key and twelve-session capacity are preserved. The release
+uses an uploaded source artifact; health reports a null Git revision for this
+deployment. Source commit `2af8f90` records the deployed application. The branch also records
+subsequent operator checks and documentation; no source was pushed to GitHub.
 
-The first vault deployment passed health and fresh quiet-session creation. Subsequent login fixes wait for an empty session list and an idle HTTP log window. The last verified service build is `b2da0b3`; vault login acceptance remains incomplete. No volume was added.
+The prior healthy deployment, `83b964e7-dbf0-4da3-b6de-6153afc3db03` from
+`cda43bf`, remains the immediate rollback target for this rollout. New library
+data lives in the separate database and bucket. Once new API connection or shared
+account formats are written, use a release compatible with those formats for
+rollback. The browser volume backup before release preserves the prior state.
+Production gateway deployment and real separate-user acceptance remain open.
 
-Static outbound IPs remain disabled; no static addresses are assigned. The direct-route acceptance records the actual egress address through deployments. The fixed-address setting was inspected without changing it.
+Profile cookies are credentials. Keep the volume and `VAULT_KEY` intact through deployments. A missing/invalid key or failed decryption leaves the vault locked. Release removes temporary profiles and raw session files. Published download handoffs retain their prepared payloads until their thirty-minute expiry. Graceful worker shutdown removes them, since their temporary links cannot survive a restart. The existing orphan sweep removes abandoned file directories after twenty-four hours.
 
-The native-tab login candidate was rolled back after a missing quiet-adapter method produced a login HTTP 500. The restored `447c2b4` image passed health and fresh-session creation. Rollback used the shown `rw rollback` dry run followed by `--commit`; the completed adapter correction in `b2da0b3` subsequently passed health and fresh quiet-session creation. Automatic Mary Ferrell re-login still failed, as recorded in STEALTH.md.
+The daily timer observes Ancestry-family member pages without entering credentials. Other eligible identity checks can run their existing login flow. Busy profiles, insufficient pool capacity, refused credentials and unanswered codes defer attempts; Google is excluded. See [USAGE.md](USAGE.md#phase-5-observations-and-fault-checks) for observation and diagnostic endpoints.
 
-The local login-code bridge uses the Mac’s existing Mail and Messages access. It adds no Railway variables, volume or background process. Pending code requests are held only in API memory and expire; a deployment invalidates them, so a local caller must start a fresh login afterward.
+Pending email/SMS code requests exist only in API memory. A deployment invalidates them; the local caller must begin a fresh authorized sign-in. The Mac's code-only helper requires no server daemon or new mailbox access.
+
+## Local credentials and development
+
+Local service settings are held in `~/nosync.nosync/-env/global.env` and Mosaic's `.env`. Railway holds the corresponding server secrets. `STEEL_AGENT_KEY` is the local named client key matching its entry in `STEEL_AGENT_KEYS`; `STEEL_API_KEY` is for administration.
+
+`RAILWAY_TOKEN` in the global file is a workspace token used by `rw`. The historical Premium proxy setting is unused by the current managed allocator. Do not remove shared credential entries merely because this service no longer reads them.
+
+For local Compose and source development, follow [README.md](README.md#local-development). Source development uses `DOMAIN=localhost:5173`; Compose uses `localhost:3000`. Browser origin checks remain enabled in both setups.

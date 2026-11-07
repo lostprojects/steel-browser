@@ -1,0 +1,19 @@
+{
+  "name": "@toolstack/client",
+  "version": "0.1.0",
+  "description": "Portable Toolstack downloads and a local MCP bridge",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "bin": {
+    "toolstack": "./cli.mjs",
+    "steel": "./cli.mjs"
+  },
+  "exports": "./index.mjs",
+  "files": [
+    "*.mjs",
+    "LICENSE"
+  ]
+}

@@ -1,101 +1,58 @@
 # Changes from upstream
 
-The fork is Mosaic's browser service. It retains Steel's commands, extraction utilities and live view, with a session pool replacing the singleton browser services.
+Toolstack is Mosaic's fork of Steel and keeps its commands engine and extraction utilities. `SessionPool` and `BrowserSession` own independent browsers, replacing the original shared browser lifecycle.
 
-Phase 1 removes the idle browser, Selenium and fingerprint injection. Each session owns its browser, forwarder and profile; routes select it by ID. `SessionPool.registerSessionHook()` lets integrations register fresh plugin instances or launch/shutdown callbacks before each browser starts.
+## Product name
 
-Google Chrome stable is installed at an exact version and checksum. Each session owns an Xvfb display and a loopback VNC endpoint; noVNC uses the existing API key. The global display and unpinned Debian Chromium install are removed.
+Toolstack uses the `@toolstack` npm scope and the `toolstack` CLI. The local checkout is `/Users/moi/nosync.nosync/Toolstack`, with Mosaic's Python client at `scripts/browser/toolstack.py` and the API plugin at `api/src/toolstack-plugin.ts`.
 
-Phase 2 passed after the owner accepted replacement of incomplete transport and fixture runs. Production runs Google Chrome 156.0.8078.79 with separate displays and noVNC. [STEALTH.md](STEALTH.md) records the 20 complete fingerprint checks on distinct exits and the incomplete attempts.
+Existing `STEEL_*` settings, HTTP headers and persistent storage identifiers retain their protocol names so deployed clients and saved profiles continue working. The old CLI, Python import and JavaScript exports remain compatibility aliases; new integrations use the Toolstack names.
 
-Phase 3 is accepted with quiet mode and accurate live proxy metering. Full snapshots and native clicks passed the detector checks, and all six final route sets met their pass marks.
+The GitHub fork is `lostprojects/toolstack`. The deployed service URL and Railway display name retain their existing values.
+Further work belongs in [TOOLSTACK-PLAN.md](TOOLSTACK-PLAN.md).
 
-## Earlier fork fixes
+## Runtime
 
-| Commit | Files | Change | Why |
-|---|---|---|---|
-| `346efeb` | `api/src/services/cdp/cdp.service.ts` | `changeOrigin: true` on the CDP WebSocket proxy | Chrome rejects a DevTools `Host` header that is not `localhost` or an IP, so every CDP client failed with a 500 behind Railway's domain. Same fix as upstream [PR #297](https://github.com/steel-dev/steel-browser/pull/297), still unmerged |
-| `346efeb` | `api/src/utils/api-key.ts`, `api/src/index.ts`, `api/src/plugins/browser-socket/browser-socket.ts`, `api/src/env.ts` | Optional `STEEL_API_KEY` | Upstream has no authentication. Without a key, anyone who finds the URL can drive the browser and spend the proxy allowance |
-| `47b549b` | `api/entrypoint.sh` | Start Xvfb before the API | The image installs Xvfb and sets `DISPLAY=:10` but never starts it, so headful Chrome failed with "Missing X server or $DISPLAY" |
-| `64a0d74` | `api/src/services/timezone-fetcher.service.ts` | Ask ipinfo.io, ip-api.com and ipwho.is at once with a 6 s timeout | Upstream asks ipinfo.io alone with a 2 s timeout, and a failure leaves the browser on UTC. This did not make the lookup reliable on Railway, so clients pass `timezone` themselves ([USAGE.md](USAGE.md#pass-the-timezone-yourself)). `TIMEZONE_SERVICE_URL` still selects a single service |
-| `8d4af8a` | `api/package.json`, `package-lock.json` | Alias `puppeteer-core` to `rebrowser-puppeteer-core@23.6.101` | Puppeteer sends `Runtime.enable` to every page and worker. The rebrowser build is the same 23.6.0 release without that call. Imports are unchanged |
-| `9933006` | `api/src/env.ts`, `api/src/services/cdp/instrumentation/target-manager.ts` | Optional `CAPTURE_CONSOLE_EVENTS` | Steel's target manager enables `Runtime` and `Log` on every page and worker to log console output. Chrome then serializes console arguments, which pages detect. `false` skips those two domains |
-| `fc2ee5f` | `api/src/env.ts`, `api/src/utils/browser.ts`, `api/src/services/session.service.ts`, `api/src/services/cdp/cdp.service.ts` | Optional `ENABLE_PDF_VIEWER` | Upstream disables the PDF viewer so PDFs download, which leaves `navigator.plugins` empty, unlike any desktop Chrome. Both default-preference sites now share `defaultPluginPreferences()` |
+| Area | Current implementation |
+| --- | --- |
+| Sessions | Configurable browser capacity, exclusive named profiles, bounded queuing, idle/lifetime limits and graceful draining |
+| Browser | Pinned Google Chrome with measured launch flags; per-session Xvfb and loopback VNC on Linux |
+| Agent mode | Rebrowser Puppeteer with per-session instrumentation and commands |
+| Quiet mode | Direct CDP reads in isolated worlds, native X11 input and ffmpeg display capture |
+| Proxies | Managed Evomi Core allocations, exit/timezone checks, persistent sticky IDs and per-agent budgets |
+| Routing | Payload-validated HTTP/browser escalation, seven-day host policies and measured traffic splitting |
+| Logins | AES-256-GCM vault, named-agent permissions, service-owned input and local code-only verification |
+| Clients | Scoped REST and MCP interfaces, session reconnection, fetch deadlines and cancellation |
 
-The current launch profile defines the measured WebGL flags in code. Legacy `FILTER_CHROME_ARGS` and `CHROME_ARGS` settings have no effect.
+The original Selenium path, fingerprint injection and idle browser are removed. The fixed-port nginx debugger proxy and recording extension are also removed; the API relays each session's CDP and live-view connections directly.
 
-## Repository
+Named profiles save session cookies on release and restore them at the next start. Authenticated requests retain the profile's residential allocation. Browserbase remains a Mosaic fallback while caller observation windows are open.
 
-| Change | Why |
-|---|---|
-| Upstream's `README.md`, `CONTRIBUTING.md` and `docs/` moved to [upstream-docs/](upstream-docs/), with links back into the code given a `../` prefix | Keeps upstream's documents intact while the root holds ours |
-| Root `README.md`, `USAGE.md`, `DEPLOYMENT.md`, `STEALTH.md` and this file | The fork's own documentation |
-| [mosaic/stealth_check.py](mosaic/stealth_check.py) | Measures detection signals and runs the collector routes against the deployed service ([STEALTH.md](STEALTH.md#measuring-detection)) |
+## Access boundaries
 
-The root Dockerfile is the only supported image build, used by both Railway and local Compose. Obsolete Selenium binaries and separate API/UI build files are removed. GitHub retains build and test checks; upstream publishing, automatic releases and contributor-message bots are removed.
+The service requires `STEEL_API_KEY` at startup. Browser-origin requests must match its configured origin; native clients use the existing key header or CDP URL. Dashboard authentication sets an HttpOnly cookie and redirects to a URL without the key.
 
-## Taking upstream fixes
+Chrome and display/HTTP helpers receive an explicit OS environment without service credentials. The CDP relay restricts upload paths and download destinations to session files. Login waits for existing operations and holds new REST commands while the service enters credentials.
 
-This fork is Mosaic's browser service. Keep the Apache 2.0 licence and notices, and take useful upstream fixes individually with `git cherry-pick`. Do not merge `upstream/main` wholesale.
+Protected identities refuse profile exports and image capture. Responses and logs scrub known secrets. Arbitrary scripts from an authorized browser client remain a substantial privilege.
+[The plan](TOOLSTACK-PLAN.md#remaining-browser-work) tracks additional isolation work.
 
-Typecheck with `cd api && npx tsc --noEmit` and run the tests covering changed modules. Check active sessions and Railway HTTP traffic before pushing a deployment to `deploy`, and keep `main` at the same commit. Railway ignores documentation and the local measurement client when deciding whether to deploy.
+## Dashboard and logging
 
-## Quiet mode
+The dashboard selects sessions by ID and uses session-specific event connections. Quiet sessions collect no browser event stream. Protected profiles display metadata without opening a viewer.
 
-Quiet sessions start Chrome as a plain child process. The commands engine uses a direct CDP adapter with isolated-world execution, no Runtime or console subscriptions, and unpaused iframe attachment. Native pointer and keyboard events use the session’s X display; screenshots come from ffmpeg’s X11 capture.
+Browser event storage keeps at most 1,000 events per session in memory. `/v1/logs/query` returns JSON and `/v1/logs/stream` provides SSE; supply `sessionId` when multiple browsers exist. The old Parquet endpoint returns 501. Durable caller and login observations use separate metadata files.
 
-Agent sessions keep Puppeteer and their existing instrumentation.
+The old recorder/page-ID sockets and embedded DevTools panel are removed. The legacy `/v1/devtools/inspector.html` URL remains a redirect to the selected session's viewer. Use the session's CDP endpoint with a compatible external debugging client when needed.
 
-Quiet contexts and object handles belong to their frames. An iframe redirect invalidates its own handles while preserving the main frame. Proxy metering includes open tunnels and reports bytes by hostname; quiet Chrome disables background Optimization Guide downloads.
+## Integration and maintenance
 
-## Phase 4
+`SessionPool.registerSessionHook()` registers fresh plugins or lifecycle callbacks before each browser starts. `ToolstackConfig` supports file upload limits, custom WebSocket handlers and enabling the log routes. Removed disk-storage options had no effect in the pooled service.
 
-The proxy manager allocates Core exits, resolves their timezones through the exit,
-and persists daily byte totals by agent key. Named identities keep their sticky IDs
-beside the persistent profiles. The default daily residential budget is 1 GB.
-Named profiles save session cookies on release, because Chrome otherwise discards
-those cookies when its process exits. Reopening the migrated US profile preserved
-all 87 unexpired source cookies.
+Take useful upstream fixes individually with `git cherry-pick`. Preserve Apache 2.0 notices. The former upstream setup guides and promotional assets remain in Git history. [COMMANDS.md](COMMANDS.md) retains the command reference with the current session lifecycle.
 
-The routing service validates collector payloads and records its lowest working
-route for seven days. It can fetch files directly with session cookies and retry
-through the exit. Measured site policies can split static hosts at the forwarder.
+Run `npm run typecheck -w api`, `npm run typecheck -w ui` and the existing tests covering changed modules. Build with `npm run build`. Regenerate API models and UI types after schema changes using the commands in [ui/README.md](ui/README.md#api-types).
 
-Challenge clearing now belongs to the service, with isolated frame reads and
-native input. Visual puzzles retain their session for noVNC. API idempotency and
-Python CDP reattachment preserve work across dropped client connections.
-The measurement client uses fresh API connections after reused connections stalled
-during live checks. Completed and interrupted attempts remain in `STEALTH.md`.
-Browserbase is a temporary Mosaic fallback until phase 6 moves the callers.
+The root Dockerfile serves Railway and local Compose. API builds clear generated output and exclude tests. The final image copies compiled API files and runtime dependencies; source and fixtures stay out of it. Before deploying, follow [DEPLOYMENT.md](DEPLOYMENT.md#deployment-and-rollback); keep `main` and `deploy` synchronized when pushing.
 
-## Vault and login service
-
-The access hardening patch requires API credentials at startup, checks browser
-origins on REST and WebSockets, and removes keys from dashboard URLs after setting
-the authentication cookie. Chrome and its helpers receive an explicit OS
-environment without service secrets. The CDP relay applies the existing upload
-directory restriction and fixes download destinations to the session directory.
-
-A shared login lock waits for active operations and pauses new REST browser work
-until login ends. It preserves existing profiles and cookie files. This patch
-does not provide full isolation against an authorized client's arbitrary scripts;
-Chrome sandbox changes, comprehensive internal-network filtering and encrypted
-cookie-file migration need separate compatibility checks before deployment.
-
-Credentials use Node's AES-256-GCM in one encrypted volume file. Vault entries restrict use to named agents; metadata reads expose no values. Login flows use isolated page reads and native typing, with positive account checks and persistent last-login times. The CDP relay and HTTP output scrub known values, and protected identities refuse profile export and image capture.
-
-Authenticated API requests remain on the profile's egress. A daily timer checks previously authenticated identities when the pool is free and records device checks and exit addresses across deployments. Live acceptance is recorded in STEALTH.md.
-
-Route expiry returns to the configured starting rung. Direct acceptance requests can set a maximum rung, and administrator failure injection exercises same-request escalation without changing another client’s network. The resumable `direct-soak` measurement command records four batches eight hours apart and 200 sequential reads per route.
-
-Mosaic’s Mary Ferrell caller now detaches its observing CDP client while the service signs in, then reattaches to the original page. This resolved the observed interference during login. Bizapedia’s caller has its own persistent identity; its bandwidth target remains unmet after two approaches.
-
-Mosaic’s HTTP helper now sends authenticated JSON reads and posts through the existing Steel allocation. Its live IP check matched the browser’s residential exit. The family collection profile still awaits successful automatic-login acceptance.
-
-Automatic re-login acceptance remains failed after the allowed fixes for both Ancestry and Mary Ferrell. The daily checker records its explicit outcome and actual device-check classification; Google login remains unimplemented.
-
-The direct acceptance runner also supports `--immediate` for checks without scheduled gaps. It preserves prior observations and stops routes that have already failed.
-
-Read-only HTTP checks omit idempotency keys; session mutations keep them. Repeated batch reads share one browser allocation.
-
-Email and SMS verification can pause a login with a short-lived code request. The local Mosaic helper searches Apple Mail or Messages under the owner’s code-only permission and submits one code directly to its waiting session. The service binds the request to its owner and login URL, consumes it once and checks the resulting account content.
+Measurements belong in [STEALTH.md](STEALTH.md); caller migration status belongs in [mosaic/CALLERS.md](mosaic/CALLERS.md). Preserve failed measurements when a later run passes.

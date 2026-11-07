@@ -10,9 +10,10 @@ async function routes(server: FastifyInstance) {
     {
       schema: {
         operationId: "getDevtoolsUrl",
-        description: "Get the URL for the DevTools inspector",
+        description: "Legacy alias for the selected session's live viewer",
         tags: ["CDP"],
-        summary: "Get the URL for the DevTools inspector",
+        summary: "Redirect to the session viewer",
+        deprecated: true,
         querystring: $ref("GetDevtoolsUrlSchema"),
       },
     },

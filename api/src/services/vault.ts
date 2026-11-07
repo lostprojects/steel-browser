@@ -4,13 +4,14 @@ import { createCipheriv, createDecipheriv, randomBytes, createHmac } from "node:
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import type { Agent } from "./proxy-manager.js";
+import type { Agent } from "./proxy/service.js";
+import { readSharedStore, storeName } from "./shared-store.js";
 
-const name = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/);
+const name = storeName;
 export const vaultInput = z
   .object({
     fields: z.record(name, z.string().min(1).max(8192)).refine((v) => Object.keys(v).length <= 24),
-    allowedAgents: z.array(name).min(1).max(64),
+    allowedAgents: z.array(name).min(1).max(64).default(["admin"]),
   })
   .strict();
 type Entry = z.infer<typeof vaultInput> & { lastUsed?: string };
@@ -116,14 +117,37 @@ export class Vault {
     this.serial = work.catch(() => undefined);
     return work;
   }
-  async list(agent: Agent, entryName?: string) {
+  async list(agent: Agent, entryName?: string, scope: "all" | "personal" = "all", fresh = false) {
     await this.ready;
-    return Object.entries(this.entries)
+    const shared =
+      scope === "personal" || (entryName && Object.hasOwn(this.entries, entryName))
+        ? {}
+        : (await readSharedStore(fresh)).credentials;
+    for (const fields of Object.values(shared)) Object.values(fields).forEach(protect);
+    const personal = Object.entries(this.entries)
       .filter(
         ([n, e]) =>
           (!entryName || n === entryName) && (agent.admin || e.allowedAgents.includes(agent.name)),
       )
-      .map(([name, e]) => ({ name, fields: Object.keys(e.fields), lastUsed: e.lastUsed ?? null }));
+      .map(([name, e]) => ({
+        name,
+        fields: Object.keys(e.fields),
+        lastUsed: e.lastUsed ?? null,
+        scope: "personal" as const,
+      }));
+    return [
+      ...personal,
+      ...Object.entries(shared)
+        .filter(
+          ([name]) => (!entryName || name === entryName) && !Object.hasOwn(this.entries, name),
+        )
+        .map(([name, fields]) => ({
+          name,
+          fields: Object.keys(fields),
+          lastUsed: null,
+          scope: "global" as const,
+        })),
+    ];
   }
   async put(entryName: string, input: unknown, agent: Agent) {
     if (!agent.admin) throw Object.assign(new Error("Admin key required"), { statusCode: 403 });
@@ -150,10 +174,25 @@ export class Vault {
     entryName: string,
     agent: Agent,
     fn: (fields: Readonly<Record<string, string>>) => Promise<T>,
+    expectedScope?: "personal" | "global",
   ): Promise<T> {
+    await this.ready;
+    const shared = Object.hasOwn(this.entries, entryName)
+      ? {}
+      : (await readSharedStore(true)).credentials;
     let fields!: Record<string, string>;
     await this.transaction(async () => {
       const entry = this.entries[entryName];
+      if (expectedScope && expectedScope !== (entry ? "personal" : "global"))
+        throw Object.assign(
+          new Error("The selected credential binding changed; select the account again"),
+          { statusCode: 409 },
+        );
+      if (!entry && Object.hasOwn(shared, entryName)) {
+        fields = { ...shared[entryName] };
+        Object.values(fields).forEach(protect);
+        return;
+      }
       if (!entry || (!agent.admin && !entry.allowedAgents.includes(agent.name)))
         throw Object.assign(new Error("Vault entry unavailable for this agent"), {
           statusCode: 403,
@@ -163,6 +202,21 @@ export class Vault {
       await this.save();
     });
     return fn(fields);
+  }
+  async delete(entryName: string, agent: Agent) {
+    if (!agent.admin) throw Object.assign(new Error("Admin key required"), { statusCode: 403 });
+    name.parse(entryName);
+    await this.transaction(async () => {
+      const previous = this.entries[entryName];
+      delete this.entries[entryName];
+      try {
+        await this.save();
+      } catch (error) {
+        if (previous) this.entries[entryName] = previous;
+        throw error;
+      }
+    });
+    return { name: entryName, deleted: true };
   }
 }
 

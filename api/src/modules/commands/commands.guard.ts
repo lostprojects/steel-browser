@@ -1,19 +1,10 @@
 import type { FastifyReply } from "fastify";
 
-interface QuickActions {
-  running: number;
-  idle: Array<() => void>;
-}
-
-const tracked = new WeakMap<object, QuickActions>();
-
-function quickActionsOf(engine: object): QuickActions {
-  let state = tracked.get(engine);
-  if (!state) {
-    state = { running: 0, idle: [] };
-    tracked.set(engine, state);
-  }
-  return state;
+import { operations } from "../../services/operations.js";
+import type { CommandEngine } from "../../services/commands/engine.js";
+function execution(engine: object) {
+  const selected = engine as Partial<CommandEngine>;
+  return { runner: selected.runner ?? operations, resource: selected.resource ?? engine };
 }
 
 export function heldByCommands(
@@ -22,13 +13,17 @@ export function heldByCommands(
   reply: FastifyReply,
 ): boolean {
   const engine = server.commandEngine;
-  if (!engine || request.body?.proxyUrl) {
+  if (request.body?.proxyUrl) {
+    reply.code(400).send({ message: "Select a proxy profile or lease when opening the session" });
+    return true;
+  }
+  if (!engine) {
     return false;
   }
   if (engine.busy()) {
     reply.code(409).send({
       message:
-        "Commands are running in this session. Try again when they finish, or pass proxyUrl to work in a separate browser context.",
+        "Commands are running in this session. Try again when they finish, or open another leased session.",
     });
     return true;
   }
@@ -44,27 +39,22 @@ export async function quickAction(
   if (heldByCommands(server, request, reply)) {
     return reply;
   }
-  if (!server.commandEngine || request.body?.proxyUrl) {
+  if (!server.commandEngine) {
     return run();
   }
-  const state = quickActionsOf(server.commandEngine);
-  state.running++;
-  try {
-    return await run();
-  } finally {
-    server.commandEngine.pageChanged();
-    state.running--;
-    if (state.running === 0) {
-      for (const resolve of state.idle.splice(0)) {
-        resolve();
-      }
+  const engine = server.commandEngine;
+  const { runner, resource } = execution(engine);
+  return runner.run({ resource, timeoutMs: 180_000 }, async (operation) => {
+    operation.markActed();
+    try {
+      return await run();
+    } finally {
+      engine.pageChanged();
     }
-  }
+  });
 }
 
 export function quickActionsDone(engine: object): Promise<void> {
-  const state = quickActionsOf(engine);
-  return state.running === 0
-    ? Promise.resolve()
-    : new Promise((resolve) => state.idle.push(resolve));
+  const { runner, resource } = execution(engine);
+  return runner.run({ resource, access: "exclusive" }, async () => {});
 }

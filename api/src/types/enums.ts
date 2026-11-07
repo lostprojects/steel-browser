@@ -1,5 +1,3 @@
-import { BrowserServerOptions } from "./browser.js";
-
 export enum ScrapeFormat {
   HTML = "html",
   READABILITY = "readability",
@@ -16,8 +14,6 @@ export enum BrowserEventType {
   Response = "Response",
   Error = "Error",
   BrowserError = "BrowserError",
-  Recording = "Recording",
-  ScreencastFrame = "ScreencastFrame",
   BrowserInteraction = "BrowserInteraction",
   CDPCommand = "CDPCommand",
   CDPCommandResult = "CDPCommandResult",
@@ -27,6 +23,4 @@ export enum BrowserEventType {
 
 export enum EmitEvent {
   Log = "log",
-  PageId = "pageId",
-  Recording = "recording",
 }

@@ -1,5 +1,5 @@
 {
-  "name": "steel-browser",
+  "name": "toolstack",
   "version": "0.5.3",
   "private": true,
   "license": "Apache-2.0",
@@ -17,28 +17,23 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "@types/archiver": "^6.0.3",
     "concurrently": "^8.2.0",
     "lint-staged": "^16.4.0",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.3"
+    "husky": "^9.1.7"
   },
   "lint-staged": {
     "api/src/**/*.ts": "prettier --write",
     "ui/src/**/*.{ts,tsx,css}": "prettier --write"
   },
   "engines": {
-    "node": ">=22"
-  },
-  "dependencies": {
-    "@types/lodash-es": "^4.17.12",
-    "fastify": "^5.2.1",
-    "husky": "^9.1.7",
-    "lodash-es": "^4.17.21"
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "overrides": {
     "tar-fs": ">=3.1.1",
     "tar": "^7.5.22",
-    "basic-ftp": "^6.2.3"
+    "basic-ftp": "^6.2.3",
+    "readdir-glob": {
+      "minimatch": "^11.0.1"
+    }
   }
 }

@@ -1,13 +1,15 @@
+import { operations, type Operation } from "./operations.js";
 // Select a route by verified payload, recording first attempts separately from
 // retries. Identity cookies must never enter an anonymous HTTP probe.
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { load } from "cheerio";
 import type { SessionPool } from "./session-pool.js";
-import type { Agent } from "./proxy-manager.js";
-import { httpFetch } from "./http-fetch.js";
+import type { Agent } from "./proxy/service.js";
+import { httpFetch, HttpFetchError } from "./http-fetch.js";
 import { clearChallenge, challengeMarker } from "./challenge-service.js";
 import { randomUUID } from "node:crypto";
+import { readSharedStore } from "./shared-store.js";
 
 // Registry rows share routes.json with learned rungs and measured split policies.
 // Do not put credentials or a second copy of identity exit allocations here.
@@ -250,53 +252,34 @@ function fetchFailure(event: string, requestId: string, error: unknown, sessionI
   console.error(JSON.stringify({ event, requestId, sessionId, errorType, code, statusCode }));
 }
 
-// A cancelled await must not resume the ladder when its underlying operation
-// eventually completes. Keep late launches attached to this job for cleanup.
-class FetchJob {
-  readonly controller = new AbortController();
+// Session acquisition and late-launch cleanup are routing-specific. The shared
+// runner owns the deadline, cancellation signal and retry identity.
+class FetchResources {
   readonly active = new Set<string>();
   readonly pending = new Set<string>();
-  readonly deadline: number;
-  private readonly stopped: Promise<never>;
-  private rejectStopped!: (error: FetchStopped) => void;
-  private timer: NodeJS.Timeout;
   private releases = new Map<string, Promise<unknown>>();
   private finished = false;
-  error?: FetchStopped;
   constructor(
-    readonly id: string,
-    timeoutMs: number,
+    readonly operation: Operation<any>,
     private pool: SessionPool,
-  ) {
-    this.deadline = Date.now() + timeoutMs;
-    this.stopped = new Promise<never>((_resolve, reject) => {
-      this.rejectStopped = reject;
-    });
-    void this.stopped.catch(() => undefined);
-    this.timer = setTimeout(() => this.stop("fetch_timeout"), timeoutMs);
-    this.timer.unref();
+  ) {}
+  get id() {
+    return this.operation.id;
+  }
+  get controller() {
+    return this.operation.controller;
+  }
+  get error() {
+    return this.operation.error as FetchStopped | undefined;
   }
   check() {
-    if (!this.error && !this.finished && Date.now() >= this.deadline) this.stop("fetch_timeout");
-    if (this.error) throw this.error;
-    if (this.finished) throw new Error("Fetch job has finished");
+    this.operation.check();
   }
-  remaining(cap = Number.POSITIVE_INFINITY) {
-    this.check();
-    return Math.max(1, Math.min(cap, this.deadline - Date.now()));
+  remaining(cap = Infinity) {
+    return this.operation.remaining(cap);
   }
-  async run<T>(operation: () => Promise<T>): Promise<T> {
-    this.check();
-    const value = await Promise.race([operation(), this.stopped]);
-    this.check();
-    return value;
-  }
-  stop(reason: "fetch_timeout" | "fetch_cancelled") {
-    if (this.finished || this.error) return;
-    this.error = new FetchStopped(reason, this.id);
-    this.controller.abort(this.error);
-    this.rejectStopped(this.error);
-    this.cleanup(reason);
+  run<T>(work: () => Promise<T>) {
+    return this.operation.wait(work);
   }
   release(id: string, reason = "released") {
     const existing = this.releases.get(id);
@@ -316,11 +299,12 @@ class FetchJob {
     void work.catch(() => undefined);
     return work;
   }
-  cleanup(reason: string) {
-    for (const id of new Set([...this.active, ...this.pending])) {
-      if (this.active.has(id) || this.pool.sessions?.has(id))
-        void this.release(id, reason).catch(() => undefined);
-    }
+  async cleanup(reason: string) {
+    await Promise.allSettled(
+      [...new Set([...this.active, ...this.pending])]
+        .filter((id) => this.active.has(id) || this.pool.sessions?.has(id))
+        .map((id) => this.release(id, reason)),
+    );
   }
   async create(options: Parameters<SessionPool["create"]>[0], agent: Agent) {
     this.check();
@@ -348,7 +332,6 @@ class FetchJob {
   finish(retainedId?: string) {
     if (retainedId) this.active.delete(retainedId);
     this.finished = true;
-    clearTimeout(this.timer);
   }
 }
 
@@ -356,11 +339,7 @@ export class Routing {
   private entries: Record<string, Entry> = {};
   private ready: Promise<void>;
   private writes: Promise<unknown> = Promise.resolve();
-  private jobs = new Map<string, { fingerprint: string; job: FetchJob; promise: Promise<any> }>();
-  private stoppedJobs = new Map<
-    string,
-    { fingerprint?: string; error: FetchStopped; expires: number }
-  >();
+  private jobs = new Map<string, FetchResources>();
   constructor(
     private pool: SessionPool,
     private root: string,
@@ -399,18 +378,41 @@ export class Routing {
     this.writes = result.catch(() => undefined);
     await result;
   }
-  async table() {
+  async table(includeShared = true) {
     await this.ready;
-    return this.entries;
+    if (!includeShared) return this.entries;
+    const entries = { ...this.entries };
+    for (const [host, site] of Object.entries((await readSharedStore()).sites)) {
+      entries[host] = {
+        ...(entries[host] ?? { rung: site.startRung, expires: 0, split: false }),
+        ...site,
+      };
+    }
+    return entries;
   }
-  async resolve(siteOrUrl: string) {
-    await this.ready;
-    const entry = Object.entries(this.entries).find(([, value]) => value.site === siteOrUrl);
+  async resolve(siteOrUrl: string, includeShared = true) {
+    return this.resolveEntry(siteOrUrl, await this.table(includeShared));
+  }
+  async snapshot(includeShared = true) {
+    const entries = structuredClone(await this.table(includeShared));
+    const resolve = (selector: string) => this.resolveEntry(selector, entries);
+    return {
+      resolve,
+      registry: (identity?: string) =>
+        Object.entries(entries)
+          .filter(
+            ([, value]) => value?.site && (identity === undefined || value.identity === identity),
+          )
+          .map(([host]) => resolve(`https://${host}/`)),
+    };
+  }
+  private resolveEntry(siteOrUrl: string, entries: Record<string, Entry>) {
+    const entry = Object.entries(entries).find(([, value]) => value.site === siteOrUrl);
     const url = entry
-      ? entry[1].url ?? `https://${entry[0]}/`
+      ? (entry[1].url ?? `https://${entry[0]}/`)
       : /^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(siteOrUrl)
-      ? `https://${siteOrUrl}/`
-      : siteOrUrl;
+        ? `https://${siteOrUrl}/`
+        : siteOrUrl;
     let parsed: URL;
     try {
       parsed = new URL(url);
@@ -420,7 +422,7 @@ export class Routing {
     if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password)
       throw Object.assign(new Error("Invalid site URL"), { statusCode: 400 });
     const host = parsed.hostname;
-    const known = this.entries[host];
+    const known = entries[host];
     return {
       host,
       site: known?.site ?? host,
@@ -429,17 +431,12 @@ export class Routing {
       mode: known?.mode ?? ("agent" as const),
       country: known?.country ?? null,
       loginSite: known?.loginSite ?? null,
-      startRung: known && known.expires > Date.now() ? known.rung : known?.startRung ?? 1,
+      startRung: known && known.expires > Date.now() ? known.rung : (known?.startRung ?? 1),
       split: known?.split ?? false,
     };
   }
-  async registry() {
-    await this.ready;
-    return Promise.all(
-      Object.entries(this.entries)
-        .filter(([, value]) => value.site)
-        .map(([host]) => this.resolve(`https://${host}/`)),
-    );
+  async registry(includeShared = true) {
+    return (await this.snapshot(includeShared)).registry();
   }
   async sessionOptions(body: unknown) {
     if (!body || typeof body !== "object" || Array.isArray(body)) return body;
@@ -466,7 +463,7 @@ export class Routing {
       targetUrl: site.url,
       mode: site.mode,
       ...(site.identity ? { identity: site.identity } : {}),
-      ...(site.country ? { residential: { country: site.country } } : {}),
+      ...(site.country && !supplied.proxyProfile && !supplied.proxyLeaseId ? { residential: { country: site.country } } : {}),
       ...supplied,
       site: site.site,
     };
@@ -501,31 +498,22 @@ export class Routing {
       rung: startRung ?? current?.rung ?? 3,
       startRung: startRung ?? current?.startRung,
       ttlSeconds: ttlSeconds ?? current?.ttlSeconds,
-      expires: startRung === undefined ? current?.expires ?? 0 : 0,
+      expires: startRung === undefined ? (current?.expires ?? 0) : 0,
       split: split ?? current?.split ?? false,
     };
     await this.save();
   }
+  private requestKey(requestId: string, agent: Agent) {
+    return JSON.stringify(["fetch", this.root, agent.name, requestId]);
+  }
   cancel(requestId: string, agent: Agent) {
-    const key = `${agent.name}:${requestId}`;
-    const entry = this.jobs.get(key);
-    if (!entry) {
-      // A lost POST may arrive after its client's cancellation. Remember that
-      // request ID without exposing whether another agent is using the same ID.
-      this.stoppedJobs.set(key, {
-        error: new FetchStopped("fetch_cancelled", requestId),
-        expires: Date.now() + 600_000,
-      });
-      while (this.stoppedJobs.size > 512)
-        this.stoppedJobs.delete(this.stoppedJobs.keys().next().value!);
-      return { status: "not_running", requestId };
-    }
-    entry.job.stop("fetch_cancelled");
+    const key = this.requestKey(requestId, agent);
+    const job = this.jobs.get(key);
+    operations.cancel(key, new FetchStopped("fetch_cancelled", requestId));
     return {
-      status: "cancelled",
+      status: job ? "cancelled" : "not_running",
       requestId,
-      activeSessions: entry.job.active.size,
-      pendingSessions: entry.job.pending.size,
+      ...(job ? { activeSessions: job.active.size, pendingSessions: job.pending.size } : {}),
     };
   }
   async fetch(options: FetchOptions, agent: Agent) {
@@ -541,35 +529,31 @@ export class Routing {
       throw Object.assign(new Error("Fetch timeout must be 1000–300000 milliseconds"), {
         statusCode: 400,
       });
-    const key = `${agent.name}:${requestId}`;
-    const fingerprint = JSON.stringify(options);
-    for (const [id, entry] of this.stoppedJobs)
-      if (entry.expires <= Date.now()) this.stoppedJobs.delete(id);
-    const stopped = this.stoppedJobs.get(key);
-    const existing = this.jobs.get(key);
-    if (
-      (stopped?.fingerprint && stopped.fingerprint !== fingerprint) ||
-      (existing && existing.fingerprint !== fingerprint)
-    )
-      throw Object.assign(new Error("Fetch request ID reused with different arguments"), {
-        statusCode: 409,
-      });
-    if (stopped) throw stopped.error;
-    if (existing) return existing.promise;
-    const job = new FetchJob(requestId, timeoutMs, this.pool);
-    const promise = this.runFetch(options, agent, job).finally(() => {
-      job.finish();
-      this.jobs.delete(key);
-      if (job.error) {
-        this.stoppedJobs.set(key, { fingerprint, error: job.error, expires: Date.now() + 600_000 });
-        while (this.stoppedJobs.size > 512)
-          this.stoppedJobs.delete(this.stoppedJobs.keys().next().value!);
-      }
-    });
-    this.jobs.set(key, { fingerprint, job, promise });
-    return promise;
+    const key = this.requestKey(requestId, agent);
+    let job: FetchResources | undefined;
+    return operations.run<any>(
+      {
+        id: requestId,
+        key,
+        fingerprint: JSON.stringify({ ...options, requestId, timeoutMs }),
+        deadline: Date.now() + timeoutMs,
+        timeoutError: () => new FetchStopped("fetch_timeout", requestId),
+        cancelError: () => new FetchStopped("fetch_cancelled", requestId),
+        onStop: () => job?.cleanup(job.error?.reason ?? "fetch_cancelled"),
+      },
+      async (operation) => {
+        job = new FetchResources(operation, this.pool);
+        this.jobs.set(key, job);
+        try {
+          return await this.runFetch(options, agent, job);
+        } finally {
+          job.finish();
+          this.jobs.delete(key);
+        }
+      },
+    );
   }
-  private async runFetch(options: FetchOptions, agent: Agent, job: FetchJob) {
+  private async runFetch(options: FetchOptions, agent: Agent, job: FetchResources) {
     let retainedId: string | undefined;
     let normalizedSite: string | undefined;
     try {
@@ -591,25 +575,24 @@ export class Routing {
       const result = await job.run(() => this.fetchRoute(options, agent, job));
       retainedId = (result as { session?: { id: string } }).session?.id;
       if (!options.outcomeAttemptId)
-        await job.run(
-          async () =>
-            this.pool.outcomes?.result(
-              {
-                attemptId: job.id,
-                caller: options.caller ?? "unattributed",
-                site: spec.site,
-                backend: "steel",
-                outcome: result.status === "ok" ? "success" : "failure",
-                reason:
-                  result.status === "ok"
-                    ? "completed"
-                    : result.status === "challenge_required"
+        await job.run(async () =>
+          this.pool.outcomes?.result(
+            {
+              attemptId: job.id,
+              caller: options.caller ?? "unattributed",
+              site: spec.site,
+              backend: "steel",
+              outcome: result.status === "ok" ? "success" : "failure",
+              reason:
+                result.status === "ok"
+                  ? "completed"
+                  : result.status === "challenge_required"
                     ? "challenge_required"
                     : "payload_missing",
-                fallback: false,
-              },
-              agent.name,
-            ),
+              fallback: false,
+            },
+            agent.name,
+          ),
         );
       job.check();
       job.finish(retainedId);
@@ -637,11 +620,11 @@ export class Routing {
             agent.name,
           )
           .catch((reportError) => fetchFailure("fetch_outcome_failed", job.id, reportError));
-      job.cleanup(job.error?.reason ?? "fetch_failed");
+      await job.cleanup(job.error?.reason ?? "fetch_failed");
       throw job.error ?? error;
     }
   }
-  private async fetchRoute(options: FetchOptions, agent: Agent, job: FetchJob) {
+  private async fetchRoute(options: FetchOptions, agent: Agent, job: FetchResources) {
     job.check();
     const host = new URL(options.url).hostname;
     const route =
@@ -655,21 +638,21 @@ export class Routing {
       !(route === "annas" && /^annas-archive\.(pk|gd|gl)$/.test(host))
     )
       throw Object.assign(new Error("Route does not match host"), { statusCode: 400 });
-    const known = this.entries[host];
+    const known = (await this.table())[host];
     if (options.forceDirectFailure && !agent.admin)
       throw Object.assign(new Error("Admin key required for failure injection"), {
         statusCode: 403,
       });
-    const baseline = known?.startRung ?? (route ? initialRungs[route] ?? 3 : 1);
+    const baseline = known?.startRung ?? (route ? (initialRungs[route] ?? 3) : 1);
     const nextEntry = (rung: number): Entry => ({
-      ...known,
+      ...this.entries[host],
       rung: Math.max(rung, known?.startRung ?? 1),
       split: known?.split ?? false,
       expires: Date.now() + (known?.ttlSeconds ?? 604800) * 1000,
     });
     const start = options.identity
       ? 3
-      : options.startRung ?? (known && known.expires > Date.now() ? known.rung : baseline);
+      : (options.startRung ?? (known && known.expires > Date.now() ? known.rung : baseline));
     const attempts: any[] = [];
     for (let rung = start; rung <= (options.maxRung ?? 3); rung++) {
       job.check();
@@ -723,8 +706,11 @@ export class Routing {
               httpStatus: response.status,
             };
           }
-        } catch {
+        } catch (error) {
           job.check();
+          // Local saturation says nothing about the target's working route.
+          if (error instanceof HttpFetchError && ["busy", "capacity"].includes(error.code))
+            throw error;
           attempts.push({
             rung,
             pass: false,
@@ -761,16 +747,17 @@ export class Routing {
               error: "Session or exit unavailable",
               seconds: (Date.now() - began) / 1000,
             });
-            if ((error as any).statusCode === 429) throw error;
+            if ([429, 413].includes((error as any).statusCode)) throw error;
             if (attempt + 1 < maxAttempts) continue;
             break;
           }
+          const releaseAccess = await operations.access(session, "exclusive", job.operation);
           const before = session.info();
           let released = false;
           let retained = false;
           let retrying = false;
           try {
-            const page = await job.run(() => session.getPrimaryPage());
+            const page = await job.run(() => session.getPrimaryReadPage());
             session.lastNavigation = Date.now();
             try {
               await job.run(() =>
@@ -860,6 +847,7 @@ export class Routing {
             }
             retrying = attempt + 1 < maxAttempts;
           } finally {
+            releaseAccess();
             if (!released && !retained) {
               const cleanup = job.release(
                 session.id,

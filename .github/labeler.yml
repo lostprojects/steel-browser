@@ -1,4 +1,4 @@
-# GitHub Labeler Configuration for Steel Browser
+# GitHub Labeler Configuration for Toolstack
 # This file is used by the actions/labeler@v5 action in pr-checks.yml
 
 # Component labels based on file paths
@@ -13,7 +13,7 @@ ui:
 documentation:
 - changed-files:
   - any-glob-to-any-file: 
-    - 'upstream-docs/**/*'
+    - 'ui/README.md'
     - '*.md'
   
 plugin-system:
@@ -67,4 +67,4 @@ testing:
     - '**/*.test.js'
     - '**/*.spec.ts'
     - '**/*.spec.js'
-    - 'tsconfig.test.json'
+    - '**/tsconfig.test.json'

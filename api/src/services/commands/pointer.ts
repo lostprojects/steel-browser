@@ -1,4 +1,4 @@
-import type { CDPSession } from "puppeteer-core";
+import type { ControlSession } from "../browser-control.js";
 import { axString, normalizeName } from "./ax.js";
 import { CommandError, withEffect } from "./errors.js";
 import type { HeldKey, PressedButton } from "./tabs.js";
@@ -180,7 +180,7 @@ export async function actionPoint(
 
 async function placement(
   element: Element,
-  owners: Array<{ session: CDPSession; owner: number }>,
+  owners: Array<{ session: ControlSession; owner: number }>,
 ): Promise<string> {
   const boxes = await Promise.all(
     [...owners, { session: element.session, owner: element.backendNodeId }].map(
@@ -240,7 +240,7 @@ export async function inPage(element: Element, points: Point[]): Promise<Point[]
 
 async function frameBoxes(
   element: Element,
-  owners: Array<{ session: CDPSession; owner: number }>,
+  owners: Array<{ session: ControlSession; owner: number }>,
 ): Promise<FrameBox[]> {
   const frames: FrameBox[] = [];
   for (const { session, owner } of owners) {
@@ -281,7 +281,7 @@ function throughFrames(frames: FrameBox[], point: Point): Point[] {
 
 async function checkPoint(
   element: Element,
-  owners: Array<{ session: CDPSession; owner: number }>,
+  owners: Array<{ session: ControlSession; owner: number }>,
   point: Point,
   scrolled: Point,
   covered: boolean,
@@ -328,7 +328,11 @@ async function checkPoint(
   }
 }
 
-async function ownerCovered(session: CDPSession, owner: number, at: Point): Promise<string | null> {
+async function ownerCovered(
+  session: ControlSession,
+  owner: number,
+  at: Point,
+): Promise<string | null> {
   const { cssLayoutViewport } = await session.send("Page.getLayoutMetrics");
   const hit = await session
     .send("DOM.getNodeForLocation", {
@@ -490,7 +494,7 @@ async function framedIn(element: Element, frameId: string): Promise<boolean> {
   return inner !== undefined && find(inner, frameId) !== undefined;
 }
 
-async function describe(session: CDPSession, backendNodeId: number): Promise<string> {
+async function describe(session: ControlSession, backendNodeId: number): Promise<string> {
   const { node } = await session
     .send("DOM.describeNode", { backendNodeId })
     .catch(() => ({ node: null }));
@@ -524,7 +528,7 @@ async function describe(session: CDPSession, backendNodeId: number): Promise<str
 
 export async function click(
   context: InputContext,
-  session: CDPSession,
+  session: ControlSession,
   point: Point,
   confirm: () => Promise<void>,
   clickCount = 1,
@@ -562,7 +566,7 @@ export async function click(
 
 export async function hover(
   context: InputContext,
-  session: CDPSession,
+  session: ControlSession,
   point: Point,
 ): Promise<boolean> {
   context.touch();
@@ -571,7 +575,7 @@ export async function hover(
 
 export async function drag(
   context: InputContext,
-  session: CDPSession,
+  session: ControlSession,
   from: Point,
   to: Point,
   confirm: () => Promise<void>,
@@ -689,7 +693,7 @@ function letGo(context: InputContext) {
 
 export async function input(
   context: InputContext,
-  session: CDPSession,
+  session: ControlSession,
   params: MouseParams,
   effectOnFailure: "none" | "unknown",
 ): Promise<boolean> {
@@ -711,7 +715,7 @@ export async function input(
   try {
     return await sendOrDialog(
       context,
-      session.send("Input.dispatchMouseEvent", modifiers ? { ...params, modifiers } : params),
+      session.input.mouse(modifiers ? { ...params, modifiers } : params),
       () =>
         new CommandError(
           "timeout",

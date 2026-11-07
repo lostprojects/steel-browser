@@ -25,9 +25,7 @@ const plugin: FastifyPluginAsync<BrowserSocketOptions> = async (server, options)
     }
     try {
       const url = new URL(request.url ?? "/", "http://localhost");
-      const match = url.pathname.match(
-        /^\/v1\/sessions\/([^/]+)\/(cdp|cast|logs|recording|pageId|vnc)$/,
-      );
+      const match = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/(cdp|cast|logs|vnc)$/);
       const session = server.sessionPool.get(
         match?.[1] ?? url.searchParams.get("sessionId") ?? undefined,
       );

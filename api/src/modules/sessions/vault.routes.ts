@@ -1,15 +1,15 @@
+import { browserApplication } from "../../services/browser-application.js";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import path from "node:path";
 import { vault, protect } from "../../services/vault.js";
 import { observeMemberRead } from "../../services/login-observation.js";
-import { LoginService } from "../../services/login.js";
 import { agentFor } from "../../utils/api-key.js";
 import { selectedSession } from "./sessions.controller.js";
-import { idempotent } from "../../utils/idempotency.js";
+import { idempotent, retryKey } from "../../utils/idempotency.js";
 
 export default async function routes(server: FastifyInstance) {
-  const login = new LoginService(path.dirname(server.sessionPool.profilesRoot));
+  const app = browserApplication(server.sessionPool);
+  const login = app.login;
   const stopDaily = login.startDailyChecks(server.sessionPool);
   server.addHook("onClose", async () => stopDaily());
   server.get("/vault", (req) => vault.list(agentFor(req.raw)!));
@@ -18,6 +18,9 @@ export default async function routes(server: FastifyInstance) {
   );
   server.put<{ Params: { name: string } }>("/vault/:name", (req) =>
     vault.put(req.params.name, req.body, agentFor(req.raw)!),
+  );
+  server.delete<{ Params: { name: string } }>("/vault/:name", (req) =>
+    vault.delete(req.params.name, agentFor(req.raw)!),
   );
   server.get("/login-checks", async (req) => {
     if (!agentFor(req.raw)?.admin)
@@ -74,15 +77,13 @@ export default async function routes(server: FastifyInstance) {
     return idempotent(req, () => observeMemberRead(session, site));
   });
   server.post("/sessions/:sessionId/login", async (req) => {
-    const { site, current } = z
-      .object({
-        site: z.enum(["ancestry", "newspapers", "fold3", "mary-ferrell", "hathitrust-google"]),
-        current: z.boolean().default(false),
-      })
-      .strict()
-      .parse(req.body);
-    return idempotent(req, () =>
-      login.login(selectedSession(server, req), site, agentFor(req.raw)!, current),
+    return app.signIn(
+      {
+        agent: agentFor(req.raw)!,
+        idempotencyKey: retryKey(req.headers),
+      },
+      (req.params as { sessionId: string }).sessionId,
+      req.body,
     );
   });
   server.get("/sessions/:sessionId/login/code", async (req) => ({

@@ -46,7 +46,14 @@ function browserPage(
   evaluate: () => Promise<string> = async () => "PageAgent/1.0",
 ) {
   return {
-    cookies: async () => cookies,
+    cookies: async (url: string) =>
+      cookies.map((cookie) => ({
+        ...cookie,
+        domain: new URL(url).hostname,
+        path: "/",
+        secure: false,
+        expires: -1,
+      })),
     evaluate,
     browser: () => ({ userAgent: async () => "BrowserAgent/1.0" }),
   } as never;
@@ -85,8 +92,8 @@ describe("fetchPdf", () => {
     expect(result.headers["content-type"]).toBe("application/pdf");
     expect(proxy.tunnels).toEqual([target.host]);
     expect(target.seen).toHaveLength(1);
+    expect(target.seen[0].cookie?.split(/;\s*/).sort()).toEqual(["a=1", "b=2"]);
     expect(target.seen[0]).toMatchObject({
-      cookie: "a=1; b=2",
       "user-agent": "PageAgent/1.0",
       referer: `${target.origin}/`,
     });

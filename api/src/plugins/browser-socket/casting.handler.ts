@@ -1,11 +1,11 @@
-import { IncomingMessage } from "http";
-import puppeteer, { Browser, CDPSession, Page } from "puppeteer-core";
-import { Duplex } from "stream";
-import WebSocket, { Server } from "ws";
+import type { IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
+import puppeteer, { type Browser, type CDPSession, type Page, type Target } from "puppeteer-core";
+import WebSocket, { type RawData, type Server } from "ws";
 
-import { env } from "../../env.js";
-import { BrowserSession } from "../../services/browser-session.js";
-import {
+import type { BrowserSession } from "../../services/browser-session.js";
+import { extractTargetId } from "../../services/cdp/instrumentation/utils.js";
+import type {
   CloseTabEvent,
   GetSelectedTextEvent,
   KeyEvent,
@@ -14,7 +14,16 @@ import {
   PageInfo,
 } from "../../types/casting.js";
 import { getPageFavicon, getPageTitle, navigatePage } from "../../utils/casting.js";
-import { CastFormat, subscribeToScreencast } from "./page-screencast.js";
+import { type CastFormat, subscribeToScreencast } from "./page-screencast.js";
+
+type CastEvent = MouseEvent | KeyEvent | NavigationEvent | CloseTabEvent | GetSelectedTextEvent;
+
+function findTargetPage(pages: Page[], pageId: string | null, pageIndex: string | null) {
+  if (pageId) return pages.find((page) => extractTargetId(page.target()) === pageId);
+  if (pageIndex === null || !/^[0-9]+$/.test(pageIndex)) return undefined;
+  const index = Number(pageIndex);
+  return Number.isSafeInteger(index) ? pages[index] : undefined;
+}
 
 export async function handleCastSession(
   request: IncomingMessage,
@@ -24,32 +33,20 @@ export async function handleCastSession(
   browserSession: BrowserSession,
   params: Record<string, string> | undefined,
 ): Promise<void> {
-  const id = request.url?.split("/sessions/")[1].split("/cast")[0];
-
-  if (!id) {
-    console.error("Cast Session ID not found");
-    socket.destroy();
-    return;
-  }
-
+  const url = new URL(request.url ?? "/", "http://localhost");
+  const id = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/cast$/)?.[1];
   const session = browserSession.info();
-  if (!session || session.id !== id) {
-    console.error(`Cast Session ${id} not found`);
+  if (!id || session.id !== id) {
+    console.error("Cast session not found");
     socket.destroy();
     return;
   }
 
-  const queryParams = new URLSearchParams(request.url?.split("?")[1] || "");
-  const requestedPageId = params?.pageId || queryParams.get("pageId") || null;
-  const requestedPageIndex = params?.pageIndex || queryParams.get("pageIndex") || null;
-
+  const requestedPageId = params?.pageId || url.searchParams.get("pageId") || null;
+  const requestedPageIndex = params?.pageIndex || url.searchParams.get("pageIndex") || null;
   const tabDiscoveryMode =
-    queryParams.get("tabInfo") === "true" || (!requestedPageId && !requestedPageIndex);
-
-  const isMobile = false;
-  const defaultDimensions = isMobile ? { width: 508, height: 1074 } : { width: 1920, height: 1080 };
-  const { height, width } =
-    (session.dimensions as { width: number; height: number }) ?? defaultDimensions;
+    url.searchParams.get("tabInfo") === "true" || (!requestedPageId && !requestedPageIndex);
+  const viewport = { ...session.dimensions, isMobile: false };
 
   wss.handleUpgrade(request, socket, head, async (ws) => {
     let browser: Browser | null = null;
@@ -57,404 +54,267 @@ export async function handleCastSession(
     let targetClient: CDPSession | null = null;
     let targetPageId: string | null = null;
     let unsubscribeScreencast: (() => void) | null = null;
-
+    let heartbeatInterval: NodeJS.Timeout | undefined;
+    let disposed = false;
+    let tabListVersion = 0;
     const activePages = new Map<string, Page>();
+    const pendingPages = new Set<string>();
 
-    let heartbeatInterval: NodeJS.Timeout | null = null;
+    const isActive = () => !disposed && ws.readyState === WebSocket.OPEN;
+    const send = (message: object) => {
+      if (isActive()) ws.send(JSON.stringify(message));
+    };
 
-    const handleSessionCleanup = () => {
-      if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
-        heartbeatInterval = null;
+    const cleanup = () => {
+      disposed = true;
+      tabListVersion++;
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = undefined;
+      activePages.clear();
+      pendingPages.clear();
+      // Keep an error listener until the socket closes, including failed setup.
+      if (ws.readyState === WebSocket.CLOSED) {
+        ws.off("close", onClose);
+        ws.off("error", onSocketError);
       }
+      ws.off("message", onMessage);
 
-      if (unsubscribeScreencast) {
-        unsubscribeScreencast();
-        unsubscribeScreencast = null;
-      }
+      // Clear ownership before releasing anything. Setup can finish after a close;
+      // a later cleanup must still release resources acquired in that interval.
+      const unsubscribe = unsubscribeScreencast;
+      const client = targetClient;
+      const connection = browser;
+      unsubscribeScreencast = null;
+      targetClient = null;
+      targetPage = null;
+      browser = null;
 
-      if (targetPage) {
-        targetPage.removeAllListeners("framenavigated");
-      }
-
-      if (targetClient) {
+      if (unsubscribe) {
         try {
-          targetClient.detach().catch((err) => {
-            // Ignore errors about closed targets
-            if (!err.message?.includes("Target closed")) {
-              console.error("Error detaching client:", err);
-            }
-          });
-
-          targetClient = null;
-        } catch (err) {
-          console.error("Error during screencast cleanup:", err);
+          unsubscribe();
+        } catch (error) {
+          console.error("Error releasing screencast:", error);
         }
       }
-
-      // Disconnect browser
-      if (browser) {
-        try {
-          browser.disconnect().catch((err) => {
-            console.error("Error disconnecting browser:", err);
-          });
-          browser = null;
-        } catch (err) {
-          console.error("Error during browser disconnect:", err);
-        }
+      if (client) {
+        void client.detach().catch((error: unknown) => {
+          if (!(error instanceof Error && error.message.includes("Target closed"))) {
+            console.error("Error detaching cast client:", error);
+          }
+        });
       }
-
-      // Force garbage collection if available (Node.js with --expose-gc flag)
-      if (global.gc) {
-        try {
-          global.gc();
-        } catch (err) {
-          console.error("Error during garbage collection:", err);
-        }
+      if (connection) {
+        connection.off("disconnected", onDisconnected);
+        connection.off("targetcreated", onTargetCreated);
+        connection.off("targetdestroyed", onTargetDestroyed);
+        void connection.disconnect().catch((error: unknown) => {
+          console.error("Error disconnecting cast browser:", error);
+        });
       }
     };
 
-    let tabListVersion = 0;
+    const stopIfClosed = () => {
+      if (isActive()) return false;
+      cleanup();
+      return true;
+    };
+
+    const onClose = () => {
+      cleanup();
+      ws.off("error", onSocketError);
+    };
+
+    const onSocketError = (error: Error) => {
+      console.error("Cast WebSocket error:", error);
+      cleanup();
+      ws.close();
+    };
+
+    const onDisconnected = () => {
+      cleanup();
+      ws.close();
+    };
 
     const sendTabList = async () => {
+      if (!isActive()) return;
+      const version = ++tabListVersion;
+      const tabs: PageInfo[] = [];
+      for (const [pageId, page] of activePages) {
+        const [title, favicon] = await Promise.all([getPageTitle(page), getPageFavicon(page)]);
+        if (!isActive() || version !== tabListVersion) return;
+        tabs.push({ id: pageId, url: page.url(), title, favicon });
+      }
+      send({ type: "tabList", tabs, firstTabId: tabs[0]?.id ?? null });
+    };
+
+    const onTargetCreated = async (target: Target) => {
+      if (!isActive() || target.type() !== "page") return;
+      let pendingPageId: string | undefined;
       try {
-        if (ws.readyState !== WebSocket.OPEN || !tabDiscoveryMode) return;
-        const version = ++tabListVersion;
-
-        const tabList: PageInfo[] = [];
-
-        for (const [pageId, page] of activePages.entries()) {
-          tabList.push({
-            id: pageId,
-            url: page.url(),
-            title: await getPageTitle(page),
-            favicon: await getPageFavicon(page),
-          });
-        }
-
-        if (version !== tabListVersion) return;
-
-        ws.send(
-          JSON.stringify({
-            type: "tabList",
-            tabs: tabList,
-            firstTabId: tabList.length > 0 ? tabList[0].id : null,
-          }),
-        );
+        const pageId = extractTargetId(target);
+        if (activePages.has(pageId) || pendingPages.has(pageId)) return;
+        pendingPageId = pageId;
+        pendingPages.add(pageId);
+        const page = await target.asPage();
+        // A target can close before Puppeteer finishes resolving its page.
+        if (!isActive() || !pendingPages.delete(pageId)) return;
+        activePages.set(pageId, page);
+        await sendTabList();
       } catch (error) {
-        console.error("Error sending tab list:", error);
+        if (isActive()) console.error("Error handling new cast target:", error);
+      } finally {
+        if (pendingPageId !== undefined) pendingPages.delete(pendingPageId);
       }
     };
 
-    const findTargetPage = async (
-      pages: Page[],
-    ): Promise<{ page: Page; pageId: string } | null> => {
-      if (tabDiscoveryMode) return null; // No target page in tab discovery mode
-
-      if (requestedPageId) {
-        for (const page of pages) {
-          try {
-            //@ts-expect-error
-            const pageId = page.target()._targetId;
-            if (pageId === requestedPageId) {
-              return { page, pageId };
-            }
-          } catch (err) {
-            console.error("Error accessing page target ID:", err);
+    const onTargetDestroyed = async (target: Target) => {
+      if (!isActive() || target.type() !== "page") return;
+      try {
+        const pageId = extractTargetId(target);
+        pendingPages.delete(pageId);
+        if (tabDiscoveryMode) {
+          if (activePages.delete(pageId)) {
+            send({ type: "tabClosed", pageId });
+            await sendTabList();
           }
+        } else if (pageId === targetPageId) {
+          send({ type: "targetClosed", pageId });
+          cleanup();
+          ws.close();
         }
-      } else if (requestedPageIndex) {
-        const index = parseInt(requestedPageIndex, 10);
-        if (index >= 0 && index < pages.length) {
-          const page = pages[index];
-          //@ts-expect-error
-          const pageId = page.target()._targetId;
-          return { page, pageId };
-        }
+      } catch (error) {
+        console.error("Error handling destroyed cast target:", error);
       }
-
-      return null;
     };
+
+    const onMessage = async (message: RawData) => {
+      if (!isActive() || !targetClient || !targetPage) return;
+      const client = targetClient;
+      const page = targetPage;
+      try {
+        const data: CastEvent = JSON.parse(message.toString());
+        switch (data.type) {
+          case "mouseEvent": {
+            const { event } = data;
+            await client.send("Input.dispatchMouseEvent", {
+              type: event.type,
+              x: event.x,
+              y: event.y,
+              button: event.button,
+              buttons: event.button === "none" ? 0 : 1,
+              clickCount: event.clickCount || 1,
+              modifiers: event.modifiers || 0,
+              deltaX: event.deltaX,
+              deltaY: event.deltaY,
+            });
+            break;
+          }
+          case "keyEvent": {
+            const { event } = data;
+            await client.send("Input.dispatchKeyEvent", {
+              type: event.type,
+              text: event.text,
+              unmodifiedText: event.text?.toLowerCase(),
+              code: event.code,
+              key: event.key,
+              windowsVirtualKeyCode: event.keyCode,
+              nativeVirtualKeyCode: event.keyCode,
+              modifiers: event.modifiers || 0,
+              autoRepeat: false,
+              isKeypad: false,
+              isSystemKey: false,
+            });
+            break;
+          }
+          case "navigation":
+            await navigatePage(data.event, page);
+            break;
+          case "closeTab":
+            await page.close();
+            break;
+          case "getSelectedText": {
+            try {
+              const text = await page.evaluate(() => window.getSelection()?.toString() ?? "");
+              send({ type: "selectedTextResponse", pageId: data.pageId, text });
+            } catch (error) {
+              console.error("Failed to get selected text:", error);
+              send({
+                type: "selectedTextResponse",
+                pageId: data.pageId,
+                text: "",
+                error: error instanceof Error ? error.message : "Unknown error",
+              });
+            }
+            break;
+          }
+          default:
+            console.warn("Unknown cast event type");
+        }
+      } catch (error) {
+        console.error("Error handling cast WebSocket message:", error);
+      }
+    };
+
+    // Observe disconnects before the first asynchronous setup step in either mode.
+    ws.once("close", onClose);
+    ws.on("error", onSocketError);
 
     try {
-      browser = await puppeteer.connect({
-        browserWSEndpoint: browserSession.getEndpoint(),
-      });
-
-      if (!browser) {
-        console.error("Failed to connect to browser");
-        socket.destroy();
-        return;
-      }
-
-      browser.once("disconnected", () => {
-        if (ws.readyState === WebSocket.OPEN) ws.close();
-      });
+      if (stopIfClosed()) return;
+      browser = await puppeteer.connect({ browserWSEndpoint: browserSession.getEndpoint() });
+      if (stopIfClosed()) return;
+      browser.once("disconnected", onDisconnected);
 
       const pages = await browser.pages();
+      if (stopIfClosed()) return;
 
       if (tabDiscoveryMode) {
-        for (const page of pages) {
-          //@ts-expect-error
-          const pageId = page.target()._targetId;
-          activePages.set(pageId, page);
-        }
-
-        // Initial tab list
+        for (const page of pages) activePages.set(extractTargetId(page.target()), page);
+        browser.on("targetcreated", onTargetCreated);
+        browser.on("targetdestroyed", onTargetDestroyed);
         await sendTabList();
-
-        // Setup page creation/deletion tracking
-        browser.on("targetcreated", async (target) => {
-          if (target.type() === "page") {
-            try {
-              const page = await target.asPage();
-              //@ts-expect-error
-              const pageId = target._targetId;
-              activePages.set(pageId, page);
-              await sendTabList();
-            } catch (err) {
-              console.error("Error handling new target:", err);
-            }
-          }
-        });
-
-        browser.on("targetdestroyed", async (target) => {
-          if (target.type() === "page") {
-            try {
-              //@ts-expect-error
-              const pageId = target._targetId;
-              if (activePages.has(pageId)) {
-                activePages.delete(pageId);
-
-                if (ws.readyState === WebSocket.OPEN) {
-                  ws.send(
-                    JSON.stringify({
-                      type: "tabClosed",
-                      pageId,
-                    }),
-                  );
-
-                  await sendTabList();
-                }
-              }
-            } catch (err) {
-              console.error("Error handling destroyed target:", err);
-            }
-          }
-        });
-
-        // Setup heartbeat to detect dead connections
-        heartbeatInterval = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            try {
-              ws.ping();
-            } catch (err) {
-              console.error("Error sending ping:", err);
-              handleSessionCleanup();
-            }
-          } else {
-            handleSessionCleanup();
-          }
-        }, 30000);
-
-        ws.on("close", () => {
-          handleSessionCleanup();
-        });
-
-        ws.on("error", (err) => {
-          console.error("Tab discovery WebSocket error:", err);
-          handleSessionCleanup();
-        });
-
-        return;
       } else {
-        const targetResult = await findTargetPage(pages);
-
-        if (!targetResult) {
-          console.error(
-            `Target page not found for ${
-              requestedPageId ? `pageId=${requestedPageId}` : `pageIndex=${requestedPageIndex}`
-            }`,
-          );
-          handleSessionCleanup();
+        targetPage = findTargetPage(pages, requestedPageId, requestedPageIndex) ?? null;
+        if (!targetPage) {
+          console.error("Requested cast page not found");
+          cleanup();
           socket.destroy();
           return;
         }
-
-        targetPage = targetResult.page;
-        targetPageId = targetResult.pageId;
+        targetPageId = extractTargetId(targetPage.target());
+        browser.on("targetdestroyed", onTargetDestroyed);
 
         await targetPage.bringToFront();
-
+        if (stopIfClosed()) return;
         targetClient = await targetPage.target().createCDPSession();
+        if (stopIfClosed()) return;
 
-        ws.on("message", async (message) => {
-          try {
-            const data:
-              | MouseEvent
-              | KeyEvent
-              | NavigationEvent
-              | CloseTabEvent
-              | GetSelectedTextEvent = JSON.parse(message.toString());
-            const { type } = data;
-
-            if (!targetClient || !targetPage) {
-              console.error("No target page or client available for input handling");
-              return;
-            }
-
-            switch (type) {
-              case "mouseEvent": {
-                const { event } = data as MouseEvent;
-                await targetClient.send("Input.dispatchMouseEvent", {
-                  type: event.type,
-                  x: event.x,
-                  y: event.y,
-                  button: event.button,
-                  buttons: event.button === "none" ? 0 : 1,
-                  clickCount: event.clickCount || 1,
-                  modifiers: event.modifiers || 0,
-                  deltaX: event.deltaX,
-                  deltaY: event.deltaY,
-                });
-                break;
-              }
-              case "keyEvent": {
-                const { event } = data as KeyEvent;
-                await targetClient.send("Input.dispatchKeyEvent", {
-                  type: event.type,
-                  text: event.text,
-                  unmodifiedText: event.text ? event.text.toLowerCase() : undefined,
-                  code: event.code,
-                  key: event.key,
-                  windowsVirtualKeyCode: event.keyCode,
-                  nativeVirtualKeyCode: event.keyCode,
-                  modifiers: event.modifiers || 0,
-                  autoRepeat: false,
-                  isKeypad: false,
-                  isSystemKey: false,
-                });
-                break;
-              }
-              case "navigation": {
-                const { event } = data as NavigationEvent;
-                await navigatePage(event, targetPage);
-                break;
-              }
-              case "closeTab": {
-                const { pageId } = data as CloseTabEvent;
-                await targetPage?.close();
-                if (activePages.has(pageId)) {
-                  activePages.delete(pageId);
-                }
-                break;
-              }
-              case "getSelectedText": {
-                try {
-                  const selectedText = await targetPage.evaluate(() => {
-                    const selection = window.getSelection();
-                    return selection ? selection.toString() : "";
-                  });
-
-                  // Send the selected text back to the client
-                  ws.send(
-                    JSON.stringify({
-                      type: "selectedTextResponse",
-                      pageId: (data as GetSelectedTextEvent).pageId,
-                      text: selectedText,
-                    }),
-                  );
-                } catch (error) {
-                  console.error("Failed to get selected text:", error);
-                  ws.send(
-                    JSON.stringify({
-                      type: "selectedTextResponse",
-                      pageId: (data as GetSelectedTextEvent).pageId,
-                      text: "",
-                      error: error instanceof Error ? error.message : "Unknown error",
-                    }),
-                  );
-                }
-                break;
-              }
-
-              default:
-                console.warn("Unknown event type:", type);
-            }
-          } catch (err) {
-            console.error("Error handling WebSocket message:", err);
-          }
-        });
-
-        const format: CastFormat = queryParams.get("format") === "binary" ? "binary" : "json";
+        const format: CastFormat = url.searchParams.get("format") === "binary" ? "binary" : "json";
         unsubscribeScreencast = await subscribeToScreencast(
           targetPageId,
-          { width, height, isMobile },
+          viewport,
           ws,
           format,
           targetPage,
         );
-
-        if (ws.readyState !== WebSocket.OPEN) {
-          handleSessionCleanup();
-          return;
-        }
-
-        // Cleanup when target is destroyed
-        browser.on("targetdestroyed", async (target) => {
-          if (target.type() === "page") {
-            try {
-              //@ts-expect-error
-              const pageId = target._targetId;
-
-              if (pageId === targetPageId) {
-                if (ws.readyState === WebSocket.OPEN) {
-                  ws.send(
-                    JSON.stringify({
-                      type: "targetClosed",
-                      pageId: targetPageId,
-                    }),
-                  );
-                }
-
-                // Cleanup and close connection
-                handleSessionCleanup();
-                ws.close();
-              }
-            } catch (err) {
-              console.error("Error handling destroyed target:", err);
-            }
-          }
-        });
-
-        // Setup heartbeat to detect dead connections
-        heartbeatInterval = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            try {
-              ws.ping();
-            } catch (err) {
-              console.error("Error sending ping:", err);
-              handleSessionCleanup();
-            }
-          } else {
-            handleSessionCleanup();
-          }
-        }, 30000);
-
-        // Cleanup on WebSocket closure
-        ws.on("close", () => {
-          handleSessionCleanup();
-        });
-
-        // Handle errors
-        ws.on("error", (err) => {
-          console.error("Cast WebSocket error:", err);
-          handleSessionCleanup();
-        });
+        if (stopIfClosed()) return;
+        ws.on("message", onMessage);
       }
-    } catch (err) {
-      console.error("Error in cast session:", err);
-      handleSessionCleanup();
+
+      if (stopIfClosed()) return;
+      heartbeatInterval = setInterval(() => {
+        if (stopIfClosed()) return;
+        try {
+          ws.ping();
+        } catch (error) {
+          console.error("Error sending cast ping:", error);
+          cleanup();
+          ws.close();
+        }
+      }, 30_000);
+    } catch (error) {
+      if (isActive()) console.error("Error in cast session:", error);
+      cleanup();
       socket.destroy();
     }
   });

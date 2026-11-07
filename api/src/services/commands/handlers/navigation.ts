@@ -1,9 +1,10 @@
-import type { Page, Protocol } from "puppeteer-core";
+import type { Protocol } from "devtools-protocol";
+import type { PageRead } from "../../browser-control.js";
 import type { Command } from "../commands.js";
 import { checkUrl } from "../policy.js";
 import type { CommandResult } from "../records.js";
 import { errorInfo, navigationError } from "../results.js";
-import { clientOf, type Tab } from "../tabs.js";
+import type { Tab } from "../tabs.js";
 import {
   crashedTab,
   dialogNote,
@@ -49,7 +50,7 @@ export async function history(
 ): Promise<CommandResult> {
   const tab = tabFor(ctx, tabId);
   const page = await tab.navigable();
-  const session = clientOf(page);
+  const session = page.client;
   const { currentIndex, entries } = await historyOf(ctx, page);
   const entry = entries[currentIndex + delta];
   if (!entry) {
@@ -103,12 +104,12 @@ export async function reload(ctx: Context, tabId: string | undefined): Promise<C
 
 async function historyOf(
   ctx: Context,
-  page: Page,
+  page: PageRead,
 ): Promise<Protocol.Page.GetNavigationHistoryResponse> {
   const until = ctx.now() + SWITCH_WAIT_MS;
   for (;;) {
     try {
-      return await clientOf(page).send("Page.getNavigationHistory");
+      return await page.client.send("Page.getNavigationHistory");
     } catch (error) {
       if (page.isClosed() || ending(ctx) || ctx.now() >= until) {
         throw error;

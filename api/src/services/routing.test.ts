@@ -56,7 +56,7 @@ describe("route payloads", () => {
             id: options.mode,
             status: "live",
             info: () => info,
-            getPrimaryPage: async () => ({
+            getPrimaryReadPage: async () => ({
               goto: async () => {},
               url: () => "https://newspapers.lib.utah.edu/search",
               evaluate: async () =>

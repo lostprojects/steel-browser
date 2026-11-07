@@ -2,7 +2,7 @@ import { useRef, useState, type FormEvent } from "react";
 import { createSession } from "../api";
 import { KeyChip } from "./key-chip";
 
-export function NewSessionButton({ onStarted }: { onStarted: () => void }) {
+export function NewSessionButton({ onStarted }: { onStarted: (id: string) => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +22,9 @@ export function NewSessionButton({ onStarted }: { onStarted: () => void }) {
     setPending(true);
     setError(null);
     try {
-      await createSession({
+      const session = await createSession({
+        mode: data.get("mode") === "quiet" ? "quiet" : "agent",
+        residential: text("country") ? { country: text("country")! } : undefined,
         dimensions: width && height ? { width: Number(width), height: Number(height) } : undefined,
         identity: text("identity"),
         proxyUrl: text("proxyUrl"),
@@ -30,7 +32,7 @@ export function NewSessionButton({ onStarted }: { onStarted: () => void }) {
       });
       dialog.current?.close();
       form.reset();
-      onStarted();
+      onStarted(session.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -69,6 +71,27 @@ export function NewSessionButton({ onStarted }: { onStarted: () => void }) {
             </p>
           </div>
           <div className="dialog-body">
+            <label className="field">
+              <span>Browser mode</span>
+              <select className="input" name="mode" defaultValue="agent">
+                <option value="agent">Agent</option>
+                <option value="quiet">Quiet</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Residential country</span>
+              <input
+                className="input"
+                name="country"
+                placeholder="Direct connection"
+                pattern="[A-Z]{2}"
+                maxLength={2}
+                autoComplete="off"
+              />
+              <p className="field-hint">
+                Enter a two-letter code such as US to use a managed residential connection.
+              </p>
+            </label>
             <div className="field" role="group" aria-labelledby="viewport-label">
               <span id="viewport-label">Viewport</span>
               <div className="viewport-inputs">

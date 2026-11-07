@@ -1,12 +1,18 @@
+import { browserApplication, type ApplicationContext } from "../../services/browser-application.js";
 import { identityVault } from "../../services/login.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { selectedSession } from "./sessions.controller.js";
 import { handleScrape, handleScreenshot, handlePDF } from "../actions/actions.controller.js";
 import { quickAction } from "../commands/commands.guard.js";
 import { agentFor } from "../../utils/api-key.js";
-import { idempotent } from "../../utils/idempotency.js";
+import { idempotent, retryKey } from "../../utils/idempotency.js";
 
 export default async function routes(server: FastifyInstance) {
+  const app = browserApplication(server.sessionPool);
+  const context = (req: FastifyRequest): ApplicationContext => ({
+    agent: agentFor(req.raw)!,
+    idempotencyKey: retryKey(req.headers),
+  });
   const access = (req: FastifyRequest, id: string) => {
     const agent = agentFor(req.raw)!;
     if (!agent.admin && server.sessionPool.owner(id)?.name !== agent.name)
@@ -39,19 +45,8 @@ export default async function routes(server: FastifyInstance) {
       .header("referrer-policy", "no-referrer")
       .view("session-vnc.ejs", { wsPath: `/v1/sessions/${session.id}/vnc` });
   });
-  server.post("/sessions", async (req) =>
-    idempotent(req, async () =>
-      (await server.sessionPool.create(req.body ?? {}, agentFor(req.raw))).info(),
-    ),
-  );
-  server.get("/sessions", async (req) => {
-    const agent = agentFor(req.raw)!;
-    return {
-      sessions: server.sessionPool
-        .list()
-        .filter((s) => agent.admin || server.sessionPool.owner(s.id)?.name === agent.name),
-    };
-  });
+  server.post("/sessions", (req) => app.open(context(req), req.body ?? {}));
+  server.get("/sessions", (req) => app.list(context(req)));
   server.get(
     "/sessions/:sessionId",
     async (req: FastifyRequest<{ Params: { sessionId: string } }>) => {
@@ -62,11 +57,7 @@ export default async function routes(server: FastifyInstance) {
   server.post(
     "/sessions/:sessionId/release",
     async (req: FastifyRequest<{ Params: { sessionId: string } }>) => {
-      access(req, req.params.sessionId);
-      return {
-        success: true,
-        ...(await server.sessionPool.release(req.params.sessionId)),
-      };
+      return app.release(context(req), req.params.sessionId);
     },
   );
   server.delete(
@@ -115,9 +106,9 @@ export default async function routes(server: FastifyInstance) {
       ...session.info(),
       pages: await Promise.all(
         pages.map(async (p) => ({
-          id: (p.target() as unknown as { _targetId: string })._targetId,
+          id: p.targetId,
           url: p.url(),
-          title: await p.title(),
+          title: await p.evaluate(() => document.title),
           favicon: null,
         })),
       ),

@@ -5,13 +5,13 @@ import { CheckIcon, CopyIcon } from "./icons";
 export function CopyButton({
   value,
   label,
-  className,
+  className = "bar-button",
   disabled,
   children,
 }: {
   value: string | (() => string);
   label: string;
-  className: string;
+  className?: string;
   disabled?: boolean;
   children?: ReactNode;
 }) {

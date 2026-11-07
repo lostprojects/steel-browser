@@ -1,4 +1,4 @@
-"""Measure how the self-hosted Steel browser looks to anti-bot systems.
+"""Measure how the self-hosted Toolstack browser looks to anti-bot systems.
 
 Checks run against the deployed instance through the Evomi proxy. These checks
 write measurement metadata, never corpus records. The logged-in soak must use
@@ -42,7 +42,7 @@ Credentials are never printed.
 STEEL_CDP_BASE optionally selects a local WebSocket origin when running the
 same checks beside the deployed service.
 
-Each run opens one Steel session at a time and releases it. Do not run two
+Each run opens one Toolstack session at a time and releases it. Do not run two
 copies beyond MAX_SESSIONS (production allows three).
 
 The CDP client is Patchright, which does not send Runtime.enable. Set
@@ -157,7 +157,7 @@ def call(method, path, payload=None, *, keyed=True):
 
 
 class Session:
-    """One Steel session driven over CDP; released on exit."""
+    """One Toolstack session driven over CDP; released on exit."""
 
     def __init__(self, mode='core', options=None):
         body = {'blockAds': False, **(options or {})}
@@ -190,7 +190,7 @@ class Session:
                 endpoint = self.info['websocketUrl']
                 if os.environ.get('STEEL_CDP_BASE'):
                     endpoint = os.environ['STEEL_CDP_BASE'].rstrip('/') + f"/v1/sessions/{self.info['id']}/cdp"
-                self.browser = self.pw.chromium.connect_over_cdp(endpoint + '?apiKey=' + KEY, timeout=30000)
+                self.browser = self.pw.chromium.connect_over_cdp(endpoint, headers={'steel-api-key': KEY}, timeout=30000)
                 ctx = self.browser.contexts[0]
                 self.page = None
                 for candidate in ctx.pages or [ctx.new_page()]:
