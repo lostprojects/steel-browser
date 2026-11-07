@@ -35,6 +35,12 @@ SIGTERM stops new sessions, waits up to 120 seconds for current work, then close
 
 Use `rw status vigilant-peace`, `rw deploys vigilant-peace "Steel Browser"` and `rw logs …` for inspection. `rw` mutations are dry runs until repeated with `--commit`. Preserve the recorded rollback target until the new revision has passed its relevant checks.
 
+Organization migration adds Library schema version 2 and encrypted gateway format
+version 2. Retain a current organization-aware image for rollback; an earlier image
+cannot safely write the migrated schema. Restore an earlier release only with its
+matching database and volume backups in an isolated destination. Preserve the
+organization ID, content key and vault key through deployment and restoration.
+
 ## Railway configuration
 
 | Variable | Value or role |
@@ -78,8 +84,8 @@ Sessions own their Xvfb and x11vnc children. Native input uses `xdotool`; displa
 
 ## Content storage
 
-The resources below can become the initial organization's storage after explicit
-organization/membership backfill. Future organizations require independently
+The resources below belong to the initial organization. Startup backfills legacy
+content and refuses a database already bound to another organization. Future organizations require independently
 provisioned data services, database services and private buckets, each with its
 own credentials and encryption keys. Shared control services need separate
 storage for identity, membership and subscription metadata.
@@ -94,7 +100,7 @@ Wasabi bucket `toolstack-content-bbbe0a8e` in `us-east-1` holds encrypted packag
 files. Its dedicated IAM key permits access only to that bucket and its
 `packages/*` objects. Operator bootstrap configuration stays in
 `~/nosync.nosync/-env/toolstack.env` with mode 0600. The application receives
-only the six runtime variables in [Library configuration](LIBRARY.md#configuration-and-operation);
+only the eight runtime variables in [Library configuration](LIBRARY.md#configuration-and-operation);
 root database credentials and Wasabi administration keys stay outside its runtime.
 
 Before multi-tenant rollout, split schema/migration ownership from the request
@@ -107,8 +113,9 @@ to the gateway before converting the owner service to `STEEL_ROLE=worker`. Worke
 use their assigned reader key and refuse central database/encryption credentials.
 
 That gateway arrangement is the existing single-org team path. The multi-tenant
-target gives storage authority to a separate organization data service and binds
-every worker reader and signed claim to its organization membership. Preserve
+target separates storage authority into an organization data service. Current
+worker readers require the organization header, and signed claims include the
+organization and membership. Preserve
 the current endpoint, volume and vault key during the initial migration. Keep
 legacy keys mapped to that organization only; remove unscoped fallback behavior
 from tenant-aware paths. Backups, restore and key rotation need organization-bound
@@ -122,6 +129,8 @@ publishing content leaves account access unchanged.
 
 | Path | Purpose |
 | --- | --- |
+| `/data/.toolstack-organization` | Immutable organization binding; startup refuses reuse across organizations |
+| `/data/.toolstack-membership` | Team worker membership binding, alongside its legacy `.steel-user` marker |
 | `/data/profiles` | Named Chrome profiles and `mosaic-session-cookies.json` files |
 | `/data/vault` | AES-256-GCM encrypted login entries |
 | `/data/connections.json` | Profile metadata and API credential references, grants and limits; no credentials |

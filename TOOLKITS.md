@@ -182,10 +182,12 @@ private defaults. Set `visibility: "assigned"` with `assignedTo: ["bob"]` for an
 explicit assignment, or `visibility: "global"` for organization-wide publication.
 Import `contentAccess` from `@toolstack/api/plugin`.
 
-This is the existing single-org contract. The [planned tenant contract](ORGANIZATIONS.md)
-adds verified organization/membership scope to discovery, credentials and execution.
-Do not use the current unqualified owner IDs or `global` metadata to serve
-unrelated organizations. A registered runtime grants no access to tenant content.
+Trusted startup configuration binds this metadata to the deployment's
+organization. The registry checks the caller's organization and membership even
+for organization-wide packages. User aliases are immutable within that binding;
+reusing an alias for another person would reuse its membership. The
+[organization contract](ORGANIZATIONS.md) describes future tenant expansion.
+A registered runtime grants no access to tenant content.
 
 These grants apply to discovery, execution and workflow/reference retrieval.
 The catalog shows ownership and visibility, while assignment rosters stay out of
@@ -193,7 +195,7 @@ public metadata. Sharing content grants no account access; existing credential
 and operation policies still apply. Trusted startup configuration supplies these
 records for executable toolkit modules. The persistent [Library](LIBRARY.md)
 implements owned instruction/file editing and publication. Uploaded content
-does not install a runtime. Organization-aware ownership and grants remain planned.
+does not install a runtime. Promotion into organization ownership remains future work.
 
 `content-access.test.ts` checks private content against another person's admin
 key, explicit assignment and global publication with independent tool policies.

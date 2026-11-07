@@ -9,8 +9,8 @@ import postgres from "postgres";
 import { existsSync } from "node:fs";
 
 const scratch = path.resolve("../.tmp");
-await mkdir(scratch,{recursive:true});
-const root = await mkdtemp(path.join(scratch,"toolstack-pg-"));
+await mkdir(scratch, { recursive: true });
+const root = await mkdtemp(path.join(scratch, "toolstack-pg-"));
 const bin =
   process.env.TOOLSTACK_POSTGRES_BIN ??
   [

@@ -5,11 +5,11 @@ account connections. Connecting through an agent provides the person's own
 content plus packages explicitly assigned to them or shared with their organization.
 Browser automation is its first execution toolkit.
 
-The target supports private member workspaces and strict organization boundaries,
-starting with the owner's organization as the sole tenant. Billing is outside the
-current implementation; paid subscriptions remain an optional future direction. Today there is one real organization
-and its owner; organization records and tenant isolation remain implementation
-work. `global` is the existing sharing identifier and must become organization-wide.
+Toolstack binds the owner's deployment to one explicit organization and derives
+membership identities for its users. Signed agent claims, content permissions,
+private volumes and encrypted gateway state enforce that binding. `global` means
+sharing within this organization. Billing and customer signup are outside the
+current implementation.
 See the [organization contract](ORGANIZATIONS.md) and
 [delivery sequence](TOOLSTACK-PLAN.md#organization-delivery) before expanding access.
 
@@ -69,13 +69,13 @@ Twenty-one callers have verified first payloads. DTIC and HathiTrust lack qualif
 | Read | For |
 | --- | --- |
 | [TOOLSTACK-PLAN.md](TOOLSTACK-PLAN.md) | Product direction, delivery sequence and acceptance requirements |
-| [ORGANIZATIONS.md](ORGANIZATIONS.md) | Planned tenant boundaries, membership, sharing, administration and subscription model |
+| [ORGANIZATIONS.md](ORGANIZATIONS.md) | Current organization boundaries and future expansion requirements |
 | [USAGE.md](USAGE.md) | API authentication, sessions, downloads and MCP tools |
 | [LIBRARY.md](LIBRARY.md) | Owned skills, files, sharing, version history and storage |
 | [TOOLKITS.md](TOOLKITS.md) | Tool discovery, generic execution and server-side extensions |
 | [SEARCH.md](SEARCH.md) | Native API connections, search tools and recorded verification |
 | [Local client](client/README.md) | macOS, Windows and Linux downloads, CLI and local MCP setup |
-| [TEAM.md](TEAM.md) | Current single-org team code, private workers and the planned membership migration |
+| [TEAM.md](TEAM.md) | Organization-bound gateway, private workers and teammate provisioning |
 | [COMMANDS.md](COMMANDS.md) | Browser commands, snapshots, targets and execution results |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Railway configuration, persistent state and deployment procedure |
 | [DESIGN.md](DESIGN.md) | Implemented component responsibilities and behavior |

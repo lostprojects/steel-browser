@@ -4,12 +4,15 @@ The service runs Google Chrome 156.0.8078.79 with twelve independent browser ses
 Browserbase remains available. [The plan](TOOLSTACK-PLAN.md#caller-review-and-browserbase-retirement)
 defines migration acceptance and retirement requirements.
 
-These interfaces describe the existing single-org service. Organization
-membership, tenant-bound agent connections and organization switching are planned
-in [ORGANIZATIONS.md](ORGANIZATIONS.md). Current keys and `global` sharing apply
-only to the initial organization; the existing service is not a multi-tenant
-endpoint. Organization migration will preserve supported client interfaces through
-explicit key bindings rather than a default-tenant fallback.
+These interfaces use the deployment's fixed organization. Existing client keys
+retain their owner workspace; team-mode keys and OAuth apps resolve to their
+registered membership and private worker. `global` sharing applies within this
+organization. Authenticated `GET /v1/organization` returns the current organization
+and membership. An explicit foreign `x-toolstack-org-id` is refused.
+
+Production requires `TOOLSTACK_ORG_ID`. Missing or forged organization/membership
+fields in signed downstream claims are refused. There is one real tenant and no
+organization switcher; [ORGANIZATIONS.md](ORGANIZATIONS.md) records expansion work.
 
 ## Sessions and identities
 

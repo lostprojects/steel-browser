@@ -7,11 +7,11 @@ call their providers directly; Toolstack's platform does not depend on Composio.
 This fork provides independent browsers with durable identities and service-owned authentication. The root guides describe current behavior. [TOOLSTACK-PLAN.md](TOOLSTACK-PLAN.md) owns product direction and acceptance requirements.
 
 The deployed application currently serves one real organization and its owner.
-Its identity and Library schema are not organization-aware. The planned
-[organization contract](ORGANIZATIONS.md) adds a shared identity/membership control
-service and isolated organization data services, with private workers per
-membership. That contract describes the target; the components below describe
-the existing implementation.
+Its fixed organization is required at production startup. Membership IDs are
+stable UUIDs derived from that organization and immutable user aliases. Signed
+claims, Library ownership and storage bindings carry this identity. The
+[organization contract](ORGANIZATIONS.md) distinguishes these implemented controls
+from the work required before serving unrelated organizations.
 
 Team mode uses separate worker services and volumes as the user boundary. Its gateway authenticates personal keys, browser sign-ins and approved OAuth apps, then proxies requests only to their fixed worker. Owner operations manage invitations and the global store without an impersonation endpoint. [TEAM.md](TEAM.md) defines this mode and its limits. The session pool described below runs within one user's worker or the legacy standalone service.
 
@@ -67,8 +67,9 @@ does not bypass another person's content scope. Account and tool grants still
 apply independently. The Muse content module requires explicit owner registration;
 it is absent from the app's default catalog. Persistent editing and publication
 are implemented by `ContentLibrary`, exposed through Library REST routes and
-the generic MCP library toolkit. Organization scoping and organization-owned
-resources remain planned.
+the generic MCP library toolkit. Organization and membership checks precede
+storage access. Promoting personal packages into organization ownership remains
+future work.
 
 Workflow methods and references
 load on demand, with exact dependency versions and content hashes. Their release

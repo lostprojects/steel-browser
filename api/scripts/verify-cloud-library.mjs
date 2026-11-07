@@ -289,14 +289,22 @@ try {
     assert.ok(health.capabilities.includes("content_library"));
     const context = await (await request("/v1/organization")).json();
     assert.equal(context.organization.id, state.TOOLSTACK_ORG_ID);
-    assert.equal(context.membership.membershipId, organizationMember(context.membership.userId).membershipId);
+    assert.equal(context.membership.id, organizationMember(context.membership.userId).membershipId);
     const listed = await (await request("/v1/library")).json();
     assert.equal(listed.organization.id, context.organization.id);
-    assert.equal(listed.membershipId, context.membership.membershipId);
-    assert.equal((await fetch(origin + "/v1/library", {
-      headers: {authorization: `Bearer ${variables.STEEL_API_KEY}`, "x-toolstack-org-id": randomUUID()},
-      signal: AbortSignal.timeout(15000),
-    })).status, 403);
+    assert.equal(listed.membershipId, context.membership.id);
+    assert.equal(
+      (
+        await fetch(origin + "/v1/library", {
+          headers: {
+            authorization: `Bearer ${variables.STEEL_API_KEY}`,
+            "x-toolstack-org-id": randomUUID(),
+          },
+          signal: AbortSignal.timeout(15000),
+        })
+      ).status,
+      401,
+    );
     const before = await (await request("/v1/connections")).json();
     let hosted = await (
       await request("/v1/library", "POST", {

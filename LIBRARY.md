@@ -5,11 +5,11 @@ Toolstack Postgres and private Wasabi storage. New packages belong to the
 authenticated person and start private. Their owner can assign them to named
 people or publish them across the current organization.
 
-The deployed Library is still single-org: its schema and signed identity do not
-yet carry an organization binding. The [organization contract](ORGANIZATIONS.md)
-defines the planned isolation and ownership model. Existing `global` visibility
-must map only to the initial organization during migration. Do not connect
-unrelated organizations to this unscoped database or bucket.
+The Library is bound to one explicit organization. Packages, versions and files
+carry its ID and their owner's membership ID; composite references preserve that
+binding. Reads and writes validate the caller's organization and membership before
+accessing storage. The database refuses startup under another organization ID.
+See [the organization contract](ORGANIZATIONS.md) before adding another tenant.
 
 Use **Library** in the dashboard to create a package, import Markdown or text
 instructions, attach files and manage sharing. Save instructions before uploading
@@ -77,8 +77,9 @@ For multi-tenant deployment, move this storage authority into an organization
 data service with its own database, private bucket and encryption key. The shared
 gateway routes authenticated membership context without holding every tenant's
 storage credentials. Private workers remain bound to one membership. Existing
-object keys authenticate the encrypted bytes, so changing their paths requires
-an authenticated copy/re-encryption and verified metadata cutover.
+object keys authenticate the encrypted bytes. Migration preserves them; new
+objects use `packages/<organization UUID>/<package UUID>/<file UUID>`. Changing
+existing paths requires authenticated re-encryption and verified metadata cutover.
 
 API keys and passwords continue to use the encrypted vault on each private
 worker's volume. Browser cookies remain in its profile. Explicit shared account
@@ -92,6 +93,8 @@ fallback to a generic `DATABASE_URL`.
 
 | Variable | Purpose |
 | --- | --- |
+| `TOOLSTACK_ORG_ID` | Immutable UUID for this deployment; required in production |
+| `TOOLSTACK_ORG_NAME` | Organization display name |
 | `TOOLSTACK_DATABASE_URL` | Dedicated Toolstack Postgres application account |
 | `TOOLSTACK_WASABI_BUCKET` | Private Toolstack bucket |
 | `TOOLSTACK_WASABI_REGION` | Bucket region, such as `us-east-1` |

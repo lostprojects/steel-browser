@@ -5,9 +5,9 @@ its own members and shared resources. A person connects
 through their own agent to a private workspace in one organization and receives
 their content plus anything explicitly shared with them there.
 
-There is one real organization and one person today. The next step is to make
-that organization explicit before adding teammates, then establish isolation for
-future customer organizations. Existing `global` sharing must mean organization-wide.
+There is one real organization and one person today. The implementation now binds
+that organization explicitly before adding teammates. Future customer organizations
+require independent isolation acceptance. Existing `global` sharing means organization-wide.
 
 This is the home for product direction, delivery order and acceptance requirements.
 [ORGANIZATIONS.md](ORGANIZATIONS.md) defines the planned tenant contract. Other
@@ -75,7 +75,7 @@ own and provide a foundation for later collaboration.
 
 | Area | Implemented or demonstrated | Work still open |
 | --- | --- | --- |
-| Organizations | One real organization and its owner use the existing standalone service; organization design documented | Explicit organization/membership records, tenant-bound authorization and isolated organization services; independent-tenant acceptance before admitting another organization |
+| Organizations | Explicit sole organization, derived owner membership, signed claims and volume/database bindings; hosted rollout verification in progress | Real teammate acceptance and independent-tenant isolation before admitting another organization |
 | Browser engine | Independent agent/quiet browsers, named profiles, managed residential routing and vault login; phases 0–3 accepted | Later routing criteria, long viewing and full soak/fault acceptance |
 | Team access | Gateway with invitations, personal keys, browser sign-in and hosted MCP OAuth; dedicated worker and volume per user | Production rollout and real two-user isolation checks |
 | Account discovery | Browser/API metadata, profile grants, API verification, enable/disable/disconnect and shared-entry grants | Hosted lifecycle acceptance, deliberate browser-account switching and provider OAuth |
@@ -111,7 +111,7 @@ its version and acquisition time. Commands and scope are documented in
 | Stage | Current state | Remaining acceptance or implementation |
 | --- | --- | --- |
 | 0 — Framework | Application, fixture/UI/MCP proof, persistent owned-content management and its UI implemented; dedicated Railway Postgres and private Wasabi bucket provisioned | Owner-content import and remaining production framework acceptance |
-| Organization foundation | Tenant contract and migration/acceptance sequence planned; current deployment remains single-org | Implement initial organization and owner membership, scope every access path and provision independent tenant boundaries |
+| Organization foundation | Sole-tenant schema and request bindings implemented; verification and rollout in progress | Independent organization services, split migration/request roles and RLS before unrelated customer hosting |
 | 1 — Hosted foundation | Existing owner worker healthy; twelve-session capacity verified and migration generator corrected; owner has not selected a second participant | Separate gateway, compatible rollback, two real people/workers, supported hosted OAuth client and macOS/Windows downloads |
 | 2 — Business workflow | Read-only Muse adapter and versioned content-review method implemented; live source read verified | Teammate completion through their own agent, interruption and central-update acceptance |
 | 3 — Remote compute | Existing Bambu procedure and scripts inspected | Dedicated bounded runtime, durable job recovery, persistent artifacts and engineering/output acceptance |
@@ -181,7 +181,7 @@ or an `admin` flag alone grants no access.
 
 Start with one isolated data service, Postgres database/service and private Wasabi
 bucket per organization, with independent credentials and encryption keys. Retain
-separate private workers per membership. Shared login and billing services hold
+separate private workers per membership. Future shared login services hold
 control metadata; organization services hold customer data and their own storage
 credentials. Apply database policies and resource grants within those boundaries.
 
@@ -201,7 +201,6 @@ isolation nor paid-service readiness.
 | Execution services | Run substantial scripts in separate runtimes with controlled resources and durable job records |
 | Artifact storage | Keep outputs beyond browser-session lifetime and enforce ownership, sharing and retention |
 | Company data services | Expose authorized business records and deliberately shared knowledge |
-| Subscription and usage services | Associate billing with an organization, enforce entitlements and reconcile measured usage without granting content access |
 
 Keep the gateway small. CPU-heavy modeling and slicing belong in separate
 execution services so they cannot consume the team's browser capacity.
@@ -380,9 +379,9 @@ volumes. Complete the planned cookie-file encryption migration before broader
 rollout. Uploaded scripts must execute in isolated runtimes with only their
 selected account access, without receiving vault master keys.
 
-Postgres and Wasabi content integration is deployed. Organization binding,
-separate migration/request database roles and the tenant storage/key lifecycle
-remain implementation work. Worker/gateway files remain authoritative for their
+Postgres and Wasabi content integration is deployed. Explicit organization binding
+is implemented and undergoing hosted acceptance. Separate migration/request
+database roles and the future tenant storage/key lifecycle remain implementation work. Worker/gateway files remain authoritative for their
 existing account and membership records until explicit migrations are verified;
 keep one authority for each record throughout the transition.
 
@@ -436,7 +435,7 @@ framework work. Passing a local check does not complete a production stage.
 Implement these steps around the framework before expanding access. Detailed
 semantics are in [ORGANIZATIONS.md](ORGANIZATIONS.md).
 
-1. Establish the initial organization and its owner membership. Add organization
+1. Implemented, with hosted verification and rollout in progress: establish the initial organization and its owner membership. Add organization
    and membership context throughout the schema, signed claims and resource
    grants. Backfill existing content and account bindings explicitly. Constrain
    legacy owner/named keys to that organization; unbound new requests fail closed.
@@ -454,7 +453,7 @@ semantics are in [ORGANIZATIONS.md](ORGANIZATIONS.md).
 4. Before admitting an unrelated organization, provision a second isolated test
    tenant. Exercise two memberships in each and the same login in both. Verify
    that an owner/admin in one cannot discover or act on foreign content, workers,
-   credentials or billing records, even with valid foreign IDs. Require direct
+   credentials or administrative records, even with valid foreign IDs. Require direct
    database/storage denial and network isolation alongside API checks. Cover
    caches, search, retry collisions, jobs, restores and deletion. Independently
    review the threat model and demonstrate fair resource limits under load.
@@ -704,7 +703,7 @@ run history into this plan.
 | Document | Responsibility |
 | --- | --- |
 | `README.md` | Current product description, entry points and guide index |
-| `ORGANIZATIONS.md` | Planned tenant contract, personal/organization ownership, isolation model and subscription foundation |
+| `ORGANIZATIONS.md` | Current organization bindings and future ownership/isolation requirements |
 | `DESIGN.md` | Implemented component responsibilities and behavior |
 | `TEAM.md`, `DEPLOYMENT.md` | Provisioning and operating procedures |
 | `TOOLKITS.md`, `SEARCH.md` | Implemented toolkit contracts and usage |

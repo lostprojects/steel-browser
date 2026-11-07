@@ -1,7 +1,7 @@
 # Organizations and tenant isolation
 
 This contract starts with the owner's organization as the sole tenant. The
-current implementation work adds explicit organization and membership bindings
+implementation adds explicit organization and membership bindings
 to that deployment, preserving its existing data and clients. It adds no billing,
 subscription plans or customer signup. Future commercial use is a low-priority
 possibility and supplies no requirement to build payment infrastructure now.
@@ -12,6 +12,37 @@ An organization is the tenant and security boundary.
 Each person has a private workspace within it. Sharing can make selected content
 or account access available to teammates without exposing private activity.
 Nothing shared in one organization becomes available in another.
+
+## Implemented sole-tenant foundation
+
+Production requires an immutable `TOOLSTACK_ORG_ID` UUID. The current organization
+has its own Postgres service and private Wasabi bucket with scoped credentials.
+The database permits one organization record and refuses a different startup
+binding. Volume markers and the encrypted gateway store enforce the same rule.
+
+Membership IDs are UUIDv5 values derived from that organization and an immutable
+user alias. The existing `owner` workspace and client keys retain their identity;
+they cannot select another organization through a header. A new person requires
+a new alias. Signed worker claims require both organization and membership IDs,
+and every internal gateway request requires the matching organization header.
+
+Library migration 2 backfills non-null organization and owner-membership fields
+on packages, versions and files. Composite foreign keys bind child records to
+their parent and owner. Assignments resolve to membership IDs, while legacy user
+aliases remain in compatible API fields. Application authorization checks these
+bindings before storage access. Existing encrypted object keys remain readable;
+new keys include the organization UUID.
+
+Private, Selected teammates and Organization are the sharing labels. The sidebar
+shows the organization name and My workspace. One membership needs no switcher.
+There are no billing tables, payment integrations or customer-signup flows.
+
+The database request role still owns its tables and runs migrations; row-level
+security and a separate migration role remain future hardening. The current
+gateway combines organization data and authentication for this sole tenant.
+Independent customer services, lifecycle controls and their acceptance checks
+must precede admitting an unrelated organization. The sections below describe
+that expansion target, rather than a claim of completed commercial readiness.
 
 ## Identity and membership
 
@@ -27,7 +58,6 @@ own roles and workspace; the same login grants no cross-organization data access
 | Workspace | One membership's private worker, volume and vault |
 | App grant or API key | One membership, permitted operations and revocable credentials |
 | Resource | Organization, personal or organization ownership, visibility and version |
-| Subscription | Organization, billing customer, plan and entitlement state |
 
 Use opaque IDs for authorization. Names, email addresses and URL slugs are display
 or discovery fields. Enforce one active membership per user in an organization;
@@ -103,8 +133,8 @@ within its own boundary.
 
 ## Administration and privacy
 
-Start with Owner, Admin and Member roles. Delegate billing and publication through
-separate permissions when needed. Roles manage the organization; resource grants
+Future administration can add Owner, Admin and Member roles. Delegate publication
+through separate permissions when needed. Roles manage the organization; resource grants
 control use of its content and accounts.
 
 | Authority | Permitted responsibility | Private-data boundary |
@@ -112,7 +142,6 @@ control use of its content and accounts.
 | Owner | Organization settings, administrator appointments, ownership transfer and closure | No member impersonation or access to another member's private workspace |
 | Admin | Membership operations and explicitly assigned shared-resource administration | No private history, files, credentials or browser viewing |
 | Member | Own workspace and resources explicitly shared with them | No other member's private resources |
-| Billing permission | Subscription changes, invoices and authorized usage totals | No content, account-secret or session access |
 | Platform operator | Infrastructure operation and separately authorized support | No routine customer-content access through application administration |
 
 Require strong identity authentication and step-up verification for privileged
@@ -156,12 +185,11 @@ to inspect teammates' messages.
 
 ## Infrastructure boundaries
 
-Use a shared control service for login identities, organization membership and
-billing. Customer content and execution belong in isolated organization services.
+Future multi-organization hosting can use a shared control service for login
+identities and organization membership. Customer content and execution belong in isolated organization services.
 For the initial commercial design, give every organization a dedicated data
 service, Postgres database/service and private Wasabi bucket, with independent
-service credentials and encryption keys. The existing database and bucket can
-become the initial organization's resources after migration.
+service credentials and encryption keys. The existing database and bucket belong to the initial organization.
 
 Every private workspace also has a dedicated worker, volume and vault key.
 The same person working in two organizations must not reuse a browser process
@@ -172,7 +200,7 @@ must not run in one application process with access to each other's secrets.
 ```mermaid
 flowchart TD
   Clients[People and their agents] --> Gateway[Authentication and tenant routing]
-  Gateway --> Control[Identity, memberships and billing]
+  Gateway --> Control[Identity and memberships]
   Gateway --> A[Organization A data service]
   Gateway --> B[Organization B data service]
   A --> AD[(A database)]

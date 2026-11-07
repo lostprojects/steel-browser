@@ -159,6 +159,18 @@ test("reader credentials cannot retrieve secrets from a gateway in a different o
   try {
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const context = await (
+      await fetch(origin + "/v1/organization", {
+        headers: { authorization: `Bearer ${admin}` },
+      })
+    ).json();
+    expect(context.organization).toEqual(store.organization);
+    expect(context.membership).toEqual({
+      orgId: store.organization.id,
+      id: organizationMember("owner").membershipId,
+      userId: "owner",
+      role: "owner",
+    });
     vi.stubEnv("STEEL_SHARED_URL", origin);
     vi.stubEnv("STEEL_SHARED_KEY", reader);
     expect((await readSharedStore(true)).credentials.fixture.apiKey).toBe("fixture-provider-value");

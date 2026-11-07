@@ -4,12 +4,11 @@ The current team-mode implementation gives each person in one organization a
 separate Toolstack service and volume. One HTTPS gateway connects their agents
 to that service; an owner-managed shared store supplies credentials and site defaults.
 
-The running deployment currently has one organization and its owner. The gateway
-code and commands below use single-org user IDs and stores; they do not implement
-multi-tenant authorization. The [organization contract](ORGANIZATIONS.md) defines
-the target, and [organization delivery](TOOLSTACK-PLAN.md#organization-delivery)
-precedes new teammate onboarding. Existing `global` identifiers must remain
-bounded to the initial organization during migration.
+The running deployment has one organization and its owner. The gateway store,
+signed principals and workers are bound to that organization's UUID. Existing
+`global` identifiers mean organization-wide sharing. The
+[organization contract](ORGANIZATIONS.md) records the current controls and the
+additional isolation required before admitting unrelated organizations.
 
 Product direction and deployment acceptance are maintained in
 [TOOLSTACK-PLAN.md](TOOLSTACK-PLAN.md#1-accept-the-hosted-foundation).
@@ -35,7 +34,7 @@ The gateway selects a worker from the authenticated key. Session IDs and user he
 
 Every login opens within the authenticated user's worker and private browser profile. Toolstack has no shared-history mode. The hosting operator retains administrative access to machines and volumes.
 
-## Organization membership target
+## Membership and future administration
 
 Bind each private worker and its volume to one organization membership. A person
 in several organizations gets separate workers and account bindings. Sharing a
@@ -96,10 +95,10 @@ including WebSockets and SSE.
 
 ## Provisioning
 
-These commands describe the current gateway/worker setup. They are not a
-provisioner for unrelated customer organizations. Implement the organization
-binding and initial-owner migration first. Future organizations require their
-own data service, database and bucket credentials, with separately bound workers.
+These commands provision private workers within the configured organization.
+Set `TOOLSTACK_ORG_ID` to its existing UUID and `TOOLSTACK_ORG_NAME` to its display
+name before running them. The provisioner refuses an absent or invalid UUID.
+Future organizations require their own data service and storage credentials.
 
 Use one gateway replica with its own `/data` volume and one separate service and volume per person. The existing Toolstack service and its volume can become the `owner` worker. Preserve its current `VAULT_KEY`, named profiles and proxy settings.
 
@@ -126,6 +125,7 @@ Railway's internal service connections use encrypted WireGuard networking; the g
 
 | Gateway variable | Purpose |
 | --- | --- |
+| `TOOLSTACK_ORG_ID`, `TOOLSTACK_ORG_NAME` | Existing organization UUID and display name; also required on workers |
 | `STEEL_ROLE=gateway` | Start the gateway only |
 | `STEEL_PUBLIC_ORIGIN` | Canonical HTTPS origin |
 | `STEEL_API_KEY` | Independent owner control key, at least 32 characters |
@@ -154,7 +154,7 @@ npm run team -w repl -- register PRIVATE_DIRECTORY/alice.register.json \
 npm run team -w repl -- users
 ```
 
-Registration verifies the worker's fixed user ID and gateway settings before issuing an invitation. A user ID, worker URL or worker credential cannot be reused. The worker writes a permanent `.steel-user` marker beside its profile directory and refuses a volume assigned to a different ID.
+Registration verifies the worker's fixed user ID and gateway settings before issuing an invitation. A user ID, worker URL or worker credential cannot be reused. The worker preserves its `.steel-user` marker and adds `.toolstack-organization` and `.toolstack-membership` markers beside its profile directory. It refuses a volume bound to another organization or membership.
 
 Keep worker domains private where possible. Workers' public health checks reveal only readiness. `/v1/worker` requires the worker key and is blocked at the gateway. Keep Railway project and volume access restricted to the hosting operator.
 
@@ -177,8 +177,9 @@ encryption key and database unchanged during that move.
 
 Here `global` names the existing shared store within this one organization.
 It must never become a platform-wide store of customer credentials. The tenant
-migration must bind historical entries and grants to the initial organization;
-new requests with missing organization context must be refused.
+encrypted store binds historical entries and grants to the configured organization
+on its version-1 migration. Internal reads require a matching organization header;
+signed claims with missing organization or membership fields are refused.
 
 `PUT /v1/vault/NAME` on the gateway writes to the authenticated person's private worker. Supply `{"fields":{"username":"…","password":"…"}}`; `allowedAgents` defaults to the worker's gateway identity. `DELETE /v1/vault/NAME` removes that private override.
 
