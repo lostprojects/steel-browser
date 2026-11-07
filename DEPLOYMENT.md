@@ -1,10 +1,10 @@
 # Deployment
 
-Railway runs the combined API and dashboard from the root Dockerfile. Read `/v1/health` for the deployed revision and installed Chrome version; measurement history is in [STEALTH.md](STEALTH.md).
+Railway runs the public browser/API, a private dashboard service and a private durable executor from `lostprojects/toolstack`, branch `deploy`. Each service has separate build settings and watch paths. Read `/v1/health` for browser readiness and the installed Chrome version; measurement history is in [STEALTH.md](STEALTH.md).
 
-Independent dashboard, browser/API and jobs deployment profiles are prepared in
-[the Railway service split](deployment/railway/README.md). That procedure preserves
-the existing public address and browser volume; activation is a separate cutover.
+The deployed profiles and rollback procedure are in
+[the Railway service split](deployment/railway/README.md). The existing public
+address and browser volume are preserved; dashboard releases leave Chrome running.
 
 For team deployment, use the [gateway and private-worker procedure](TEAM.md#provisioning). The gateway and each worker require separate volumes and keys. Set `STEEL_IMAGE=gateway` on the gateway service to select its smaller Docker image; workers use the default `browser` image. Railway supplies declared [Docker build arguments from service variables](https://docs.railway.com/builds/dockerfiles#using-variables-at-build-time).
 
@@ -21,7 +21,7 @@ before expanding access; [ORGANIZATIONS.md](ORGANIZATIONS.md) defines the target
 | --- | --- |
 | Project / service | `vigilant-peace` / `Steel Browser` (Toolstack) |
 | Source | `lostprojects/toolstack`, branch `deploy`; synchronize `main` when pushing |
-| Watched paths | `/api/**`, `/ui/**`, `/Dockerfile`, `/package.json`, `/package-lock.json`, excluding Markdown; documentation and `mosaic/` changes do not deploy |
+| Watched paths | Browser/API watches `/api/**`, `/native/**` and its build inputs. The dashboard watches `/ui/**`; the executor watches jobs and shared Library code. See the per-service profiles for the full lists. |
 | Public URL | `https://steel-browser-production-e8d5.up.railway.app` |
 | Health | `/health` and `/v1/health`, public |
 | Dashboard | `/ui/?apiKey=<key>` once per browser; an HttpOnly cookie authenticates subsequent requests |
@@ -31,12 +31,11 @@ The API relays session-specific CDP and VNC traffic on its service port. Each br
 
 ## Deployment and rollback
 
-The sole-organization release is live from review branch
-`codex/sole-organization-20261107`, runtime source revision `ba67027`, uploaded to
-the existing service through the Railway CLI. The source was not pushed to the
-public GitHub repository. Fresh database and owner-volume backups named
-`Before organization binding` precede migration. Hosted Library, MCP and UI checks
-passed with one organization and one owner membership after fixture cleanup.
+Production now deploys the reviewed GitHub source on `deploy`, synchronized with
+`main`. The organization and durable-job fixes from the uploaded release are
+included. The dashboard has no public endpoint or application credentials; the
+existing API authenticates its requests before forwarding their paths privately.
+Database and owner-volume snapshots precede the service split.
 
 
 Check live sessions and recent Railway HTTP traffic before pushing application changes. Compare log timestamps locally and omit query strings from diagnostic output, since CDP URLs can contain keys.
@@ -182,12 +181,11 @@ uses an uploaded source artifact; health reports a null Git revision for this
 deployment. Source commit `2af8f90` records the deployed application. The branch also records
 subsequent operator checks and documentation; no source was pushed to GitHub.
 
-The prior healthy deployment, `83b964e7-dbf0-4da3-b6de-6153afc3db03` from
-`cda43bf`, remains the immediate rollback target for this rollout. New library
-data lives in the separate database and bucket. Once new API connection or shared
-account formats are written, use a release compatible with those formats for
-rollback. The browser volume backup before release preserves the prior state.
-Production gateway deployment and real separate-user acceptance remain open.
+Select each component's latest compatible healthy deployment with `rw deploys`
+when rolling back. Returning to the combined browser image requires
+`STEEL_IMAGE=standalone` and removal of `TOOLSTACK_UI_ORIGIN`; follow the service
+split procedure. Preserve the current organization, Library and API connection
+formats. Production team-gateway deployment and separate-user acceptance remain open.
 
 Profile cookies are credentials. Keep the volume and `VAULT_KEY` intact through deployments. A missing/invalid key or failed decryption leaves the vault locked. Release removes temporary profiles and raw session files. Published download handoffs retain their prepared payloads until their thirty-minute expiry. Graceful worker shutdown removes them, since their temporary links cannot survive a restart. The existing orphan sweep removes abandoned file directories after twenty-four hours.
 
