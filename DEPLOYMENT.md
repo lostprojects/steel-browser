@@ -27,6 +27,14 @@ The API relays session-specific CDP and VNC traffic on its service port. Each br
 
 ## Deployment and rollback
 
+The sole-organization release is live from review branch
+`codex/sole-organization-20261107`, runtime source revision `ba67027`, uploaded to
+the existing service through the Railway CLI. The source was not pushed to the
+public GitHub repository. Fresh database and owner-volume backups named
+`Before organization binding` precede migration. Hosted Library, MCP and UI checks
+passed with one organization and one owner membership after fixture cleanup.
+
+
 Check live sessions and recent Railway HTTP traffic before pushing application changes. Compare log timestamps locally and omit query strings from diagnostic output, since CDP URLs can contain keys.
 
 Record the currently healthy deployment and verify that its persisted-state formats match the proposed update. Select that recent compatible deployment for rollback. Early phase images may lack the current vault and caller APIs and are unsuitable as routine fallback targets.

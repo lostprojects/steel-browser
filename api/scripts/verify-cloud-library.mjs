@@ -2,11 +2,12 @@
 // Creates a temporary TLS TCP proxy, a restricted application role and private
 // fixture records. It removes the proxy and fixture bytes on completion.
 // Never point this at PMS, copy root credentials into workers, or print secrets.
-import { readFile, writeFile, rename } from "node:fs/promises";
+import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { parseArgs, parseEnv } from "node:util";
 import { randomBytes, randomUUID } from "node:crypto";
 import assert from "node:assert/strict";
 import postgres from "postgres";
+import path from "node:path";
 import { organizationMember } from "../build/services/organization.js";
 import { ContentLibrary } from "../build/services/library/library.js";
 import { WasabiObjects } from "../build/services/library/objects.js";
@@ -412,8 +413,15 @@ try {
         () => document.body.innerText.includes("Hosted storage verification"),
         { timeout: 30000 },
       );
+      if (process.env.TOOLSTACK_QA_OUTPUT)
+        await mkdir(process.env.TOOLSTACK_QA_OUTPUT, { recursive: true });
       for (const width of [1440, 390]) {
         await page.setViewport({ width, height: 1000 });
+        if (process.env.TOOLSTACK_QA_OUTPUT)
+          await page.screenshot({
+            path: path.join(process.env.TOOLSTACK_QA_OUTPUT, `hosted-library-${width}.png`),
+            fullPage: true,
+          });
         assert.equal(
           await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
           true,

@@ -156,3 +156,18 @@ The post-release retained-login checks passed on Newspapers.com and Fold3.
 Ancestry initially returned a human-verification interstitial; the existing
 native handler cleared its checkbox, and the member-page check then passed.
 No passwords were submitted. Each verification session was released.
+
+The sole-organization release on 7 November 2026 passed 487 API tests in 44 files
+with twelve skips, plus eleven native Postgres checks. Organization claims,
+foreign bindings, legacy migration and private-volume reuse refusals passed.
+Real Chrome Library and application checks passed in Linux, including accented
+file names, sharing/revocation, responsive layouts and connection controls. The
+runtime and local Linux verification use a UTF-8 locale for file selection.
+
+Live acceptance passed organization/membership metadata, foreign-organization
+refusal, MCP discovery/read, immutable saves, retry replay and encrypted Wasabi
+round trips. It confirmed one organization and one retained membership after
+fixture cleanup. Desktop and mobile screenshots were inspected. Fresh remote
+Chrome creation, authenticated CDP and release passed; an additional retained-login
+read was deferred because the known identity was in use. Its earlier recorded
+observations remain separate evidence. No real teammates were selected or added.

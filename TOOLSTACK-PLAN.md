@@ -75,7 +75,7 @@ own and provide a foundation for later collaboration.
 
 | Area | Implemented or demonstrated | Work still open |
 | --- | --- | --- |
-| Organizations | Explicit sole organization, derived owner membership, signed claims and volume/database bindings; hosted rollout verification in progress | Real teammate acceptance and independent-tenant isolation before admitting another organization |
+| Organizations | Explicit sole organization, derived owner membership, signed claims and volume/database bindings; deployed and verified on 7 November 2026 | Real teammate acceptance and independent-tenant isolation before admitting another organization |
 | Browser engine | Independent agent/quiet browsers, named profiles, managed residential routing and vault login; phases 0–3 accepted | Later routing criteria, long viewing and full soak/fault acceptance |
 | Team access | Gateway with invitations, personal keys, browser sign-in and hosted MCP OAuth; dedicated worker and volume per user | Production rollout and real two-user isolation checks |
 | Account discovery | Browser/API metadata, profile grants, API verification, enable/disable/disconnect and shared-entry grants | Hosted lifecycle acceptance, deliberate browser-account switching and provider OAuth |
@@ -111,7 +111,7 @@ its version and acquisition time. Commands and scope are documented in
 | Stage | Current state | Remaining acceptance or implementation |
 | --- | --- | --- |
 | 0 — Framework | Application, fixture/UI/MCP proof, persistent owned-content management and its UI implemented; dedicated Railway Postgres and private Wasabi bucket provisioned | Owner-content import and remaining production framework acceptance |
-| Organization foundation | Sole-tenant schema and request bindings implemented; verification and rollout in progress | Independent organization services, split migration/request roles and RLS before unrelated customer hosting |
+| Organization foundation | Sole-tenant schema and request bindings implemented; deployed and verified on 7 November 2026 | Independent organization services, split migration/request roles and RLS before unrelated customer hosting |
 | 1 — Hosted foundation | Existing owner worker healthy; twelve-session capacity verified and migration generator corrected; owner has not selected a second participant | Separate gateway, compatible rollback, two real people/workers, supported hosted OAuth client and macOS/Windows downloads |
 | 2 — Business workflow | Read-only Muse adapter and versioned content-review method implemented; live source read verified | Teammate completion through their own agent, interruption and central-update acceptance |
 | 3 — Remote compute | Existing Bambu procedure and scripts inspected | Dedicated bounded runtime, durable job recovery, persistent artifacts and engineering/output acceptance |
@@ -380,10 +380,10 @@ rollout. Uploaded scripts must execute in isolated runtimes with only their
 selected account access, without receiving vault master keys.
 
 Postgres and Wasabi content integration is deployed. Explicit organization binding
-is implemented and undergoing hosted acceptance. Separate migration/request
+is deployed and passed hosted acceptance on 7 November 2026. Separate migration/request
 database roles and the future tenant storage/key lifecycle remain implementation work. Worker/gateway files remain authoritative for their
-existing account and membership records until explicit migrations are verified;
-keep one authority for each record throughout the transition.
+existing account and membership records. Keep one authority for each record
+throughout future migrations.
 
 ### Durable jobs
 
@@ -435,12 +435,14 @@ framework work. Passing a local check does not complete a production stage.
 Implement these steps around the framework before expanding access. Detailed
 semantics are in [ORGANIZATIONS.md](ORGANIZATIONS.md).
 
-1. Implemented, with hosted verification and rollout in progress: establish the initial organization and its owner membership. Add organization
-   and membership context throughout the schema, signed claims and resource
-   grants. Backfill existing content and account bindings explicitly. Constrain
-   legacy owner/named keys to that organization; unbound new requests fail closed.
-   Preserve profiles, public endpoint and twelve-session owner capacity. Keep
-   encrypted object keys readable during any authenticated copy or re-encryption.
+1. Complete for the sole tenant on 7 November 2026. Production has one explicit
+   organization and its owner membership. Library schema 2 preserves legacy
+   content, versions and encrypted object keys while adding organization and
+   membership bindings. Signed downstream claims require both IDs; existing keys
+   remain bound to the owner's workspace. The endpoint, profiles, vault and
+   twelve-session capacity are preserved. Gateway-state migration and private
+   worker boundaries passed isolated checks; no real teammate or new gateway
+   service has been provisioned.
 2. Isolate the organization's shared service from private membership workers.
    Split database migration authority from request access, enforce row policies
    and provision storage/key boundaries. Recheck queued work, downloads and live
@@ -457,6 +459,7 @@ semantics are in [ORGANIZATIONS.md](ORGANIZATIONS.md).
    database/storage denial and network isolation alongside API checks. Cover
    caches, search, retry collisions, jobs, restores and deletion. Independently
    review the threat model and demonstrate fair resource limits under load.
+
 Acceptance must include missing/forged tenant context and stale membership or
 app grants on REST, MCP, CDP and live downloads. Suspension must stop new work and
 disconnect controlled live access within a measured five-second target; work
