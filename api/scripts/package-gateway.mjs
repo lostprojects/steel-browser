@@ -66,7 +66,13 @@ async function include(name, from) {
     recursive: true,
     filter: (file) => !path.relative(pkg.directory, file).split(path.sep).includes("node_modules"),
   });
-  for (const child of Object.keys(pkg.manifest.dependencies ?? {}))
+  const requiredPeers = Object.keys(pkg.manifest.peerDependencies ?? {}).filter(
+    (name) => !pkg.manifest.peerDependenciesMeta?.[name]?.optional,
+  );
+  for (const child of new Set([
+    ...Object.keys(pkg.manifest.dependencies ?? {}),
+    ...requiredPeers,
+  ]))
     await include(child, pkg.directory);
   return pkg;
 }

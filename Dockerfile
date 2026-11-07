@@ -58,6 +58,7 @@ CMD ["node", "gateway/start.js"]
 FROM base AS jobs
 COPY --from=api-build /app/build/jobs-runtime /app/
 COPY --link LICENSE /app/LICENSE
+RUN node --input-type=module -e "await import('./services/jobs/worker.js')"
 ENV STEEL_ROLE=executor NODE_OPTIONS="--max-old-space-size=256"
 USER node
 EXPOSE 8080
