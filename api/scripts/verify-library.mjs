@@ -159,15 +159,23 @@ try {
       scope,
     );
   };
-  const notice = (label) =>
-    page.waitForFunction(
+  const notice = async (label) => {
+    try { return await page.waitForFunction(
       (text) =>
         [...document.querySelectorAll('[role="status"]')].some((item) =>
           item.textContent.includes(text),
         ),
       {},
       label,
-    );
+    ); } catch (error) {
+      console.error("Library fixture notice failed", JSON.stringify(await page.evaluate(() => ({
+        error: document.querySelector(".inline-error")?.textContent,
+        file: [...document.querySelectorAll('.library-upload input[type="file"]')].map(input => ({disabled: input.disabled, files: [...input.files].map(file => ({name:file.name,size:file.size,type:file.type}))})),
+        status: [...document.querySelectorAll('[role="status"]')].map(item => item.textContent),
+      }))));
+      throw error;
+    }
+  };
   await page.waitForFunction(() =>
     document.querySelector(".result-count")?.textContent.includes("0 packages"),
   );

@@ -79,6 +79,7 @@ let report;
 let stage = "service binding";
 const fixtureOwner = `verification_${randomBytes(8).toString("hex")}`,
   owned = [];
+const fixtureMembers = new Set([fixtureOwner, fixtureOwner + "_reader"]);
 try {
   const project = await gql("query($p:String!){project(id:$p){services{edges{node{id name}}}}}", {
     p: projectId,
@@ -170,6 +171,8 @@ try {
     const bytes = objects();
     try {
       for (const row of rows) {
+        fixtureMembers.add(row.owner_id);
+        fixtureMembers.add(row.owner_id + "_reader");
         const files =
           await appSql`SELECT object_key FROM toolstack_content_files WHERE package_id=${row.id} AND owner_id=${row.owner_id}`;
         for (const file of files) await bytes.remove(file.object_key);
@@ -284,6 +287,16 @@ try {
     assert.equal(health.status, "ok");
     assert.equal(health.maxSessions, 12);
     assert.ok(health.capabilities.includes("content_library"));
+    const context = await (await request("/v1/organization")).json();
+    assert.equal(context.organization.id, state.TOOLSTACK_ORG_ID);
+    assert.equal(context.membership.membershipId, organizationMember(context.membership.userId).membershipId);
+    const listed = await (await request("/v1/library")).json();
+    assert.equal(listed.organization.id, context.organization.id);
+    assert.equal(listed.membershipId, context.membership.membershipId);
+    assert.equal((await fetch(origin + "/v1/library", {
+      headers: {authorization: `Bearer ${variables.STEEL_API_KEY}`, "x-toolstack-org-id": randomUUID()},
+      signal: AbortSignal.timeout(15000),
+    })).status, 403);
     const before = await (await request("/v1/connections")).json();
     let hosted = await (
       await request("/v1/library", "POST", {
@@ -407,6 +420,8 @@ try {
     report = {
       hostedChecks: [
         "HTTPS-UI",
+        "organization-membership-binding",
+        "foreign-organization-denied",
         "MCP-initialization-discovery-read",
         "private-create",
         "immutable-save",
@@ -465,6 +480,13 @@ try {
         }
       } finally {
         bytes.close();
+      }
+    }
+    if (appSql) {
+      for (const user of fixtureMembers) {
+        await appSql`DELETE FROM toolstack_memberships m WHERE m.org_id=${state.TOOLSTACK_ORG_ID}
+          AND m.user_id=${user} AND NOT EXISTS(SELECT 1 FROM toolstack_packages p
+            WHERE p.org_id=m.org_id AND p.owner_membership_id=m.id)`;
       }
     }
   } catch (error) {
