@@ -41,11 +41,11 @@ export async function callJob<T>(run: () => Promise<T>) {
   }
 }
 export async function jobsRoutes(server: FastifyInstance) {
-  server.post("/internal/jobs/ready",async(req,reply)=>{
-    reply.header("cache-control","no-store");
-    if(!jobWorkerAuthorized(req.raw))return reply.code(401).send({ready:false});
+  server.post("/internal/jobs/ready", async (req, reply) => {
+    reply.header("cache-control", "no-store");
+    if (!jobWorkerAuthorized(req.raw)) return reply.code(401).send({ ready: false });
     await requireJobs(server.jobs).ready;
-    return {ready:true};
+    return { ready: true };
   });
   server.post<{ Params: { id: string } }>("/internal/jobs/:id/authorize", async (req, reply) => {
     reply.header("cache-control", "no-store");

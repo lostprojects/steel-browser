@@ -37,6 +37,7 @@ export class JobService implements Jobs {
       schema: options.schema ?? "toolstack_queue",
       schedule: false,
       supervise: options.supervise ?? false,
+      superviseIntervalSeconds: 10,
       monitorIntervalSeconds: 10,
       maintenanceIntervalSeconds: 60,
       registerInstance: false,

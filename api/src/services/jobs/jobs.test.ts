@@ -52,7 +52,15 @@ const service = () => {
     schema: queueSchema,
     supervise: true,
   });
-  result.boss.on("error",error=>console.error("Fixture queue diagnostic", {name:error.name,code:(error as any).code,message:error.message.replace(/postgres(?:ql)?:\/\/\S+/g,"[fixture database]").slice(0,500)}));
+  result.boss.on("error", (error) =>
+    console.error("Fixture queue diagnostic", {
+      name: error.name,
+      code: (error as any).code,
+      message: error.message
+        .replace(/postgres(?:ql)?:\/\/\S+/g, "[fixture database]")
+        .slice(0, 500),
+    }),
+  );
   services.push(result);
   return result;
 };
@@ -284,13 +292,16 @@ dbTest(
     child.stderr.on("data", (chunk) => {
       diagnostic += chunk;
     });
-    let timedOut=false;
-    const timer=setTimeout(()=>{timedOut=true;child.kill("SIGKILL");},15000);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, 15000);
     const exited = await new Promise<string | null>((resolve, reject) => {
       child.once("error", reject);
       child.once("exit", (_code, signal) => resolve(signal));
-    }).finally(()=>clearTimeout(timer));
-    expect(timedOut,diagnostic).toBe(false);
+    }).finally(() => clearTimeout(timer));
+    expect(timedOut, diagnostic).toBe(false);
     expect(exited, diagnostic).toBe("SIGKILL");
     expect((await jobs.get(owner, submitted.id)).state).toBe("running");
     await jobs.work();

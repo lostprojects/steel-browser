@@ -39,10 +39,18 @@ export async function startJobWorker() {
   if (!(library instanceof ContentLibrary))
     throw new Error("Configure the executor's organization data storage");
   await library.ready;
-  const control=await fetch(new URL("/internal/jobs/ready",origin),{method:"POST",redirect:"error",
-    headers:{authorization:`Bearer ${key}`,"x-toolstack-org-id":organization.id},signal:AbortSignal.timeout(15000)});
-  if(!control.ok){await control.body?.cancel();throw new Error("Organization job control is not ready");}
-  if((await control.json()).ready!==true)throw new Error("Organization job control is not ready");
+  const control = await fetch(new URL("/internal/jobs/ready", origin), {
+    method: "POST",
+    redirect: "error",
+    headers: { authorization: `Bearer ${key}`, "x-toolstack-org-id": organization.id },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!control.ok) {
+    await control.body?.cancel();
+    throw new Error("Organization job control is not ready");
+  }
+  if ((await control.json()).ready !== true)
+    throw new Error("Organization job control is not ready");
   const jobs = new JobService(
     library.sql,
     library,
