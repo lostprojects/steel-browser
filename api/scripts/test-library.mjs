@@ -8,7 +8,9 @@ import net from "node:net";
 import postgres from "postgres";
 import { existsSync } from "node:fs";
 
-const root = await mkdtemp("/tmp/toolstack-pg-");
+const scratch = path.resolve("../.tmp");
+await mkdir(scratch,{recursive:true});
+const root = await mkdtemp(path.join(scratch,"toolstack-pg-"));
 const bin =
   process.env.TOOLSTACK_POSTGRES_BIN ??
   [

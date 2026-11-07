@@ -29,6 +29,8 @@ export type ContentPackage = PackageSummary & {
 };
 export type LibraryPage = {
   userId: string;
+  organization: { id: string; name: string };
+  membershipId: string;
   packages: PackageSummary[];
   total: number;
   nextOffset: number | null;

@@ -4,6 +4,7 @@ import { PublicError } from "../../utils/public-error.js";
 import { libraryDatabase } from "./database.js";
 import { ContentLibrary } from "./library.js";
 import { WasabiObjects } from "./objects.js";
+import { assertOrganizationMember, currentOrganization } from "../organization.js";
 import {
   maxFileBytes,
   type LibraryActor,
@@ -13,6 +14,7 @@ import {
 
 class RemoteLibrary implements LibraryService {
   async call(actor: LibraryActor, command: LibraryCommand) {
+    assertOrganizationMember(actor);
     const connection = sharedStoreConnection();
     if (!connection)
       throw new PublicError("library_unavailable", "Your content library is being set up", 503);
@@ -20,7 +22,11 @@ class RemoteLibrary implements LibraryService {
       method: "POST",
       redirect: "error",
       signal: AbortSignal.timeout(90_000),
-      headers: { authorization: `Bearer ${connection.key}`, "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${connection.key}`,
+        "content-type": "application/json",
+        "x-toolstack-org-id": currentOrganization().id,
+      },
       body: JSON.stringify({ principal: actor.principal, command }),
     });
     const chunks: Uint8Array[] = [];

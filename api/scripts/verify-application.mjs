@@ -199,6 +199,7 @@ try {
   await application.release({ agent: admin }, reopened.id);
   assert.ok((await readFile(preferences, "utf8")).length > 10);
   browser = await puppeteer.launch({
+    args: process.platform === "linux" ? ["--no-sandbox"] : [],
     executablePath: process.env.CHROME_EXECUTABLE_PATH,
     headless: true,
   });

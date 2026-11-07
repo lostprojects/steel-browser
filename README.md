@@ -5,8 +5,9 @@ account connections. Connecting through an agent provides the person's own
 content plus packages explicitly assigned to them or shared with their organization.
 Browser automation is its first execution toolkit.
 
-The target is a multi-tenant subscription product, with private member workspaces
-and strict boundaries between organizations. Today there is one real organization
+The target supports private member workspaces and strict organization boundaries,
+starting with the owner's organization as the sole tenant. Billing is outside the
+current implementation; paid subscriptions remain an optional future direction. Today there is one real organization
 and its owner; organization records and tenant isolation remain implementation
 work. `global` is the existing sharing identifier and must become organization-wide.
 See the [organization contract](ORGANIZATIONS.md) and

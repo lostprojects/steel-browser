@@ -13,6 +13,9 @@ import { signPrincipal, verifyPrincipal } from "./gateway-principal.js";
 import { requireWorkerBoundary } from "./worker-boundary.js";
 import { GatewayStore } from "../gateway/store.js";
 import { contentAccess, canUseContent } from "./content-access.js";
+import { createGateway } from "../gateway/server.js";
+import { readSharedStore } from "./shared-store.js";
+import type { AddressInfo } from "node:net";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -134,6 +137,45 @@ test("legacy worker volumes bind once and refuse a foreign org or member without
     await expect(requireWorkerBoundary()).rejects.toThrow("another organization");
     expect(await readFile(path.join(root, "retained-profile"), "utf8")).toBe("unchanged");
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("reader credentials cannot retrieve secrets from a gateway in a different organization", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "toolstack-organization-reader-"));
+  const reader = "fixture-reader-".repeat(4),
+    admin = "fixture-admin-".repeat(4);
+  const store = new GatewayStore(path.join(root, "gateway.enc"), "ab".repeat(32), admin);
+  await store.ready;
+  await store.register({
+    id: "owner",
+    name: "Owner",
+    backendUrl: "https://worker.example.test",
+    backendKey: "fixture-worker-".repeat(4),
+    sharedKey: reader,
+  });
+  await store.putShared("vault", "fixture", { apiKey: "fixture-provider-value" });
+  const server = createGateway(store, "http://127.0.0.1", true);
+  try {
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    vi.stubEnv("STEEL_SHARED_URL", origin);
+    vi.stubEnv("STEEL_SHARED_KEY", reader);
+    expect((await readSharedStore(true)).credentials.fixture.apiKey).toBe("fixture-provider-value");
+    const unavailable = await fetch(origin + "/internal/shared", {
+      headers: { authorization: `Bearer ${reader}`, "x-toolstack-org-id": randomUUID() },
+    });
+    expect(unavailable.status).toBe(403);
+    expect(await unavailable.text()).not.toContain("fixture-provider-value");
+    expect(
+      (await fetch(origin + "/internal/shared", { headers: { authorization: `Bearer ${reader}` } }))
+        .status,
+    ).toBe(403);
+    vi.stubEnv("TOOLSTACK_ORG_ID", randomUUID());
+    await expect(readSharedStore(true)).rejects.toThrow("unavailable");
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
     await rm(root, { recursive: true, force: true });
   }
 });

@@ -1,7 +1,7 @@
 import type { Agent } from "./proxy-manager.js";
 import { PublicError } from "../utils/public-error.js";
 import { sharedStoreConnection } from "./shared-store.js";
-import { assertOrganizationMember } from "./organization.js";
+import { assertOrganizationMember, currentOrganization } from "./organization.js";
 
 // Recheck the connected key when queued provider work starts. Fail closed on
 // outages; a cached claim cannot authorize a revoked Toolstack connection.
@@ -21,7 +21,11 @@ export async function assertAgentCurrent(agent: Agent) {
       method: "POST",
       redirect: "error",
       signal: AbortSignal.timeout(5000),
-      headers: { authorization: `Bearer ${connection.key}`, "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${connection.key}`,
+        "content-type": "application/json",
+        "x-toolstack-org-id": currentOrganization().id,
+      },
       body: JSON.stringify(agent.connectedApp),
     });
   } catch {

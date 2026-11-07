@@ -216,6 +216,12 @@ export function createGateway(
         const url = new URL(req.url!, origin),
           route = url.pathname,
           method = req.method;
+        const selectedOrg = req.headers["x-toolstack-org-id"];
+        if (
+          (selectedOrg !== undefined && selectedOrg !== store.organization.id) ||
+          (route.startsWith("/internal/") && selectedOrg !== store.organization.id)
+        )
+          throw new GatewayError(403, "Organization unavailable");
         if (
           route === "/internal/library" ||
           route === "/v1/library" ||

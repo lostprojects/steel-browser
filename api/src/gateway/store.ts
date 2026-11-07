@@ -74,7 +74,7 @@ const oauthGrantSchema = z.object({
 });
 const stateSchema = z.object({
   version: z.literal(2),
-  orgId: z.string().uuid().optional(),
+  orgId: z.string().uuid(),
   users: z.array(userSchema),
   shared: sharedSnapshot,
   credentialGrants: z.record(storeName, z.array(storeName).min(1).max(100)).default({}),
@@ -113,11 +113,7 @@ export const registration = z
 export type Registration = z.infer<typeof registration>;
 
 export class GatewayStore extends EventEmitter {
-  private state: State = stateSchema.parse({
-    version: 2,
-    users: [],
-    shared: { credentials: {}, sites: {} },
-  });
+  private state: State;
   private serial: Promise<unknown> = Promise.resolve();
   private sessions = new Map<string, Principal>();
   private readonly encryptionKey: Buffer;
@@ -130,6 +126,12 @@ export class GatewayStore extends EventEmitter {
     readonly organization: Organization = currentOrganization(),
   ) {
     super();
+    this.state = stateSchema.parse({
+      version: 2,
+      orgId: this.organization.id,
+      users: [],
+      shared: { credentials: {}, sites: {} },
+    });
     if (!/^[a-fA-F0-9]{64}$/.test(encryptionKey) || !secret.safeParse(adminKey).success)
       throw new Error("Configure a 32-byte GATEWAY_STORE_KEY and a strong STEEL_API_KEY");
     this.encryptionKey = Buffer.from(encryptionKey, "hex");
@@ -146,11 +148,13 @@ export class GatewayStore extends EventEmitter {
       const decoded = JSON.parse(
         Buffer.concat([cipher.update(bytes.subarray(32)), cipher.final()]).toString(),
       );
-      this.state = stateSchema.parse(decoded.version === 1 ? { ...decoded, version: 2 } : decoded);
+      const legacy = decoded.version === 1;
+      this.state = stateSchema.parse(
+        legacy ? { ...decoded, version: 2, orgId: decoded.orgId ?? this.organization.id } : decoded,
+      );
       if (this.state.orgId && this.state.orgId !== this.organization.id)
         throw new Error("Gateway organization mismatch");
-      if (!this.state.orgId) {
-        this.state.orgId = this.organization.id;
+      if (legacy) {
         await this.saveState(this.state);
       }
     } catch (error) {

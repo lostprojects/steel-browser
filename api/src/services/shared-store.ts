@@ -79,7 +79,7 @@ export async function readSharedStore(fresh = false): Promise<SharedSnapshot> {
     return cached.value;
   const request = async () => {
     const response = await fetch(new URL("/internal/shared", url), {
-      headers: { authorization: `Bearer ${key}` },
+      headers: { authorization: `Bearer ${key}`, "x-toolstack-org-id": currentOrganization().id },
       signal: AbortSignal.timeout(5000),
       redirect: "error",
     });

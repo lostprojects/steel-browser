@@ -31,7 +31,7 @@ export function membershipId(orgId: string, userId: string): string {
   organizationId.parse(orgId);
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(userId)) throw new Error("Invalid member identity");
   const bytes = createHash("sha1")
-    .update(Buffer.from(orgId.replaceAll("-",""),"hex"))
+    .update(Buffer.from(orgId.replaceAll("-", ""), "hex"))
     .update(`toolstack-membership-v1\0${userId}`)
     .digest()
     .subarray(0, 16);

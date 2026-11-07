@@ -1,11 +1,14 @@
 # Organizations and tenant isolation
 
-This is the planned tenant contract, added on 7 November 2026. The running
-application serves the owner's one organization and one person. Organization
-records, tenant-bound authorization and subscriptions still require implementation.
+This contract starts with the owner's organization as the sole tenant. The
+current implementation work adds explicit organization and membership bindings
+to that deployment, preserving its existing data and clients. It adds no billing,
+subscription plans or customer signup. Future commercial use is a low-priority
+possibility and supplies no requirement to build payment infrastructure now.
+
 The delivery order and acceptance requirements are in [the plan](TOOLSTACK-PLAN.md#organization-delivery).
 
-An organization is the customer, security boundary and subscription account.
+An organization is the tenant and security boundary.
 Each person has a private workspace within it. Sharing can make selected content
 or account access available to teammates without exposing private activity.
 Nothing shared in one organization becomes available in another.
@@ -272,9 +275,13 @@ create private content or request a shared resource. An expired invitation,
 suspension or exhausted allowance needs a specific recovery action that preserves
 the selected organization and any safely saved draft.
 
-## Subscription foundation
+## Optional commercial future
 
-The initial organization is an internal account with no payment required. Model
+This section records a possible later direction. It is outside the sole-tenant
+implementation and teammate rollout.
+
+The initial organization is an internal account with no payment required. If
+commercial subscriptions are pursued later, model
 an organization's plan and entitlements independently of authentication so future
 paid customers use the same permission checks.
 

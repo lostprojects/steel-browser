@@ -301,7 +301,9 @@ export function Library({
       </header>
       <div className="catalog-body library-body">
         <div className="page-intro">
-          <p className="eyebrow">Your content</p>
+          <p className="eyebrow">
+            {data?.organization?.name ? `${data.organization.name} · Your content` : "Your content"}
+          </p>
           <h1>Your methods, ready to use.</h1>
           <p className="muted">
             Keep your skills and tooling together. Share a package when someone else needs it.

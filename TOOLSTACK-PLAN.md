@@ -1,7 +1,7 @@
 # Toolstack plan
 
 Toolstack is being developed as a multi-tenant product. Each organization has
-its own members, shared resources and subscription account. A person connects
+its own members and shared resources. A person connects
 through their own agent to a private workspace in one organization and receives
 their content plus anything explicitly shared with them there.
 
@@ -55,9 +55,10 @@ path. There is no current requirement for Composio or a second MCP gateway.
 Evaluate another component when it solves a demonstrated gap without duplicating
 account ownership or permissions.
 
-The immediate priority is organization-aware identity and isolation around the
-reusable application and toolkit framework. Commercial subscription support must
-use those same boundaries when introduced.
+The immediate priority is making the owner's organization an explicit sole tenant
+around the existing framework, then adding teammates safely. Billing, plan
+entitlements and customer signup are outside this implementation. Commercial use
+is a low-priority future possibility; preserve flexibility without building it.
 Exa remains an optional reference adapter; adding providers follows demonstrated
 team needs.
 
@@ -74,7 +75,7 @@ own and provide a foundation for later collaboration.
 
 | Area | Implemented or demonstrated | Work still open |
 | --- | --- | --- |
-| Organizations and subscriptions | One real organization and its owner use the existing standalone service; organization design documented | Explicit organization/membership records, tenant-bound authorization and isolated organization services; billing and paid-customer acceptance |
+| Organizations | One real organization and its owner use the existing standalone service; organization design documented | Explicit organization/membership records, tenant-bound authorization and isolated organization services; independent-tenant acceptance before admitting another organization |
 | Browser engine | Independent agent/quiet browsers, named profiles, managed residential routing and vault login; phases 0–3 accepted | Later routing criteria, long viewing and full soak/fault acceptance |
 | Team access | Gateway with invitations, personal keys, browser sign-in and hosted MCP OAuth; dedicated worker and volume per user | Production rollout and real two-user isolation checks |
 | Account discovery | Browser/API metadata, profile grants, API verification, enable/disable/disconnect and shared-entry grants | Hosted lifecycle acceptance, deliberate browser-account switching and provider OAuth |
@@ -457,20 +458,16 @@ semantics are in [ORGANIZATIONS.md](ORGANIZATIONS.md).
    database/storage denial and network isolation alongside API checks. Cover
    caches, search, retry collisions, jobs, restores and deletion. Independently
    review the threat model and demonstrate fair resource limits under load.
-5. Before paid external use, implement organization subscriptions, billable units
-   and durable usage reconciliation. Verify billing-event signatures, duplicate
-   and out-of-order handling, plan changes and cancellation/export behavior.
-   Exercise onboarding, last-owner recovery and offboarding. Establish measured
-   service targets, restore procedures and incident support, then complete an
-   independent security assessment. No security or compliance certification is
-   implied by this plan.
-
 Acceptance must include missing/forged tenant context and stale membership or
 app grants on REST, MCP, CDP and live downloads. Suspension must stop new work and
 disconnect controlled live access within a measured five-second target; work
 already sent to an external provider retains its actual or uncertain effect.
 Confirm that an organization administrator cannot read another member's private
 history or use export/support tooling to bypass that boundary.
+
+If commercial use is pursued later, define subscriptions and billable units along
+with lifecycle and support policies. That work is not scheduled and must not
+expand the sole-tenant implementation.
 
 Current single-org verification remains useful regression evidence. Multi-tenant
 acceptance requires the deployed organization-aware paths and independent tenant

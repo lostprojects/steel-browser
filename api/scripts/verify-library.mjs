@@ -118,6 +118,7 @@ try {
     method: "POST",
     headers: {
       authorization: `Bearer ${accounts.bob.sharedKey}`,
+      "x-toolstack-org-id": store.organization.id,
       "content-type": "application/json",
     },
     body: JSON.stringify({ principal: foreignClaim, command: { action: "list" } }),
@@ -128,6 +129,7 @@ try {
       headers: { authorization: `Bearer ${accounts[id].key}` },
     });
   browser = await puppeteer.launch({
+    args: process.platform === "linux" ? ["--no-sandbox"] : [],
     executablePath: process.env.CHROME_EXECUTABLE_PATH,
     headless: true,
   });
