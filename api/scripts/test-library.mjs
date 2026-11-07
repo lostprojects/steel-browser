@@ -97,7 +97,11 @@ try {
       ? ["scripts/verify-library.mjs"]
       : ["../node_modules/vitest/vitest.mjs", "run", "src/services/library/library.test.ts"],
     {
-      env: { ...process.env, TOOLSTACK_TEST_DATABASE_URL: url },
+      env: {
+        ...process.env,
+        ...(process.platform === "linux" ? { LANG: "C.UTF-8", LC_ALL: "C.UTF-8" } : {}),
+        TOOLSTACK_TEST_DATABASE_URL: url,
+      },
     },
   );
   console.log(

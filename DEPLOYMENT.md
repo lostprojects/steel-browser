@@ -4,7 +4,7 @@ Railway runs the combined API and dashboard from the root Dockerfile. Read `/v1/
 
 For team deployment, use the [gateway and private-worker procedure](TEAM.md#provisioning). The gateway and each worker require separate volumes and keys. Set `STEEL_IMAGE=gateway` on the gateway service to select its smaller Docker image; workers use the default `browser` image. Railway supplies declared [Docker build arguments from service variables](https://docs.railway.com/builds/dockerfiles#using-variables-at-build-time).
 
-`STEEL_ROLE` selects `gateway`, `worker` or the existing `standalone` behavior; it defaults to standalone in the browser image. The gateway image requires the gateway role and has its own start command. Worker health responses contain readiness only. Both runtime images use the pinned Debian Bookworm slim Node base.
+`STEEL_ROLE` selects `gateway`, `worker` or the existing `standalone` behavior; it defaults to standalone in the browser image. The gateway image requires the gateway role and has its own start command. Worker health responses contain readiness only. Both runtime images use the pinned Debian Bookworm slim Node base and a UTF-8 locale for file names.
 
 ## Service
 

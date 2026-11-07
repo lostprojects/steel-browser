@@ -5,7 +5,7 @@ FROM node:${NODE_VERSION}-bookworm-slim AS base
 
 WORKDIR /app
 
-ENV NODE_ENV="production"
+ENV NODE_ENV="production" LANG=C.UTF-8 LC_ALL=C.UTF-8
 
 LABEL org.opencontainers.image.source="https://github.com/lostprojects/toolstack"
 
